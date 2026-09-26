@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client"
 import type { TaskStatus } from "@prisma/client"
 import type { TaskMetricsSnapshot } from "../events/types.js"
 import type { Step } from "../Agents/plannerAgent.js"
@@ -20,7 +21,7 @@ function toRegistryEntry(row: {
     issueUrl: row.issueUrl,
     issueTitle: row.issueTitle,
     issueNumber: row.issueNumber,
-    status: row.status === "planning" || row.status === "verifying" ? "running" : row.status,
+    status: row.status === "verifying" ? "validating" : row.status,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     ...(row.prUrl ? { prUrl: row.prUrl } : {}),
@@ -28,8 +29,6 @@ function toRegistryEntry(row: {
 }
 
 function mapStatusToPrisma(status: TaskRegistryEntry["status"] | "planning" | "verifying"): TaskStatus {
-  if (status === "planning") return "planning"
-  if (status === "verifying") return "verifying"
   return status
 }
 
@@ -121,14 +120,54 @@ export async function getStatsForUser(userId: string) {
   }
 
   const db = getPrisma()
-  const [total, running, done, failed, queued] = await Promise.all([
+  const [total, running, done, failed, queued, needsYou, cost] = await Promise.all([
     db.task.count({ where: { userId } }),
-    db.task.count({ where: { userId, status: { in: ["running", "planning", "verifying"] } } }),
-    db.task.count({ where: { userId, status: "done" } }),
-    db.task.count({ where: { userId, status: "failed" } }),
+    db.task.count({ where: { userId, status: { in: ["running", "planning", "verifying", "preparing", "validating", "publishing"] } } }),
+    db.task.count({ where: { userId, status: { in: ["done", "published"] } } }),
+    db.task.count({ where: { userId, status: { in: ["failed", "cancelled"] } } }),
     db.task.count({ where: { userId, status: "queued" } }),
+    db.task.count({ where: { userId, status: { in: ["awaiting_approval", "needs_input", "ready", "needs_review"] } } }),
+    db.task.aggregate({ where: { userId }, _sum: { costUsd: true } }),
   ])
-  return { total, running, done, failed, queued }
+  return { total, running, done, failed, queued, needsYou, totalCostUsd: cost._sum.costUsd ?? 0 }
+}
+
+/** Mirror the v2 task state into Postgres (source of truth for history/replays). */
+export async function syncTaskStateToDb(s: {
+  taskId: string
+  status: TaskStatus
+  title: string
+  issueNumber: number
+  prUrl?: string
+  prBranch?: string
+  failureReason?: string
+  finishedAt?: string
+  plan?: unknown
+  summary?: string
+  verdict?: unknown
+  stats?: unknown
+  options?: unknown
+  costUsd: number
+}): Promise<void> {
+  if (!isDatabaseEnabled()) return
+  const json = (v: unknown) => JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue
+  await getPrisma().task.updateMany({
+    where: { id: s.taskId },
+    data: {
+      status: s.status,
+      ...(s.title ? { issueTitle: s.title } : {}),
+      ...(s.prUrl ? { prUrl: s.prUrl } : {}),
+      ...(s.prBranch ? { branchName: s.prBranch } : {}),
+      ...(s.failureReason ? { failureReason: s.failureReason } : {}),
+      ...(s.finishedAt ? { completedAt: new Date(s.finishedAt) } : {}),
+      ...(s.plan !== undefined ? { plan: json(s.plan) } : {}),
+      ...(s.summary ? { summary: s.summary } : {}),
+      ...(s.verdict !== undefined ? { verdict: json(s.verdict) } : {}),
+      ...(s.stats !== undefined ? { diffStats: json(s.stats) } : {}),
+      ...(s.options !== undefined ? { options: json(s.options) } : {}),
+      costUsd: s.costUsd,
+    },
+  })
 }
 
 export async function userOwnsTask(userId: string, taskId: string): Promise<boolean> {

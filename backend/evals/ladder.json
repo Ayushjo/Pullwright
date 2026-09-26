@@ -1,0 +1,121 @@
+[
+  {
+    "id": "L01-start-script",
+    "level": 1,
+    "fixture": "bookstore",
+    "title": "README mentions `npm start` but there is no start script",
+    "body": "The README says you can start the API with `npm start`, but package.json has no `start` script so the command fails with \"Missing script: start\". Add a start script that runs the server (src/server.js).",
+    "acceptance": {
+      "file": "test/zz_accept.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { readFileSync } from 'node:fs'\ntest('start script', () => {\n  const pkg = JSON.parse(readFileSync('package.json', 'utf8'))\n  assert.match(pkg.scripts.start, /node\\s+(\\.\\/)?src\\/server\\.js/)\n  assert.equal(pkg.scripts.test, 'node --test')\n})\n"
+    }
+  },
+  {
+    "id": "L02-divide-zero",
+    "level": 2,
+    "fixture": "bookstore",
+    "title": "divide(n, 0) returns Infinity — should throw RangeError",
+    "body": "`divide(10, 0)` in src/math.js silently returns `Infinity`. It should throw a `RangeError` when the divisor is zero. There is already a failing test for this in test/math.test.js.",
+    "acceptance": {
+      "file": "test/zz_accept.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { divide } from '../src/math.js'\ntest('divide', () => {\n  assert.throws(() => divide(1, 0), RangeError)\n  assert.throws(() => divide(-5, 0), RangeError)\n  assert.equal(divide(9, 3), 3)\n  assert.equal(divide(0, 5), 0)\n})\n"
+    }
+  },
+  {
+    "id": "L03-slugify",
+    "level": 3,
+    "fixture": "bookstore",
+    "title": "slugify produces repeated and leading/trailing dashes, and drops accented letters",
+    "body": "`slugify` in src/format.js has a few problems:\n\n- `slugify('  C++ -- The   Good Parts!  ')` returns `c----the-good-parts` — repeated dashes should collapse to one: `c-the-good-parts`.\n- `slugify('-Hello-')` should not start or end with a dash: `hello`.\n- Accented letters are removed instead of transliterated: `slugify('Café Society')` gives `caf-society`, expected `cafe-society`.\n\nPlease fix it and add tests for these cases.",
+    "acceptance": {
+      "file": "test/zz_accept.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { slugify } from '../src/format.js'\ntest('slugify', () => {\n  assert.equal(slugify('  C++ -- The   Good Parts!  '), 'c-the-good-parts')\n  assert.equal(slugify('-Hello-'), 'hello')\n  assert.equal(slugify('Café Society'), 'cafe-society')\n  assert.equal(slugify('The Pragmatic Programmer'), 'the-pragmatic-programmer')\n  assert.equal(slugify('Déjà Vu 2'), 'deja-vu-2')\n})\n"
+    }
+  },
+  {
+    "id": "L04-inventory-remove",
+    "level": 4,
+    "fixture": "bookstore",
+    "title": "Inventory.remove lets stock go negative",
+    "body": "`Inventory.remove(id, quantity)` happily drives stock below zero (e.g. removing 5 when 2 are in stock leaves -3). It should throw a `RangeError` when the quantity is not a positive integer or exceeds the current stock, and it must leave the stock unchanged in that case.",
+    "acceptance": {
+      "file": "test/zz_accept.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { Inventory } from '../src/inventory.js'\ntest('remove guards', () => {\n  const inv = new Inventory([{ id: 'a', title: 'A', author: 'X', priceCents: 100, stock: 2 }])\n  assert.throws(() => inv.remove('a', 5), RangeError)\n  assert.equal(inv.find('a').stock, 2)\n  assert.throws(() => inv.remove('a', 0), RangeError)\n  assert.throws(() => inv.remove('a', 1.5), RangeError)\n  inv.remove('a', 2)\n  assert.equal(inv.find('a').stock, 0)\n  assert.throws(() => inv.remove('zzz', 1))\n})\n"
+    }
+  },
+  {
+    "id": "L05-discount-before-tax",
+    "level": 5,
+    "fixture": "bookstore",
+    "title": "Fixed discount codes are applied after tax instead of before",
+    "body": "The docs for `Cart.total()` say the discount is taken off the subtotal and tax is charged on the discounted amount, but the code taxes first and subtracts the discount afterwards. For SAVE5 (a fixed $5.00 off) on a $100.00 subtotal we currently charge $103.00; it should be ($100 - $5) * 1.08 = $102.60. Percent codes must keep working, and the total can never go below zero.",
+    "acceptance": {
+      "file": "test/zz_accept.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { Inventory } from '../src/inventory.js'\nimport { Cart } from '../src/cart.js'\nconst inv = (p = 10000) => new Inventory([{ id: 'a', title: 'A', author: 'X', priceCents: p, stock: 9 }])\ntest('discount before tax', () => {\n  assert.equal(new Cart(inv()).addItem('a').applyDiscount('SAVE5').total(), 10260)\n  assert.equal(new Cart(inv()).addItem('a').applyDiscount('WELCOME10').total(), 9720)\n  assert.equal(new Cart(inv(300)).addItem('a').applyDiscount('SAVE5').total(), 0)\n  assert.equal(new Cart(inv()).addItem('a', 2).total(), 21600)\n})\n"
+    }
+  },
+  {
+    "id": "L06-books-filters",
+    "level": 6,
+    "fixture": "bookstore",
+    "title": "Support filtering GET /books by author and tag",
+    "body": "Clients need to filter the catalogue:\n\n- `GET /books?author=martin` → books whose author contains the text (case-insensitive)\n- `GET /books?tag=craft` → books that have exactly that tag\n- both filters can be combined; with no filters the full list is returned as today.\n\nPlease add tests.",
+    "acceptance": {
+      "file": "test/zz_accept.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { createApp } from '../src/server.js'\nimport { Inventory } from '../src/inventory.js'\nconst app = createApp(Inventory.fromFile())\nconst ids = (r) => r.body.map((b) => b.id).sort()\ntest('filters', async () => {\n  assert.deepEqual(ids(await app({ method: 'GET', url: '/books?author=MARTIN' })), ['b2', 'b3', 'b4'])\n  assert.deepEqual(ids(await app({ method: 'GET', url: '/books?tag=design' })), ['b3', 'b8'])\n  assert.deepEqual(ids(await app({ method: 'GET', url: '/books?tag=craft&author=fowler' })), ['b3'])\n  assert.equal((await app({ method: 'GET', url: '/books' })).body.length, 8)\n  assert.deepEqual((await app({ method: 'GET', url: '/books?tag=nope' })).body, [])\n})\n"
+    }
+  },
+  {
+    "id": "L07-quote-validation",
+    "level": 7,
+    "fixture": "bookstore",
+    "title": "POST /cart/quote returns 500 for bad input",
+    "body": "Sending bad input to `POST /cart/quote` crashes with a 500:\n\n- missing or empty `items`\n- an item with an unknown book id\n- a quantity that is not a positive integer\n- an invalid `discountCode`\n\nThese are client errors and should return **400** with a JSON body `{ \"error\": \"<helpful message>\" }`. Valid requests must keep working.",
+    "acceptance": {
+      "file": "test/zz_accept.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { createApp } from '../src/server.js'\nimport { Inventory } from '../src/inventory.js'\nconst app = createApp(Inventory.fromFile())\nconst q = (body) => app({ method: 'POST', url: '/cart/quote', body })\ntest('validation', async () => {\n  for (const body of [{}, { items: [] }, { items: [{ id: 'nope', quantity: 1 }] }, { items: [{ id: 'b1', quantity: 0 }] }, { items: [{ id: 'b1', quantity: 'two' }] }, { items: [{ id: 'b1', quantity: 1 }], discountCode: 'FREE' }]) {\n    const r = await q(body)\n    assert.equal(r.status, 400, JSON.stringify(body))\n    assert.equal(typeof r.body.error, 'string')\n  }\n  const ok = await q({ items: [{ id: 'b6', quantity: 1 }] })\n  assert.equal(ok.status, 200)\n  assert.equal(ok.body.totalCents, 3239)\n})\n"
+    }
+  },
+  {
+    "id": "L08-low-stock-report",
+    "level": 8,
+    "fixture": "bookstore",
+    "title": "Add a low-stock section to inventory reports",
+    "body": "Buyers want to see what is about to run out. In src/report.js:\n\n- `summary()` should include `lowStock`: titles with 1–3 units in stock (not zero — those are already in `outOfStock`), as `{ id, title, stock }`, sorted by stock ascending then title.\n- The text report and the Markdown report should both show a \"Low stock\" section listing them with their stock count (omit the section when the list is empty).\n\nDon't change the other sections.",
+    "acceptance": {
+      "file": "test/zz_accept.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { Inventory } from '../src/inventory.js'\nimport { summary, render } from '../src/report.js'\nconst books = () => Inventory.fromFile().list()\ntest('low stock', () => {\n  const s = summary(books(), { generatedAt: '2026-01-01' })\n  assert.deepEqual(s.lowStock.map((b) => b.id), ['b8', 'b5', 'b2'])\n  assert.deepEqual(s.lowStock[0], { id: 'b8', title: 'Domain-Driven Design', stock: 1 })\n  const text = render(books(), 'text', { generatedAt: '2026-01-01' })\n  assert.match(text, /low stock/i)\n  assert.match(text, /Domain-Driven Design/)\n  assert.match(text, /By author/)\n  const md = render(books(), 'markdown', { generatedAt: '2026-01-01' })\n  assert.match(md, /low stock/i)\n  assert.match(md, /## By decade/)\n  const none = summary(books().filter((b) => b.stock > 3 || b.stock === 0), { generatedAt: '2026-01-01' })\n  assert.deepEqual(none.lowStock, [])\n  assert.doesNotMatch(render(books().filter((b) => b.stock > 3), 'text', { generatedAt: '2026-01-01' }), /low stock/i)\n})\n"
+    }
+  },
+  {
+    "id": "L09-missing-auth",
+    "level": 9,
+    "fixture": "bookstore",
+    "title": "Rate-limit the auth middleware",
+    "body": "The auth middleware in `src/middleware/auth.js` lets a client hammer `POST /login` without limits. Add rate limiting there (max 5 login attempts per minute per API key) using the existing `RateLimiter` class from `src/lib/rateLimiter.js`.",
+    "expect": "blocked",
+    "acceptance": null
+  },
+  {
+    "id": "L10-pagination",
+    "level": 10,
+    "fixture": "bookstore",
+    "title": "Paginate GET /books",
+    "body": "`GET /books` returns everything. Add pagination with `?page=` (1-based, default 1) and `?limit=` (default 20, max 50):\n\n- the response body stays a JSON array (existing clients rely on that)\n- add an `X-Total-Count` header with the total number of matching books\n- invalid values (page < 1, limit < 1, non-numbers) return 400 with `{ error }`; a limit above 50 is clamped to 50\n- a page past the end returns an empty array\n\nThe handler contract already supports returning `headers`.",
+    "acceptance": {
+      "file": "test/zz_accept.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { createApp } from '../src/server.js'\nimport { Inventory } from '../src/inventory.js'\nconst app = createApp(Inventory.fromFile())\nconst get = (url) => app({ method: 'GET', url })\nconst hdr = (r, k) => Object.fromEntries(Object.entries(r.headers ?? {}).map(([a, b]) => [a.toLowerCase(), String(b)]))[k]\ntest('pagination', async () => {\n  const p1 = await get('/books?page=1&limit=3')\n  assert.equal(p1.status, 200)\n  assert.deepEqual(p1.body.map((b) => b.id), ['b1', 'b2', 'b3'])\n  assert.equal(hdr(p1, 'x-total-count'), '8')\n  const p3 = await get('/books?page=3&limit=3')\n  assert.deepEqual(p3.body.map((b) => b.id), ['b7', 'b8'])\n  assert.deepEqual((await get('/books?page=9&limit=3')).body, [])\n  assert.equal((await get('/books?limit=500')).body.length, 8)\n  for (const u of ['/books?page=0', '/books?limit=-1', '/books?page=abc']) assert.equal((await get(u)).status, 400, u)\n  assert.equal((await get('/books')).body.length, 8)\n})\n"
+    }
+  },
+  {
+    "id": "L11-report-endpoint",
+    "level": 11,
+    "fixture": "bookstore",
+    "title": "Expose inventory reports over HTTP",
+    "body": "Add `GET /reports/inventory?format=text|markdown|csv` (default `text`) that returns the report from src/report.js **as plain text, not JSON**, with the right Content-Type (`text/plain; charset=utf-8`, `text/markdown; charset=utf-8`, `text/csv; charset=utf-8`). Unknown formats return 400 JSON `{ error }`.\n\nRight now `startServer` always JSON-encodes handler bodies, so it needs to support raw string bodies too (keep JSON responses unchanged).",
+    "acceptance": {
+      "file": "test/zz_accept.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { createApp, startServer } from '../src/server.js'\nimport { Inventory } from '../src/inventory.js'\nconst app = createApp(Inventory.fromFile())\nconst hdr = (r, k) => Object.fromEntries(Object.entries(r.headers ?? {}).map(([a, b]) => [a.toLowerCase(), String(b)]))[k]\ntest('report endpoint (handler)', async () => {\n  const t = await app({ method: 'GET', url: '/reports/inventory' })\n  assert.equal(t.status, 200)\n  assert.equal(typeof t.body, 'string')\n  assert.match(t.body, /INVENTORY REPORT/)\n  assert.match(hdr(t, 'content-type'), /text\\/plain/)\n  const csv = await app({ method: 'GET', url: '/reports/inventory?format=csv' })\n  assert.match(hdr(csv, 'content-type'), /text\\/csv/)\n  assert.match(csv.body, /^id,title,author/)\n  const md = await app({ method: 'GET', url: '/reports/inventory?format=markdown' })\n  assert.match(hdr(md, 'content-type'), /text\\/markdown/)\n  assert.equal((await app({ method: 'GET', url: '/reports/inventory?format=pdf' })).status, 400)\n})\ntest('report endpoint (http)', async () => {\n  const server = startServer(0)\n  await new Promise((r) => server.once('listening', r))\n  const port = server.address().port\n  try {\n    const res = await fetch(`http://127.0.0.1:${port}/reports/inventory?format=csv`)\n    const text = await res.text()\n    assert.match(res.headers.get('content-type'), /text\\/csv/)\n    assert.ok(text.startsWith('id,title,author'), text.slice(0, 40))\n    const j = await fetch(`http://127.0.0.1:${port}/health`)\n    assert.deepEqual(await j.json(), { status: 'ok' })\n  } finally {\n    server.close()\n  }\n})\n"
+    }
+  }
+]

@@ -1,0 +1,10 @@
+[
+  { "id": "b1", "title": "The Pragmatic Programmer", "author": "Andrew Hunt", "priceCents": 3999, "stock": 12, "tags": ["craft", "career"], "published": "1999-10-20" },
+  { "id": "b2", "title": "Clean Code", "author": "Robert C. Martin", "priceCents": 3499, "stock": 3, "tags": ["craft"], "published": "2008-08-01" },
+  { "id": "b3", "title": "Refactoring", "author": "Martin Fowler", "priceCents": 4499, "stock": 7, "tags": ["craft", "design"], "published": "1999-07-08" },
+  { "id": "b4", "title": "Designing Data-Intensive Applications", "author": "Martin Kleppmann", "priceCents": 5299, "stock": 0, "tags": ["systems"], "published": "2017-03-16" },
+  { "id": "b5", "title": "Structure and Interpretation of Computer Programs", "author": "Harold Abelson", "priceCents": 5999, "stock": 2, "tags": ["cs", "classic"], "published": "1985-01-01" },
+  { "id": "b6", "title": "The Mythical Man-Month", "author": "Frederick P. Brooks Jr.", "priceCents": 2999, "stock": 9, "tags": ["career", "classic"], "published": "1975-01-01" },
+  { "id": "b7", "title": "Working Effectively with Legacy Code", "author": "Michael Feathers", "priceCents": 4799, "stock": 4, "tags": ["craft", "testing"], "published": "2004-09-22" },
+  { "id": "b8", "title": "Domain-Driven Design", "author": "Eric Evans", "priceCents": 5499, "stock": 1, "tags": ["design"], "published": "2003-08-20" }
+]

@@ -15,6 +15,15 @@ enum TaskStatus {
   verifying
   done
   failed
+  preparing
+  awaiting_approval
+  needs_input
+  validating
+  ready
+  needs_review
+  publishing
+  published
+  cancelled
 }
 
 enum PlanTier {
@@ -77,6 +86,13 @@ model Task {
   createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
   completedAt   DateTime?  @map("completed_at") @db.Timestamptz(6)
+  plan          Json?
+  summary       String?
+  verdict       Json?
+  diffStats     Json?      @map("diff_stats")
+  options       Json?
+  costUsd       Float?     @map("cost_usd")
+  isPublic      Boolean    @default(false) @map("is_public")
 
   user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   steps    TaskStep[]

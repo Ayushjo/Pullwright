@@ -22,12 +22,16 @@ export type SessionPublic = {
 const ALGO = "aes-256-gcm"
 
 function getKey(): Buffer {
-  const secret = process.env.SESSION_SECRET ?? "dev-insecure-session-secret-change-me"
+  const secret = process.env.SESSION_SECRET
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") throw new Error("SESSION_SECRET must be set in production")
+    return crypto.createHash("sha256").update("dev-insecure-session-secret-change-me").digest()
+  }
   // Derive a stable 32-byte key from the secret.
   return crypto.createHash("sha256").update(secret).digest()
 }
 
-function encrypt(plain: string): string {
+export function encrypt(plain: string): string {
   const iv = crypto.randomBytes(12)
   const cipher = crypto.createCipheriv(ALGO, getKey(), iv)
   const enc = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()])
@@ -35,7 +39,7 @@ function encrypt(plain: string): string {
   return [iv.toString("base64"), tag.toString("base64"), enc.toString("base64")].join(":")
 }
 
-function decrypt(payload: string): string {
+export function decrypt(payload: string): string {
   const [ivB64, tagB64, dataB64] = payload.split(":")
   if (!ivB64 || !tagB64 || !dataB64) throw new Error("Malformed ciphertext")
   const decipher = crypto.createDecipheriv(ALGO, getKey(), Buffer.from(ivB64, "base64"))
@@ -85,7 +89,8 @@ export class SessionStore {
   }
 
   async resolveStreamToken(token: string): Promise<string | null> {
-    return this.redis.get(`stream:${token}`)
+    // Single use: a leaked stream token can't be replayed.
+    return this.redis.getdel(`stream:${token}`)
   }
 }
 

@@ -7,7 +7,10 @@ export type TaskRegistryEntry = {
   issueUrl: string
   issueTitle: string
   issueNumber: number
-  status: "queued" | "running" | "done" | "failed"
+  status:
+    | "queued" | "running" | "done" | "failed"
+    | "preparing" | "planning" | "awaiting_approval" | "needs_input" | "validating"
+    | "ready" | "needs_review" | "publishing" | "published" | "cancelled"
   createdAt: string
   updatedAt: string
   prUrl?: string

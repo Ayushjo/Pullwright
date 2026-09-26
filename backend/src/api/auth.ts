@@ -1,3 +1,4 @@
+import crypto from "crypto"
 import type { Request, Response, NextFunction } from "express"
 import { SessionStore, SESSION_COOKIE, type SessionData } from "../auth/session.js"
 
@@ -7,6 +8,8 @@ declare global {
   namespace Express {
     interface Request {
       session?: SessionData
+      /** Authenticated with the operator API_TOKEN (scripts / evals), not a user session. */
+      isOperator?: boolean
     }
   }
 }
@@ -40,21 +43,22 @@ export function attachSession(sessionStore: SessionStore) {
 }
 
 /**
- * Requires an authenticated session. Falls back to the legacy shared API_TOKEN
- * (Bearer header or ?token=) so scripts/benchmarks keep working.
+ * Requires an authenticated session, or the operator API_TOKEN as a Bearer header
+ * (used by scripts/evals; never accepted in query strings). Fails closed.
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (req.session) return next()
 
   const token = process.env.API_TOKEN
-  if (token) {
-    const header = req.headers.authorization
-    if (header === `Bearer ${token}`) return next()
-    if (req.query.token === token) return next()
+  if (token && token.length >= 24) {
+    const header = req.headers.authorization ?? ""
+    const given = Buffer.from(header)
+    const want = Buffer.from(`Bearer ${token}`)
+    if (given.length === want.length && crypto.timingSafeEqual(given, want)) {
+      req.isOperator = true
+      return next()
+    }
   }
 
-  // If no session AND no API_TOKEN configured, allow through in dev.
-  if (!token && process.env.NODE_ENV !== "production") return next()
-
-  res.status(401).json({ error: "Unauthorized" })
+  res.status(401).json({ error: "Sign in required" })
 }

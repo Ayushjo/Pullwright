@@ -1,231 +1,364 @@
-import { Router } from "express";
-import logger from "../logger.js";
-import { v4 as uuidv4 } from "uuid";
-import { taskQueue } from "../BullMQ/worker.js";
-import type { EventBus } from "../events/eventBus.js";
-import type { CheckpointStore } from "../store/checkpointStore.js";
-import type { TaskRegistry } from "../store/taskRegistry.js";
-import type { EventLog } from "../events/eventLog.js";
-import { requireAuth } from "./auth.js";
-import { getBudgetGuard } from "../llm/budgetGuard.js";
-import { isDatabaseEnabled } from "../db/prisma.js";
-import { createTaskInDb, getStatsForUser, listTasksForUser, userOwnsTask, getMetricsFromDb, getTaskDetailFromDb, getTaskFromDb } from "../repositories/taskRepository.js";
+import { Router, type Request, type Response } from "express"
+import { z } from "zod"
+import path from "path"
+import { existsSync } from "fs"
+import rateLimit from "express-rate-limit"
+import logger from "../logger.js"
+import type { EventBus } from "../events/eventBus.js"
+import type { TaskRegistry } from "../store/taskRegistry.js"
+import type { EventLog } from "../events/eventLog.js"
+import { requireAuth } from "./auth.js"
+import { isDatabaseEnabled } from "../db/prisma.js"
+import { getStatsForUser, listTasksForUser, userOwnsTask, getMetricsFromDb, getTaskDetailFromDb } from "../repositories/taskRepository.js"
+import { createTask, enqueue } from "../agent/service.js"
+import { taskStore, TERMINAL, type TaskState } from "../agent/store.js"
+import { getSpendLedger } from "../agent/spend.js"
+import { restoreCheckpoint, tasksRoot } from "../agent/git.js"
+import { filterPatch, metricsOf } from "../agent/pipeline.js"
 
-function parseIssueNumber(issueUrl: string): number {
-  const m = issueUrl.match(/\/issues\/(\d+)/)
-  return m ? parseInt(m[1]!, 10) : 0
+const ISSUE_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/issues\/\d+\/?$/
+
+const CreateTask = z.object({
+  issueUrl: z.string().trim().regex(ISSUE_URL, "Paste a GitHub issue URL like https://github.com/owner/repo/issues/12"),
+  autoApprove: z.boolean().optional(),
+  autoPublish: z.boolean().optional(),
+  draft: z.boolean().optional(),
+})
+const LocalTask = z.object({
+  localRepo: z.string().min(1).max(500),
+  title: z.string().trim().min(3).max(300),
+  body: z.string().max(20_000).default(""),
+  autoApprove: z.boolean().optional(),
+})
+const Approve = z.object({
+  steps: z.array(z.object({ title: z.string().trim().min(3).max(300), files: z.array(z.string().max(300)).max(30) })).min(1).max(8).optional(),
+  note: z.string().max(4000).optional(),
+})
+const Message = z.object({ text: z.string().trim().min(1).max(4000) })
+const Reject = z.object({ path: z.string().min(1).max(500), rejected: z.boolean() })
+const Restore = z.object({ sha: z.string().regex(/^[0-9a-f]{7,40}$/) })
+
+/** Client-safe view of a task (no transcripts, paths or secrets). */
+export function publicView(s: TaskState) {
+  const { runMessages: _m, workDir: _w, planMessage: _p, instructions: _i, baseline, ...rest } = s
+  return {
+    ...rest,
+    baseline: baseline?.map((b) => ({ cmd: b.cmd, exitCode: b.exitCode })),
+    costUsd: getSpendLedger().taskSpent(s.taskId),
+    capUsd: getSpendLedger().taskCapUsd,
+  }
 }
 
-async function assertTaskAccess(req: import("express").Request, taskId: string): Promise<boolean> {
-  if (!isDatabaseEnabled() || !req.session?.userId) return true
-  return userOwnsTask(req.session.userId, taskId)
-}
+export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eventLog: EventLog) => {
+  const router = Router()
+  router.use(requireAuth)
 
-export const createRouter = (
-  eventBus: EventBus,
-  checkpointStore: CheckpointStore,
-  taskRegistry: TaskRegistry,
-  eventLog: EventLog,
-) => {
-  const router = Router();
-  router.use(requireAuth);
+  const createLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: Number(process.env.TASKS_PER_HOUR ?? 12),
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    keyGenerator: (req) => req.session?.userId ?? req.session?.login ?? "operator",
+    message: { error: "Task limit reached for this hour — try again later." },
+  })
 
-  router.post("/task", async (req, res) => {
+  async function load(req: Request, res: Response): Promise<TaskState | null> {
+    const taskId = String(req.params.taskId ?? "")
+    const s = await taskStore.get(taskId)
+    if (!s) {
+      res.status(404).json({ error: "Task not found" })
+      return null
+    }
+    if (!(await canAccess(req, s.taskId, s.userId))) {
+      res.status(403).json({ error: "Forbidden" })
+      return null
+    }
+    return s
+  }
+
+  async function canAccess(req: Request, taskId: string, ownerId?: string): Promise<boolean> {
+    if (req.isOperator) return true
+    const uid = req.session?.userId
+    if (!uid) return false
+    if (ownerId) return ownerId === uid
+    return isDatabaseEnabled() ? userOwnsTask(uid, taskId) : false
+  }
+
+  // Operator-only eval mode: run against a local git repo under EVAL_REPOS_DIR, never published.
+  router.post("/eval/task", async (req, res) => {
+    if (!req.isOperator) return res.status(403).json({ error: "Operator only" })
+    const parsed = LocalTask.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request" })
+    const root = path.resolve(process.env.EVAL_REPOS_DIR ?? path.join(tasksRoot(), "eval-repos"))
+    const repoPath = path.resolve(root, parsed.data.localRepo)
+    if (!repoPath.startsWith(root + path.sep) || !existsSync(path.join(repoPath, ".git"))) {
+      return res.status(400).json({ error: "localRepo must be a git repo inside EVAL_REPOS_DIR" })
+    }
+    const s = await createTask(
+      {
+        issueUrl: "",
+        local: { repoPath, title: parsed.data.title, body: parsed.data.body },
+        options: { autoApprove: parsed.data.autoApprove ?? true, autoPublish: false, draft: true },
+      },
+      taskRegistry,
+    )
+    res.status(201).json({ taskId: s.taskId, status: s.status })
+  })
+
+  router.post("/task", createLimiter, async (req, res) => {
+    const parsed = CreateTask.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request" })
+    if (!req.isOperator && !req.session?.userId && isDatabaseEnabled()) {
+      return res.status(401).json({ error: "Sign in again to create tasks" })
+    }
     try {
-      const { issueUrl } = req.body;
-      if (!issueUrl) {
-        return res.status(400).json({ error: "Issue URL is required" })
+      if (!req.isOperator && req.session?.userId) {
+        const active = (await taskRegistry.list(50)).filter((t) => ["queued", "preparing", "planning", "running", "validating", "publishing"].includes(t.status))
+        const mine = []
+        for (const t of active) {
+          const st = await taskStore.get(t.taskId)
+          if (st?.userId === req.session.userId) mine.push(t)
+        }
+        if (mine.length >= Number(process.env.MAX_ACTIVE_TASKS_PER_USER ?? 1)) {
+          return res.status(429).json({ error: "You already have a task running. Wait for it to finish or cancel it." })
+        }
       }
-
-      if (isDatabaseEnabled() && !req.session?.userId) {
-        return res.status(401).json({ error: "Sign in required to create tasks" })
-      }
-
-      const taskId = uuidv4();
-      const issueNumber = parseIssueNumber(issueUrl)
-      const githubToken = req.session?.accessToken
-      const githubLogin = req.session?.login
-
-      eventBus.subscribe(taskId)
-      const now = new Date().toISOString()
-      await taskRegistry.register({
-        taskId,
-        issueUrl,
-        issueTitle: `Issue #${issueNumber}`,
-        issueNumber,
-        status: "queued",
-        createdAt: now,
-        updatedAt: now,
-      })
-
-      if (req.session?.userId) {
-        await createTaskInDb({
-          taskId,
-          userId: req.session.userId,
-          issueUrl,
-          issueTitle: `Issue #${issueNumber}`,
-          issueNumber,
-          ...(githubLogin ? { githubLogin } : {}),
-        })
-      }
-
-      await taskQueue.add("tasks", { taskId, issueUrl, githubToken, githubLogin })
-      logger.info("Task created: " + taskId + (githubLogin ? ` (as ${githubLogin})` : ""))
-      res.status(200).json({
-        taskId,
-        issueUrl,
-        issueNumber,
-        status: "queued",
-        createdAt: new Date().toISOString(),
-      })
-    } catch (error) {
-      logger.error("Error creating task: " + error)
-      res.status(500).json({ error: "Internal server error" })
+      const s = await createTask(
+        {
+          issueUrl: parsed.data.issueUrl,
+          ...(req.session?.userId ? { userId: req.session.userId } : {}),
+          ...(req.session?.login ? { githubLogin: req.session.login } : {}),
+          ...(req.session?.accessToken ? { githubToken: req.session.accessToken } : {}),
+          options: {
+            ...(parsed.data.autoApprove !== undefined ? { autoApprove: parsed.data.autoApprove } : {}),
+            ...(parsed.data.autoPublish !== undefined ? { autoPublish: parsed.data.autoPublish } : {}),
+            ...(parsed.data.draft !== undefined ? { draft: parsed.data.draft } : {}),
+          },
+        },
+        taskRegistry,
+      )
+      logger.info(`Task created ${s.taskId} for ${s.owner}/${s.repo}#${s.issueNumber}${req.session?.login ? ` by ${req.session.login}` : ""}`)
+      res.status(201).json({ taskId: s.taskId, status: s.status, issueUrl: s.issueUrl, issueNumber: s.issueNumber, createdAt: s.createdAt })
+    } catch (err) {
+      logger.error(`create task failed: ${(err as Error).message}`)
+      res.status(400).json({ error: (err as Error).message })
     }
-  })
-
-  router.get("/task/:taskId/stream", async (req, res) => {
-    const { taskId } = req.params;
-
-    if (!(await assertTaskAccess(req, taskId))) {
-      return res.status(403).json({ error: "Forbidden" })
-    }
-
-    res.setHeader("Content-Type", "text/event-stream")
-    res.setHeader("Cache-Control", "no-cache")
-    res.setHeader("Connection", "keep-alive")
-    res.flushHeaders()
-
-    const stored = await eventLog.range(taskId, 0)
-    for (const event of stored) {
-      res.write(`data: ${JSON.stringify(event)}\n\n`)
-    }
-
-    const emitter = eventBus.subscribe(taskId)
-
-    const onEvent = (event: unknown) => {
-      res.write(`data: ${JSON.stringify(event)}\n\n`)
-      const ev = event as { type: string }
-      if (ev.type === "task_complete" || ev.type === "task_failed") {
-        eventBus.cleanup(taskId)
-        res.end()
-      }
-    }
-
-    emitter.on("event", onEvent)
-
-    req.on("close", () => {
-      emitter.off("event", onEvent)
-    })
-  })
-
-  router.get("/task/:taskId/events", async (req, res) => {
-    const { taskId } = req.params
-    if (!(await assertTaskAccess(req, taskId))) {
-      return res.status(403).json({ error: "Forbidden" })
-    }
-    const events = await eventLog.range(taskId, 0)
-    res.status(200).json(events)
   })
 
   router.get("/task/:taskId", async (req, res) => {
-    const { taskId } = req.params
-    if (!(await assertTaskAccess(req, taskId))) {
-      return res.status(403).json({ error: "Forbidden" })
+    const taskId = String(req.params.taskId)
+    const s = await taskStore.get(taskId)
+    if (s) {
+      if (!(await canAccess(req, taskId, s.userId))) return res.status(403).json({ error: "Forbidden" })
+      return res.json(publicView(s))
     }
-    try {
-      const registry = await taskRegistry.get(taskId)
-      const state = await checkpointStore.load(taskId)
-      if (state && registry) {
-        return res.status(200).json({ ...state, status: registry.status, prUrl: registry.prUrl })
-      }
-      if (state) return res.status(200).json(state)
-      if (registry) return res.status(200).json(registry)
+    if (!(await canAccess(req, taskId))) return res.status(404).json({ error: "Task not found" })
+    const fromDb = await getTaskDetailFromDb(taskId)
+    if (fromDb) return res.json(fromDb)
+    res.status(404).json({ error: "Task not found" })
+  })
 
-      const fromDb = await getTaskDetailFromDb(taskId)
-      if (fromDb) return res.status(200).json(fromDb)
+  router.get("/task/:taskId/events", async (req, res) => {
+    const taskId = String(req.params.taskId)
+    const s = await taskStore.get(taskId)
+    if (!(await canAccess(req, taskId, s?.userId))) return res.status(403).json({ error: "Forbidden" })
+    const after = Number(req.query.after ?? -1)
+    const events = await eventLog.range(taskId, Number.isFinite(after) && after >= 0 ? after + 1 : 0)
+    res.json(events)
+  })
 
-      return res.status(404).json({ error: "Task not found" })
-    } catch (error) {
-      logger.error("Error fetching task state: " + error)
-      res.status(500).json({ error: "Internal server error" })
+  router.get("/task/:taskId/stream", async (req, res) => {
+    const taskId = String(req.params.taskId)
+    const s = await taskStore.get(taskId)
+    if (!(await canAccess(req, taskId, s?.userId))) return res.status(403).json({ error: "Forbidden" })
+
+    res.setHeader("Content-Type", "text/event-stream")
+    res.setHeader("Cache-Control", "no-cache, no-transform")
+    res.setHeader("Connection", "keep-alive")
+    res.setHeader("X-Accel-Buffering", "no")
+    res.flushHeaders()
+
+    const lastId = Number(req.header("Last-Event-ID") ?? req.query.after ?? -1)
+    let sent = Number.isFinite(lastId) ? lastId : -1
+    const emitter = eventBus.subscribe(taskId)
+    const buffered: { seq: number; event: unknown }[] = []
+    let replaying = true
+    const write = (seq: number, event: unknown) => {
+      if (seq <= sent) return
+      sent = seq
+      res.write(`id: ${seq}\ndata: ${JSON.stringify(event)}\n\n`)
     }
+    const onEvent = (event: unknown, seq: number) => (replaying ? buffered.push({ seq, event }) : write(seq, event))
+    emitter.on("event", onEvent)
+
+    const from = sent + 1
+    const stored = await eventLog.range(taskId, from)
+    stored.forEach((e, i) => write(from + i, e))
+    replaying = false
+    for (const b of buffered) write(b.seq, b.event)
+
+    const heartbeat = setInterval(() => res.write(`: ping\n\n`), 15_000)
+    req.on("close", () => {
+      clearInterval(heartbeat)
+      emitter.off("event", onEvent)
+      eventBus.cleanup(taskId)
+    })
   })
 
   router.get("/task/:taskId/metrics", async (req, res) => {
-    const { taskId } = req.params
-    if (!(await assertTaskAccess(req, taskId))) {
-      return res.status(403).json({ error: "Forbidden" })
+    const taskId = String(req.params.taskId)
+    const s = await taskStore.get(taskId)
+    if (!(await canAccess(req, taskId, s?.userId))) return res.status(403).json({ error: "Forbidden" })
+    if (s) return res.json(metricsOf(s))
+    const m = (await taskRegistry.getMetrics(taskId)) ?? (await getMetricsFromDb(taskId))
+    if (!m) return res.status(404).json({ error: "Metrics not found" })
+    res.json(m)
+  })
+
+  router.post("/task/:taskId/approve", async (req, res) => {
+    const s = await load(req, res)
+    if (!s) return
+    if (s.status !== "awaiting_approval") return res.status(409).json({ error: `Task is ${s.status}, not awaiting approval` })
+    const parsed = Approve.safeParse(req.body ?? {})
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid plan" })
+    if (parsed.data.steps && s.plan) {
+      s.plan.steps = parsed.data.steps
+      const files = new Map(s.plan.files.map((f) => [f.path, f]))
+      for (const st of parsed.data.steps) for (const f of st.files) if (!files.has(f)) files.set(f, { path: f, new: false })
+      s.plan.files = [...files.values()]
     }
-    const metrics = (await taskRegistry.getMetrics(taskId)) ?? (await getMetricsFromDb(taskId))
-    if (!metrics) return res.status(404).json({ error: "Metrics not found" })
-    res.status(200).json(metrics)
+    if (parsed.data.note) await taskStore.pushMessage(s.taskId, parsed.data.note)
+    await taskStore.put({ ...s, status: "running", statusDetail: "Plan approved" })
+    await eventBus.emit(s.taskId, { type: "status", status: "running", detail: "Plan approved" })
+    await enqueue("run", s.taskId)
+    res.json({ ok: true })
+  })
+
+  router.post("/task/:taskId/message", async (req, res) => {
+    const s = await load(req, res)
+    if (!s) return
+    const parsed = Message.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({ error: "Message is required" })
+    const text = parsed.data.text
+    if (TERMINAL.includes(s.status)) return res.status(409).json({ error: `Task is ${s.status}` })
+    if (s.status === "needs_input") {
+      await eventBus.emit(s.taskId, { type: "user_message", text })
+      if (!s.plan || s.plan.blocked) {
+        // Clarification during planning: re-plan with the answer.
+        const next: TaskState = { ...s, status: "planning", planMessage: `${s.planMessage ?? ""}\n\n## Clarification from the user\n${text}` }
+        delete next.pendingQuestion
+        await taskStore.put(next)
+        await enqueue("plan", s.taskId)
+      } else {
+        await taskStore.pushMessage(s.taskId, text)
+        await taskStore.put({ ...s, status: "running" })
+        await enqueue("run", s.taskId)
+      }
+      return res.json({ ok: true, resumed: true })
+    }
+    if (s.status === "ready" || s.status === "needs_review") {
+      // Follow-up change request on a finished run (Jules-style feedback).
+      await eventBus.emit(s.taskId, { type: "user_message", text })
+      await taskStore.pushMessage(s.taskId, text)
+      await taskStore.put({ ...s, status: "running", statusDetail: "Applying your feedback" })
+      await enqueue("run", s.taskId)
+      return res.json({ ok: true, resumed: true })
+    }
+    await taskStore.pushMessage(s.taskId, text)
+    res.json({ ok: true, queued: true })
+  })
+
+  router.post("/task/:taskId/cancel", async (req, res) => {
+    const s = await load(req, res)
+    if (!s) return
+    if (TERMINAL.includes(s.status)) return res.status(409).json({ error: `Task is already ${s.status}` })
+    await taskStore.cancel(s.taskId)
+    if (["awaiting_approval", "needs_input", "ready", "needs_review", "queued"].includes(s.status)) {
+      await taskStore.put({ ...s, status: "cancelled", statusDetail: "Cancelled by user", finishedAt: new Date().toISOString() })
+      await eventBus.emit(s.taskId, { type: "status", status: "cancelled", detail: "Cancelled by user" })
+      await taskStore.dropToken(s.taskId)
+    }
+    res.json({ ok: true })
+  })
+
+  router.get("/task/:taskId/diff", async (req, res) => {
+    const s = await load(req, res)
+    if (!s) return
+    const patch = (await taskStore.loadPatch(s.taskId)) ?? ""
+    res.json({ patch, stats: s.stats ?? [], rejectedFiles: s.rejectedFiles, acceptedPatch: filterPatch(patch, new Set(s.rejectedFiles)) })
+  })
+
+  router.post("/task/:taskId/files", async (req, res) => {
+    const s = await load(req, res)
+    if (!s) return
+    const parsed = Reject.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({ error: "Invalid request" })
+    if (!["ready", "needs_review"].includes(s.status)) return res.status(409).json({ error: "Files can only be reviewed before publishing" })
+    const set = new Set(s.rejectedFiles)
+    if (parsed.data.rejected) set.add(parsed.data.path)
+    else set.delete(parsed.data.path)
+    await taskStore.put({ ...s, rejectedFiles: [...set] })
+    res.json({ rejectedFiles: [...set] })
+  })
+
+  router.post("/task/:taskId/restore", async (req, res) => {
+    const s = await load(req, res)
+    if (!s) return
+    const parsed = Restore.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({ error: "Invalid checkpoint" })
+    if (!["ready", "needs_review"].includes(s.status) || !s.workDir) return res.status(409).json({ error: "Checkpoints can be restored only when the agent is not running" })
+    if (!s.checkpoints.some((c) => c.sha.startsWith(parsed.data.sha))) return res.status(404).json({ error: "Unknown checkpoint" })
+    await restoreCheckpoint(s.workDir, parsed.data.sha)
+    await eventBus.emit(s.taskId, { type: "notice", level: "info", message: `Restored checkpoint ${parsed.data.sha.slice(0, 7)}` })
+    res.json({ ok: true })
+  })
+
+  router.post("/task/:taskId/publish", async (req, res) => {
+    const s = await load(req, res)
+    if (!s) return
+    if (!["ready", "needs_review"].includes(s.status)) return res.status(409).json({ error: `Task is ${s.status}; nothing to publish yet` })
+    await taskStore.put({ ...s, status: "publishing", statusDetail: "Queued for publishing" })
+    await enqueue("publish", s.taskId)
+    res.json({ ok: true })
   })
 
   router.post("/task/:taskId/retry", async (req, res) => {
-    const { taskId } = req.params
-    if (!(await assertTaskAccess(req, taskId))) {
-      return res.status(403).json({ error: "Forbidden" })
+    const s = await load(req, res)
+    if (!s) return
+    if (!["failed", "cancelled", "needs_review"].includes(s.status)) return res.status(409).json({ error: `Task is ${s.status}` })
+    if (!req.isOperator && !req.session?.accessToken) return res.status(401).json({ error: "Sign in again" })
+    if (req.session?.accessToken) await taskStore.putToken(s.taskId, req.session.accessToken)
+    await taskStore.clearCancel(s.taskId)
+    const reset: TaskState = {
+      ...s,
+      status: "queued",
+      statusDetail: "Retrying",
+      rejectedFiles: [],
+      checkpoints: [],
     }
-    const bodyIssueUrl = typeof req.body?.issueUrl === "string" ? req.body.issueUrl : undefined
-    const checkpoint = await checkpointStore.load(taskId)
-    let registry = await taskRegistry.get(taskId)
-    const fromDb = !checkpoint && !registry ? await getTaskFromDb(taskId) : null
-    if (!checkpoint && !registry && bodyIssueUrl) {
-      await taskRegistry.registerOrUpdate(taskId, {
-        issueUrl: bodyIssueUrl,
-        issueNumber: parseIssueNumber(bodyIssueUrl),
-        status: "failed",
-      })
-      registry = await taskRegistry.get(taskId)
-    }
-    if (!checkpoint && !registry && !fromDb) {
-      return res.status(404).json({ error: "Task not found" })
-    }
-    const issueUrl = checkpoint?.issueUrl ?? registry?.issueUrl ?? fromDb?.issueUrl
-    if (!issueUrl) return res.status(400).json({ error: "No issue URL" })
-
-    const githubToken = req.session?.accessToken
-    const githubLogin = req.session?.login
-    await eventLog.clear(taskId)
-    eventBus.cleanup(taskId)
-    eventBus.subscribe(taskId)
-    await getBudgetGuard().resetCallCounters(taskId)
-    await taskRegistry.update(taskId, { status: "running" })
-    await taskQueue.add("tasks", { taskId, issueUrl, githubToken, githubLogin })
-    res.status(200).json({ taskId, status: "requeued" })
+    for (const k of ["plan", "planChecklist", "runMessages", "pendingQuestion", "summary", "gate", "verdict", "stats", "failureReason", "finishedAt", "workDir", "baseline", "planMessage"] as const) delete reset[k]
+    await taskStore.put(reset)
+    await eventLog.clear(s.taskId)
+    await enqueue("plan", s.taskId)
+    res.json({ ok: true })
   })
 
   router.get("/tasks", async (req, res) => {
-    if (isDatabaseEnabled() && req.session?.userId) {
-      const tasks = await listTasksForUser(req.session.userId, 50)
-      return res.status(200).json(tasks)
-    }
-    const tasks = await taskRegistry.list(50)
-    res.status(200).json(tasks)
+    if (req.session?.userId && isDatabaseEnabled()) return res.json(await listTasksForUser(req.session.userId, 50))
+    if (req.isOperator) return res.json(await taskRegistry.list(50))
+    res.json([])
   })
 
   router.get("/stats", async (req, res) => {
-    if (isDatabaseEnabled() && req.session?.userId) {
-      const stats = await getStatsForUser(req.session.userId)
-      return res.status(200).json(stats)
-    }
-    const tasks = await taskRegistry.list(200)
-    const stats = { total: tasks.length, running: 0, done: 0, failed: 0, queued: 0 }
-    for (const t of tasks) {
-      if (t.status === "running") stats.running++
-      else if (t.status === "done") stats.done++
-      else if (t.status === "failed") stats.failed++
-      else if (t.status === "queued") stats.queued++
-    }
-    res.status(200).json(stats)
+    if (req.session?.userId && isDatabaseEnabled()) return res.json(await getStatsForUser(req.session.userId))
+    res.json({ total: 0, running: 0, done: 0, failed: 0, queued: 0, needsYou: 0, totalCostUsd: 0 })
   })
 
-  router.get("/budget", async (_req, res) => {
-    const guard = getBudgetGuard()
-    const snap = await guard.snapshot()
-    res.status(200).json(snap)
+  router.get("/budget", async (req, res) => {
+    const l = getSpendLedger()
+    l.refresh()
+    res.json({ taskCapUsd: l.taskCapUsd, ...(req.isOperator ? { platformSpentUsd: l.platformSpent(), hardStopUsd: l.hardStopUsd } : {}) })
   })
 
-  return router;
+  return router
 }

@@ -1,0 +1,154 @@
+import { git, diffStat, type FileStat } from "./git.js"
+import { newSyntaxErrors } from "./tools/syntax.js"
+import type { Workspace } from "./workspace.js"
+import type { Sandbox } from "./sandbox.js"
+import { truncateOutput } from "./sandbox.js"
+
+/**
+ * Deterministic pre-PR gate (no LLM). A change only reaches review/publish if:
+ *   - the diff is non-empty and not whitespace-only
+ *   - no file is gutted (large deletions) unless the plan says so
+ *   - no lockfiles / build artefacts / env files / dependency edits unless planned
+ *   - no new syntax errors in any changed file
+ *   - verification commands that passed on the base commit still pass
+ */
+
+export type VerifyRun = { cmd: string; exitCode: number; output: string; durationMs: number; failures: string[] }
+
+/** Failing test names from common reporters (node:test TAP/spec, vitest/jest, pytest, mocha). */
+export function parseFailures(output: string): string[] {
+  const out = new Set<string>()
+  const clean = output.replace(/\x1b\[[0-9;]*m/g, "")
+  for (const line of clean.split("\n")) {
+    let m = line.match(/^\s*not ok \d+ - (.+?)(?:\s+#.*)?$/)
+    if (!m) m = line.match(/^\s*✖ (.+?) \(\d[\d.]*m?s\)\s*$/)
+    if (!m) m = line.match(/^\s*(?:×|✕|✗)\s+(.+?)(?:\s+\d+\s?ms)?\s*$/)
+    if (!m) m = line.match(/^\s*FAIL\s+(\S.*?)\s*$/)
+    if (!m) m = line.match(/^FAILED\s+(\S+)/)
+    if (m?.[1] && !/^failing tests:?$/i.test(m[1].trim())) out.add(m[1].trim())
+  }
+  return [...out]
+}
+export type GateResult = {
+  ok: boolean
+  problems: string[]
+  warnings: string[]
+  stats: FileStat[]
+  verify: { cmd: string; before: number | null; after: number; output: string; newFailures: string[]; fixed: string[] }[]
+}
+
+const ARTEFACT = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|[^/]+\.tsbuildinfo|[^/]+\.log|\.env(\.[^/]*)?|\.DS_Store)$|(^|\/)(node_modules|dist|build|coverage|\.next)\//
+const SCRATCH = /(^|\/)(scratch|tmp|temp|debug|repro|reproduce|test_repro|try)[^/]*\.(js|ts|mjs|cjs|py|sh)$/i
+
+export async function runVerify(sb: Sandbox, cmds: string[], timeoutMs = 300_000): Promise<VerifyRun[]> {
+  const out: VerifyRun[] = []
+  for (const cmd of cmds) {
+    const r = await sb.exec(cmd, timeoutMs)
+    out.push({ cmd, exitCode: r.timedOut ? 124 : r.exitCode, output: truncateOutput(r.stdout, 4_000), durationMs: r.durationMs, failures: parseFailures(r.stdout) })
+  }
+  return out
+}
+
+export async function runGate(input: {
+  ws: Workspace
+  sb: Sandbox
+  baseSha: string
+  plannedFiles: string[]
+  planText: string
+  verifyCmds: string[]
+  baseline: VerifyRun[]
+  /** Unplanned files already flagged once; a second finish with them is accepted as a warning. */
+  unplannedSeen?: Set<string>
+}): Promise<GateResult> {
+  const { ws, baseSha } = input
+  const problems: string[] = []
+  const warnings: string[] = []
+  const stats = await diffStat(ws.root, baseSha)
+  const planned = new Set(input.plannedFiles)
+  const allowRewrite = /\b(rewrite|replace|remove|delete|drop|strip|rename|move)\b/i.test(input.planText)
+
+  if (stats.length === 0) {
+    problems.push("The diff is empty — no files were changed. Implement the change before calling finish.")
+    return { ok: false, problems, warnings, stats, verify: [] }
+  }
+  const ignoringWs = (await git(ws.root, ["diff", "--cached", "-w", "--ignore-blank-lines", "--stat", baseSha])).trim()
+  if (!ignoringWs) problems.push("The diff only changes whitespace/blank lines. Make the actual change.")
+
+  for (const s of stats) {
+    if (ARTEFACT.test(s.path) && !planned.has(s.path)) {
+      problems.push(`${s.path} is a lockfile/build artefact/env file and should not be in this change. Revert it (restore original content or delete it if new).`)
+    }
+    if (SCRATCH.test(s.path) && s.status === "A" && !planned.has(s.path)) {
+      problems.push(`${s.path} looks like a scratch/debug file. Delete it before finishing.`)
+    }
+    if (s.status === "M" && !allowRewrite) {
+      const before = await git(ws.root, ["show", `${baseSha}:${s.path}`]).catch(() => "")
+      const origLines = before.split("\n").length
+      if (s.removed >= 30 && s.removed > origLines * 0.4 && s.added < s.removed * 0.6) {
+        problems.push(
+          `${s.path}: ${s.removed} of ${origLines} lines were removed (only ${s.added} added). This looks like the file was truncated or rewritten. Restore the removed code and make a targeted edit.`,
+        )
+      }
+    }
+    if (s.status === "D" && !planned.has(s.path) && !allowRewrite) {
+      problems.push(`${s.path} was deleted but the plan does not mention deleting it. Restore it.`)
+    }
+    if (/(^|\/)package\.json$/.test(s.path) && !planned.has(s.path)) {
+      const d = await git(ws.root, ["diff", "--cached", baseSha, "--", s.path])
+      if (/^[+-]\s*"[^"]+":\s*"[\^~]?\d/m.test(d)) problems.push(`${s.path}: dependency versions changed but the plan does not include dependency changes. Revert those lines.`)
+    }
+    if (!planned.has(s.path) && !/(^|\/)(__tests__|tests?)\/|\.(test|spec)\.[a-z]+$/.test(s.path) && s.status !== "D") {
+      if (input.unplannedSeen && !input.unplannedSeen.has(s.path)) {
+        input.unplannedSeen.add(s.path)
+        problems.push(
+          `${s.path} is not part of the approved plan. Revert your changes to it (restore the original lines exactly) unless this issue cannot be resolved without it — if it truly is required, keep it and explain why in your finish summary.`,
+        )
+      } else warnings.push(`${s.path} was changed but is not in the approved plan.`)
+    }
+    if (s.status !== "D") {
+      const before = s.status === "A" ? null : await git(ws.root, ["show", `${baseSha}:${s.path}`]).catch(() => null)
+      const after = await ws.read(s.path).catch(() => null)
+      if (after !== null) {
+        const errs = newSyntaxErrors(s.path, before, after)
+        if (errs.length) problems.push(`${s.path} has syntax errors: ${errs.slice(0, 3).map((e) => `line ${e.line}: ${e.message}`).join("; ")}`)
+      }
+    }
+  }
+
+  // Verification commands: only regressions block — a command that passed now fails, or
+  // (for suites that were already red) tests that newly fail. Pre-existing failures are warnings.
+  const after = await runVerify(input.sb, input.verifyCmds)
+  const verify = after.map((a) => {
+    const b = input.baseline.find((x) => x.cmd === a.cmd)
+    const before = new Set(b?.failures ?? [])
+    const now = new Set(a.failures)
+    return {
+      cmd: a.cmd,
+      before: b ? b.exitCode : null,
+      after: a.exitCode,
+      output: a.output,
+      newFailures: [...now].filter((f) => !before.has(f)),
+      fixed: [...before].filter((f) => !now.has(f)),
+    }
+  })
+  for (const v of verify) {
+    if (v.after === 0) continue
+    if (v.before === 0 || v.before === null) {
+      problems.push(`\`${v.cmd}\` ${v.before === 0 ? "passed before your change but now fails" : "fails"} (exit ${v.after}):\n${truncateOutput(v.output, 2_500)}`)
+    } else if (v.newFailures.length) {
+      problems.push(`\`${v.cmd}\`: your change broke tests that passed before: ${v.newFailures.slice(0, 8).join("; ")}\n${truncateOutput(v.output, 2_000)}`)
+    } else {
+      warnings.push(`\`${v.cmd}\` was already failing before this change (exit ${v.before}) and still fails${v.fixed.length ? ` (fixed: ${v.fixed.join("; ")})` : ""}.`)
+    }
+  }
+
+  return { ok: problems.length === 0, problems, warnings, stats, verify }
+}
+
+export function gateFeedback(g: GateResult): string {
+  return (
+    `The platform validated your change and found problems. Fix them, then call finish again.\n\n` +
+    g.problems.map((p, i) => `${i + 1}. ${p}`).join("\n\n") +
+    (g.warnings.length ? `\n\nWarnings (fix if they are mistakes):\n- ${g.warnings.join("\n- ")}` : "")
+  )
+}

@@ -1,1 +1,0 @@
-{"root":["./src/index.ts","./src/logger.ts","./src/configs/dockerconfig.ts","./src/sandbox/index.ts","./src/workers/dockerworker.ts"],"version":"6.0.3"}

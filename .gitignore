@@ -9,3 +9,7 @@ backend/benchmarks/runBenchmark.js
 backend/benchmarks/runBenchmark.js.map
 backend/benchmarks/runBenchmark.d.ts
 backend/benchmarks/runBenchmark.d.ts.map
+backend/.spend/
+backend/.tasks/
+references/
+*.log
