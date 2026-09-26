@@ -158,3 +158,26 @@ export async function logout(): Promise<void> {
     /* ignore */
   }
 }
+
+/* ── Billing & keys ── */
+export type KeyProvider = 'openai' | 'openrouter'
+export type BillingInfo = {
+  entitlement: {
+    tier: 'free' | 'pro'
+    runsIncluded: number
+    runsUsed: number
+    hostedAllowanceUsd: number
+    hostedSpentUsd: number
+    key: { kind: 'byok'; provider: KeyProvider } | { kind: 'platform' } | null
+    reason?: string
+  }
+  keys: { provider: KeyProvider; last4: string; model: string | null; createdAt: string; lastUsedAt: string | null }[]
+  subscription: { tier: string; status: string; currentPeriodEnd: string | null; cancelAtPeriodEnd: boolean } | null
+  paymentsEnabled: boolean
+}
+export const getBilling = () => request<BillingInfo>('/api/billing')
+export const saveApiKey = (provider: KeyProvider, key: string, model?: string) =>
+  post<{ keys: BillingInfo['keys'] }>('/api/keys', { provider, key, ...(model ? { model } : {}) })
+export const deleteApiKey = (provider: KeyProvider) => request<{ keys: BillingInfo['keys'] }>(`/api/keys/${provider}`, { method: 'DELETE' })
+export const startCheckout = () => post<{ url: string }>('/api/billing/checkout')
+export const openBillingPortal = () => post<{ url: string }>('/api/billing/portal')

@@ -23,7 +23,8 @@ type PublicTask = {
   completedAt?: string | null
 }
 
-const SPEEDS = [1, 4, 10, 20]
+const SPEEDS = [1, 5, 20, 50]
+const HIDDEN = new Set(['llm_call', 'cost', 'checkpoint', 'metrics_update', 'phase_start', 'phase_end', 'plan_update', 'diff_ready'])
 
 /**
  * Public replay of a real run (the owner chose to share it). Events are re-played on a
@@ -35,7 +36,7 @@ export default function Replay() {
   const [events, setEvents] = useState<TaskEvent[]>([])
   const [shown, setShown] = useState(0)
   const [playing, setPlaying] = useState(true)
-  const [speed, setSpeed] = useState(10)
+  const [speed, setSpeed] = useState(20)
   const [tab, setTab] = useState<'activity' | 'changes'>('activity')
   const [error, setError] = useState<string | null>(null)
 
@@ -53,17 +54,19 @@ export default function Replay() {
   const delays = useMemo(
     () =>
       events.map((e, i) => {
+        // Bookkeeping events are invisible in the feed — don't spend screen time on them.
+        if (HIDDEN.has(e.type)) return 0
         const prev = events[i - 1]
-        if (!prev?.timestamp || !e.timestamp) return 150
+        if (!prev?.timestamp || !e.timestamp) return 120
         const gap = Date.parse(e.timestamp) - Date.parse(prev.timestamp)
-        return Math.min(2500, Math.max(40, gap))
+        return Math.min(1500, Math.max(60, gap))
       }),
     [events],
   )
 
   useEffect(() => {
     if (!playing || shown >= events.length) return
-    const t = setTimeout(() => setShown((n) => n + 1), (delays[shown] ?? 150) / speed)
+    const t = setTimeout(() => setShown((n) => n + 1), (delays[shown] ?? 120) / speed)
     return () => clearTimeout(t)
   }, [playing, shown, events.length, delays, speed])
 

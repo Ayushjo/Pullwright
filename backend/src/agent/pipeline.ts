@@ -18,6 +18,7 @@ import { judgePatch } from "./judge.js"
 import { groundIssue, groundingNote } from "./grounding.js"
 import { checkpoint, cloneForTask, cloneLocal, diffStat, diffVs, fetchIssue, git, publishPatch, redact, tasksRoot } from "./git.js"
 import { taskStore, type TaskState, type TaskStatus } from "./store.js"
+import { loadKey } from "../billing/index.js"
 
 export type StageName = "plan" | "run" | "publish"
 export type Enqueue = (stage: StageName, taskId: string) => Promise<void>
@@ -28,6 +29,21 @@ function spec(role: "plan" | "run" | "judge", override?: string): ModelSpec {
   const model = override && role !== "judge" ? override : (env ?? "gpt-5-mini")
   const effort = (process.env[`PW_${role.toUpperCase()}_EFFORT`] as ModelSpec["reasoningEffort"]) ?? "low"
   return { provider: "openai", model, reasoningEffort: effort }
+}
+
+/** The model spec for a task, paid with the user's own key (BYOK) when the task was created that way. */
+async function modelSpec(s: TaskState, role: "plan" | "run" | "judge"): Promise<ModelSpec> {
+  const base = spec(role, s.options.model)
+  if (s.options.keyKind !== "byok" || !s.userId || !s.options.keyProvider) return base
+  const k = await loadKey(s.userId, s.options.keyProvider)
+  if (!k) throw new Error("Your API key was removed — add it again in Settings and retry.")
+  const model = k.model || base.model
+  return {
+    ...base,
+    provider: s.options.keyProvider,
+    apiKey: k.key,
+    model: s.options.keyProvider === "openrouter" && !model.includes("/") ? `openai/${model}` : model,
+  }
 }
 
 const LIMITS = {
@@ -187,7 +203,7 @@ export class Pipeline {
       const ws = new Workspace(s.workDir!)
 
       sb = await Sandbox.create(taskId, ws.root, { network: false, readOnlyWorkspace: true })
-      const loop = new AgentLoop(taskId, "plan", spec("plan", s.options.model), PLAN_SYSTEM, s.planMessage!, planTools(ws, sb), LIMITS.plan, {
+      const loop = new AgentLoop(taskId, "plan", await modelSpec(s, "plan"), PLAN_SYSTEM, s.planMessage!, planTools(ws, sb), LIMITS.plan, {
         emit: this.loopEvents(s, "plan"),
         isCancelled: () => taskStore.isCancelled(taskId),
       })
@@ -239,7 +255,7 @@ export class Pipeline {
           const verifyText = (s.gate?.verify ?? [])
             .map((v) => `${v.cmd}: exit before=${v.before ?? "n/a"} after=${v.after}` + (v.newFailures.length ? `; NEW failures: ${v.newFailures.join("; ")}` : "; no new test failures") + (v.fixed.length ? `; now passing: ${v.fixed.join("; ")}` : ""))
             .join("\n")
-          const v = await judgePatch(spec("judge"), taskId, {
+          const v = await judgePatch(await modelSpec(s, "judge"), taskId, {
             title: s.title,
             body: s.body,
             plan: planText,
@@ -270,7 +286,7 @@ export class Pipeline {
       const loop = new AgentLoop(
         taskId,
         "run",
-        spec("run", s.options.model),
+        await modelSpec(s, "run"),
         RUN_SYSTEM,
         runTaskMessage(s.planMessage, s.plan),
         runTools(ws, sandbox, (steps) => {

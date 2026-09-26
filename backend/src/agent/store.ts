@@ -29,6 +29,9 @@ export type TaskOptions = {
   autoPublish: boolean
   draft: boolean
   model?: string
+  /** Which API key pays for this task: the operator's platform key, or the user's own. */
+  keyKind?: "platform" | "byok"
+  keyProvider?: "openai" | "openrouter"
 }
 
 export type TaskState = {

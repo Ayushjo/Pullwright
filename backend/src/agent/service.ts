@@ -101,6 +101,8 @@ export async function createTask(input: CreateTaskInput, registry: TaskRegistry)
       autoPublish: input.options?.autoPublish ?? false,
       draft: input.options?.draft ?? true,
       ...(input.options?.model ? { model: input.options.model } : {}),
+      keyKind: input.options?.keyKind ?? "platform",
+      ...(input.options?.keyProvider ? { keyProvider: input.options.keyProvider } : {}),
     },
     rejectedFiles: [],
     checkpoints: [],

@@ -105,7 +105,12 @@ export default function NewTask() {
                     invalid={!!error}
                     icon={<CircleDot className="w-4 h-4" />}
                   />
-                  {error && <p className="text-danger text-xs mt-2">{error}</p>}
+                  {error && (
+                    <p className="text-danger text-xs mt-2">
+                      {error}{' '}
+                      {/key|upgrade|runs/i.test(error) && <Link to="/settings" className="text-primary underline">Open settings</Link>}
+                    </p>
+                  )}
                 </div>
 
                 <label className="flex items-start gap-2.5 text-[13px] text-foreground cursor-pointer select-none">

@@ -36,7 +36,9 @@ export const PRICES: Record<string, Price> = {
 const FALLBACK_PRICE: Price = { input: 3.0, cachedInput: 3.0, output: 15.0 }
 
 export function priceFor(model: string): Price {
-  if (PRICES[model]) return PRICES[model]
+  model = model.replace(/^(openai|anthropic)\//, "") // OpenRouter ids, e.g. openai/gpt-5-mini
+  const exact = PRICES[model]
+  if (exact) return exact
   const base = Object.keys(PRICES)
     .sort((a, b) => b.length - a.length)
     .find((k) => model.startsWith(k))

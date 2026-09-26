@@ -13,6 +13,7 @@ import { countActiveTasksForUser, getStatsForUser, listTasksForUser, userOwnsTas
 import { createTask, enqueue } from "../agent/service.js"
 import { taskStore, TERMINAL, type TaskState } from "../agent/store.js"
 import { getSpendLedger } from "../agent/spend.js"
+import { getEntitlement } from "../billing/index.js"
 import { diffStat, diffVs, restoreCheckpoint, tasksRoot } from "../agent/git.js"
 import { filterPatch, metricsOf } from "../agent/pipeline.js"
 
@@ -113,6 +114,14 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
       return res.status(401).json({ error: "Sign in again to create tasks" })
     }
     try {
+      let keyChoice: { keyKind: "platform" | "byok"; keyProvider?: "openai" | "openrouter" } = { keyKind: "platform" }
+      const owners = (process.env.OPERATOR_GITHUB_LOGINS ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean)
+      const isOwner = Boolean(req.session?.login && owners.includes(req.session.login.toLowerCase()))
+      if (!req.isOperator && !isOwner && req.session?.userId && isDatabaseEnabled()) {
+        const ent = await getEntitlement(req.session.userId)
+        if (!ent.key) return res.status(402).json({ error: ent.reason ?? "Add an API key or upgrade to run tasks.", code: "needs_key_or_plan" })
+        keyChoice = ent.key.kind === "byok" ? { keyKind: "byok", keyProvider: ent.key.provider } : { keyKind: "platform" }
+      }
       if (!req.isOperator && req.session?.userId) {
         const active = await countActiveTasksForUser(req.session.userId)
         if (active >= Number(process.env.MAX_ACTIVE_TASKS_PER_USER ?? 1)) {
@@ -129,6 +138,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
             ...(parsed.data.autoApprove !== undefined ? { autoApprove: parsed.data.autoApprove } : {}),
             ...(parsed.data.autoPublish !== undefined ? { autoPublish: parsed.data.autoPublish } : {}),
             ...(parsed.data.draft !== undefined ? { draft: parsed.data.draft } : {}),
+            ...keyChoice,
           },
         },
         taskRegistry,

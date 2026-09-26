@@ -80,7 +80,7 @@ function estimateInputTokens(messages: Msg[], tools?: ToolDef[]): number {
 }
 
 function isReasoningModel(model: string) {
-  return /^(gpt-5|o\d)/.test(model)
+  return /^(gpt-5|o\d)/.test(model.replace(/^openai\//, ""))
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

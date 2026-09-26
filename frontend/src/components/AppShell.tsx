@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { LayoutDashboard, History, Plus, LogOut, Home } from 'lucide-react'
+import { LayoutDashboard, History, Plus, LogOut, Home, Settings } from 'lucide-react'
 import Logo from './svgs/Logo'
 import Button from './ui/Button'
 import { useAuth } from '../context/AuthContext'
@@ -18,6 +18,7 @@ function GithubMark({ className }: { className?: string }) {
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/history', label: 'History', icon: History },
+  { to: '/settings', label: 'Settings', icon: Settings },
 ] as const
 
 const MOBILE_BOTTOM_NAV: {

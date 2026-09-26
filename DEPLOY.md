@@ -34,6 +34,7 @@ GITHUB_CLIENT_ID=...        GITHUB_CLIENT_SECRET=...
 FRONTEND_URL=https://pullwright.<your-domain>
 BACKEND_URL=https://api.pullwright.<your-domain>
 TASKS_PER_HOUR=12           MAX_ACTIVE_TASKS_PER_USER=1
+OPERATOR_GITHUB_LOGINS=Ayushjo   # owners run on the platform key (still capped by SPEND_HARD_STOP_USD on the worker)
 DODO_API_KEY=...            DODO_WEBHOOK_SECRET=...   DODO_PRO_PRODUCT_ID=...   DODO_ENV=live_mode
 ```
 

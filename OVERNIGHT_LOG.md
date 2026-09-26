@@ -20,8 +20,8 @@ last-active: 2026-09-27 04:50 IST (clock note: earlier stamps were estimates)
 ## Progress
 - [x] Phase 1: agent core. The bookstore ladder passes 11/11, and real-repo issues #13, #1 and #2 pass (see the table).
 - [x] Phase 2: security + infra (token vault, masking, fail-closed auth, OAuth state, rate limits, helmet, sandbox hardening, Redis spend counters, API/worker split, EC2 deploy)
-- [~] Phase 3: Jules flow UI/API. Tested end to end in Chrome: plan approval with edited steps/requirements, notes during a run, ask_user round trip, reviewer fix round, live diff, per-file review, Publish PR → https://github.com/Ayushjo/devin-test-app/pull/4 (draft)
-- [ ] Phase 4: BYOK + Dodo
+- [x] Phase 3: Jules flow UI/API. Tested end to end in Chrome: plan approval with edited steps/requirements, notes during a run, ask_user round trip, reviewer fix round, live diff, per-file review, Publish PR → https://github.com/Ayushjo/devin-test-app/pull/4 (draft)
+- [x] Phase 4: BYOK + Dodo. `api_keys` table (AES-GCM), key validation via the provider's models endpoint (no spend), entitlements (Free = own key only, the platform key is never used; Pro = $3 included), Dodo checkout, customer portal, and Standard Webhooks verification with idempotency. Settings and Pricing pages checked in Chrome; a fake key was rejected correctly. **Needs you:** create the Pro product in Dodo and set DODO_API_KEY / DODO_PRO_PRODUCT_ID / DODO_WEBHOOK_SECRET / DODO_ENV. Webhook URL: `https://api.<domain>/api/webhooks/dodo`
 - [ ] Phase 5: demo/landing
 
 ## Test runs

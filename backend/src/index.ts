@@ -9,6 +9,7 @@ import { EventLog } from './events/eventLog.js';
 import { createRouter } from './api/router.js';
 import { createPublicRouter } from './api/publicRouter.js';
 import { createOAuthRouter } from './api/oauth.js';
+import { createBillingRouter, dodoWebhook } from './api/billingRouter.js';
 import { attachSession } from './api/auth.js';
 import { SessionStore } from './auth/session.js';
 import { TaskRegistry } from './store/taskRegistry.js';
@@ -37,6 +38,8 @@ const app = express();
 app.set("trust proxy", 1);
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({ origin: frontendUrl, credentials: true }));
+// Webhooks need the raw body for signature checks — register before the JSON parser.
+if (MODE !== "worker") app.post("/api/webhooks/dodo", ...dodoWebhook);
 app.use(express.json({ limit: "256kb" }));
 app.use(cookieParser());
 app.use(
@@ -51,6 +54,7 @@ if (MODE !== "worker") {
   app.use("/api/public", createPublicRouter(eventLog));
   app.use("/api", attachSession(sessionStore));
   app.use("/api/auth", createOAuthRouter(sessionStore));
+  app.use("/api", createBillingRouter());
   app.use("/api", createRouter(eventBus, taskRegistry, eventLog));
 }
 
