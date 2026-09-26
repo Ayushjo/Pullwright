@@ -15,12 +15,12 @@ Plan: `/Users/jochannnn/.claude/plans/okay-read-the-whole-zippy-breeze.md` (Phas
 - The reference repos are in `references/` (git-ignored locally).
 
 ## Heartbeat
-last-active: 2026-09-27 04:50 IST
+last-active: 2026-09-27 04:50 IST (clock note: earlier stamps were estimates)
 
 ## Progress
 - [x] Phase 1: agent core. The bookstore ladder passes 11/11, and real-repo issues #13, #1 and #2 pass (see the table).
-- [ ] Phase 2: security + infra
-- [ ] Phase 3: Jules flow UI/API
+- [x] Phase 2: security + infra (token vault, masking, fail-closed auth, OAuth state, rate limits, helmet, sandbox hardening, Redis spend counters, API/worker split, EC2 deploy)
+- [~] Phase 3: Jules flow UI/API. Tested end to end in Chrome: plan approval with edited steps/requirements, notes during a run, ask_user round trip, reviewer fix round, live diff, per-file review, Publish PR → https://github.com/Ayushjo/devin-test-app/pull/4 (draft)
 - [ ] Phase 4: BYOK + Dodo
 - [ ] Phase 5: demo/landing
 
@@ -49,6 +49,7 @@ All runs are local eval tasks (fixture `backend/evals/fixtures/bookstore`, hidde
 | 18 | R03 real repo #2: tasks pagination | 14 | ready | pass | ✔ | 0.0249 | **Missed "update internal usage" (frontend) and the DB branch; the judge didn't notice.** Added a requirements checklist (planner extracts requirements → finish must account for each → judge checks each), a caller-search rule, and a judge fix round |
 | 19 | R03 (rerun) | 14 | failed | – | – | 0.0138 | planner hit 14 steps; 3 were wasted on regex errors from `list(` |
 | 20 | R03 (rerun) | 14 | ready | pass | ✔ high 8/8 requirements | 0.0425 | search falls back to literal on bad regex; plan limit is now 20. DB and Redis paths plus the frontend client were updated |
+| 21 | **Real UI run** devin-test-app #3 `modulo()` via Chrome | – | published | manual ✔ | ✔ high | 0.0470 | Planner wanted to also fix divide (scope creep); **edited out in the approval UI**. Agent then deleted the failing divide test to get green; **the reviewer caught it**. I asked for changes in the UI and it restored the test. Bugs found and fixed: live counters raced status writes (lost `needs_input`), stale plan summary misled the judge, repeated ask_user, no gate rule against deleting tests, PR body showed stale risks. PR #4 opened as a draft |
 
 ## Spend total
-$0.2346 after ~330 calls
+$0.2815 (platform key, from Redis counter)

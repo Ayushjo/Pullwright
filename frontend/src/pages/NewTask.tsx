@@ -13,22 +13,12 @@ import {
   useToast,
 } from '../components/ui'
 import { createTask } from '../api/client'
-import { addTask } from '../store/taskStore'
 import { fadeUp, stagger } from '../lib/motion'
 
-function parseGitHubUrl(url: string) {
-  const numMatch = url.match(/\/issues\/(\d+)/)
-  const repoMatch = url.match(/github\.com\/([^/]+\/[^/]+)\/issues/)
-  return {
-    issueNumber: numMatch ? parseInt(numMatch[1]!, 10) : 0,
-    repoName: repoMatch ? repoMatch[1]! : 'unknown',
-  }
-}
-
 const STEPS = [
-  { icon: GitBranch, label: 'Plan steps' },
-  { icon: Box, label: 'Execute in sandbox' },
-  { icon: GitPullRequest, label: 'Open pull request' },
+  { icon: GitBranch, label: 'You approve the plan' },
+  { icon: Box, label: 'Runs in a sandbox' },
+  { icon: GitPullRequest, label: 'You review, then PR' },
 ]
 
 function GithubMark({ className }: { className?: string }) {
@@ -40,9 +30,10 @@ function GithubMark({ className }: { className?: string }) {
 }
 
 export default function NewTask() {
-  const [url, setUrl] = useState('')
+  const [url, setUrl] = useState(() => new URLSearchParams(window.location.search).get('url') ?? '')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [approvePlan, setApprovePlan] = useState(true)
   const navigate = useNavigate()
   const { push: pushToast } = useToast()
 
@@ -57,23 +48,12 @@ export default function NewTask() {
     setLoading(true)
     setError('')
     try {
-      const { taskId } = await createTask(url)
-      const { issueNumber, repoName } = parseGitHubUrl(url)
-      addTask({
-        id: taskId,
-        issueUrl: url,
-        issueTitle: `Issue #${issueNumber}`,
-        issueNumber,
-        repoName,
-        branchName: `pullwright/task-${taskId}`,
-        status: 'running',
-        steps: [],
-        createdAt: new Date().toISOString(),
-      })
+      const { taskId } = await createTask(url.trim(), { autoApprove: !approvePlan })
       navigate(`/tasks/${taskId}`)
-    } catch {
-      pushToast('Failed to create task — is the backend running?', 'error')
-      setError('Failed to create task. Is the backend running on port 3500?')
+    } catch (err) {
+      const msg = (err as Error).message
+      pushToast(msg, 'error')
+      setError(msg)
       setLoading(false)
     }
   }
@@ -128,6 +108,14 @@ export default function NewTask() {
                   {error && <p className="text-danger text-xs mt-2">{error}</p>}
                 </div>
 
+                <label className="flex items-start gap-2.5 text-[13px] text-foreground cursor-pointer select-none">
+                  <input type="checkbox" checked={approvePlan} onChange={(e) => setApprovePlan(e.target.checked)} className="mt-0.5 accent-[var(--primary)]" />
+                  <span>
+                    Let me approve the plan before it starts
+                    <span className="block text-xs text-muted-foreground">Recommended. Nothing is changed and no PR is opened without your review.</span>
+                  </span>
+                </label>
+
                 <Button
                   type="submit"
                   size="lg"
@@ -167,7 +155,7 @@ export default function NewTask() {
           </BentoCard>
 
           <p className="text-center text-muted-foreground text-xs mt-4">
-            Runs in an isolated Docker sandbox — your machine is never touched.
+            Runs in an isolated sandbox with no network access. Your GitHub token never enters it.
           </p>
         </motion.div>
       </motion.div>

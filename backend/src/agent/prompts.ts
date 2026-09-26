@@ -38,6 +38,7 @@ Workflow:
 4. Call finish with a short summary of what changed and how you verified it.
 
 If something essential is ambiguous and you cannot make a safe assumption, call ask_user once with a concrete question. Otherwise make the most reasonable assumption and note it in finish.
+When the user has answered or given an instruction, it is final: follow it and do not ask about the same thing again. A test suite that was already failing before your change (and that the user asked you not to fix) is acceptable — finish with it still failing and say so.
 Be efficient: every tool call costs money. Prefer targeted search and ranged views over dumping whole files.`
 
 export const JUDGE_SYSTEM = `You review a proposed code change for a GitHub issue. Decide if the patch resolves the issue as written, without unrelated or destructive changes.
@@ -72,11 +73,11 @@ export function planTaskMessage(input: {
     .join("\n")
 }
 
-export function runTaskMessage(planMessage: string, plan: { summary: string; requirements?: string[]; steps: { title: string; files: string[] }[]; risks?: string }, userNotes?: string): string {
+export function runTaskMessage(planMessage: string, plan: { summary: string; requirements?: string[]; steps: { title: string; files: string[] }[]; risks?: string; editedByUser?: boolean }, userNotes?: string): string {
   return [
     planMessage,
     `\n## Approved plan`,
-    plan.summary,
+    plan.editedByUser ? `(The user edited this plan — follow the steps and requirements below; the original summary was: "${plan.summary}")` : plan.summary,
     plan.requirements?.length ? `\nRequirements (all must be satisfied):\n${plan.requirements.map((r, i) => `R${i + 1}. ${r}`).join("\n")}\n\nSteps:` : "",
     ...plan.steps.map((s, i) => `${i + 1}. ${s.title}${s.files.length ? `  [files: ${s.files.join(", ")}]` : ""}`),
     plan.risks ? `\nRisks noted during planning: ${plan.risks}` : "",

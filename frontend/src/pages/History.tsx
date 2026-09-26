@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, ExternalLink, ChevronDown, GitPullRequest, Clock } from 'lucide-react'
@@ -247,13 +247,12 @@ export default function History() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
 
-  const load = useCallback(async () => {
-    const data = await listTasks()
-    setTasks(Array.isArray(data) ? data : [])
-    setLoading(false)
+  useEffect(() => {
+    void listTasks().then((data) => {
+      setTasks(Array.isArray(data) ? data : [])
+      setLoading(false)
+    })
   }, [])
-
-  useEffect(() => { void load() }, [load])
 
   // Filter + search
   const visible = tasks.filter((t) => {

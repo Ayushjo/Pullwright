@@ -27,7 +27,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(false)
   }
 
-  useEffect(() => { void refresh() }, [])
+  useEffect(() => {
+    void getMe().then((u) => {
+      setUser(u)
+      setLoading(false)
+    })
+  }, [])
 
   const login = (returnTo?: string) => {
     window.location.href = githubLoginUrl(returnTo ?? window.location.pathname)

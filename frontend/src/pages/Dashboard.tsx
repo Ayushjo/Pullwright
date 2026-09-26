@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, TrendingUp, Zap, CheckCircle, XCircle } from 'lucide-react'
+import { Plus, TrendingUp, Zap, CheckCircle, BellDot as XCircle } from 'lucide-react'
 import AppShell from '../components/AppShell'
 import { Tabs, Skeleton, type TabItem } from '../components/ui'
 import TaskCard from '../components/TaskCard'
-import { getTasks, addTask, type StoredTask } from '../store/taskStore'
+import type { StoredTask } from '../store/taskStore'
+import { statusMeta } from '../lib/status'
 import { listTasks, getStats, type StatsResponse } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import type { TaskStatus, TaskRegistryEntry } from '../types/task'
@@ -67,15 +68,24 @@ function StatCard({ label, value, icon, color, bgColor }: StatCardProps) {
 }
 
 /* ── Filter tabs ── */
-type Filter = 'all' | TaskStatus
+type Filter = 'all' | 'needs_you' | 'active' | 'done' | 'failed'
 
 const FILTER_TABS: TabItem<Filter>[] = [
-  { key: 'all',     label: 'All' },
-  { key: 'running', label: 'Running' },
-  { key: 'done',    label: 'Completed' },
-  { key: 'failed',  label: 'Failed' },
-  { key: 'queued',  label: 'Queued' },
+  { key: 'all',       label: 'All' },
+  { key: 'needs_you', label: 'Needs you' },
+  { key: 'active',    label: 'Running' },
+  { key: 'done',      label: 'Shipped' },
+  { key: 'failed',    label: 'Failed' },
 ]
+
+function matches(filter: Filter, status: TaskStatus): boolean {
+  const m = statusMeta(status)
+  if (filter === 'all') return true
+  if (filter === 'needs_you') return Boolean(m.needsYou)
+  if (filter === 'active') return m.active
+  if (filter === 'done') return status === 'published' || status === 'done'
+  return status === 'failed' || status === 'cancelled'
+}
 
 /* ── Empty state ── */
 function EmptyState() {
@@ -119,47 +129,27 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
-    function mergeTasks(local: StoredTask[], serverTasks: TaskRegistryEntry[]): StoredTask[] {
-      const merged = new Map<string, StoredTask>()
-      for (const t of local) merged.set(t.id, t)
-      for (const st of serverTasks) {
-        const existing = merged.get(st.taskId)
-        merged.set(st.taskId, {
+    function fromServer(serverTasks: TaskRegistryEntry[]): StoredTask[] {
+      return serverTasks
+        .map((st) => ({
           id: st.taskId,
           issueUrl: st.issueUrl,
           issueTitle: st.issueTitle,
           issueNumber: st.issueNumber,
-          repoName: st.issueUrl.replace('https://github.com/', '').split('/').slice(0, 2).join('/'),
-          branchName: `pullwright/task-${st.taskId}`,
-          status:
-            st.status === 'running' ? 'running'
-            : st.status === 'done' ? 'done'
-            : st.status === 'failed' ? 'failed'
-            : 'queued',
-          steps: existing?.steps ?? [],
+          repoName: st.issueUrl.startsWith('local://') ? st.issueUrl.replace('local://', 'local · ') : st.issueUrl.replace('https://github.com/', '').split('/').slice(0, 2).join('/'),
+          branchName: st.prUrl ? st.prUrl.replace('https://github.com/', '') : `#${st.issueNumber}`,
+          status: st.status,
+          steps: [],
           createdAt: st.createdAt,
-          prUrl: st.prUrl,
-        })
-      }
-      return [...merged.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          ...(st.prUrl ? { prUrl: st.prUrl } : {}),
+        }))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     }
 
     async function refresh() {
-      const local = getTasks()
-      const [statsRes, tasksRes] = await Promise.allSettled([
-        getStats(),
-        listTasks(),
-      ])
+      const [statsRes, tasksRes] = await Promise.allSettled([getStats(), listTasks()])
       if (statsRes.status === 'fulfilled' && statsRes.value) setStats(statsRes.value)
-      if (tasksRes.status === 'fulfilled' && tasksRes.value?.length) {
-        const merged = mergeTasks(local, tasksRes.value)
-        for (const t of merged) {
-          if (!local.find((l) => l.id === t.id)) addTask(t)
-        }
-        setAllTasks(merged)
-      } else {
-        setAllTasks(local)
-      }
+      if (tasksRes.status === 'fulfilled') setAllTasks(fromServer(tasksRes.value as TaskRegistryEntry[]))
     }
 
     let cancelled = false
@@ -175,19 +165,18 @@ export default function Dashboard() {
     }
   }, [])
 
-  const filtered = filter === 'all' ? allTasks : allTasks.filter((t) => t.status === filter)
+  const filtered = allTasks.filter((t) => matches(filter, t.status))
 
-  // Derive stats from local data if backend didn't respond
-  const totalVal  = stats?.total   ?? allTasks.length
-  const runningVal= stats?.running ?? allTasks.filter((t) => t.status === 'running').length
-  const doneVal   = stats?.done    ?? allTasks.filter((t) => t.status === 'done').length
-  const failedVal = stats?.failed  ?? allTasks.filter((t) => t.status === 'failed').length
+  const totalVal = stats?.total ?? allTasks.length
+  const needsYouVal = stats?.needsYou ?? allTasks.filter((t) => statusMeta(t.status).needsYou).length
+  const runningVal = stats?.running ?? allTasks.filter((t) => statusMeta(t.status).active).length
+  const doneVal = stats?.done ?? allTasks.filter((t) => matches('done', t.status)).length
 
   const statCards: StatCardProps[] = [
     { label: 'Total Tasks', value: totalVal, icon: <TrendingUp className="w-5 h-5" />, color: '#000000', bgColor: '#F2F2F2' },
-    { label: 'Running', value: runningVal, icon: <Zap className="w-5 h-5" />, color: '#2B7FFF', bgColor: '#E8F2FF' },
-    { label: 'Completed', value: doneVal, icon: <CheckCircle className="w-5 h-5" />, color: '#1A7F37', bgColor: '#EEF9F1' },
-    { label: 'Failed', value: failedVal, icon: <XCircle className="w-5 h-5" />, color: '#CF222E', bgColor: '#FFF0F0' },
+    { label: 'Needs you', value: needsYouVal, icon: <XCircle className="w-5 h-5" />, color: '#2B7FFF', bgColor: '#E8F2FF' },
+    { label: 'Running', value: runningVal, icon: <Zap className="w-5 h-5" />, color: '#BF8700', bgColor: '#FFF8E6' },
+    { label: 'Shipped', value: doneVal, icon: <CheckCircle className="w-5 h-5" />, color: '#1A7F37', bgColor: '#EEF9F1' },
   ]
 
   return (
@@ -239,7 +228,7 @@ export default function Dashboard() {
         <Tabs
           items={FILTER_TABS.map((f) => ({
             ...f,
-            count: f.key === 'all' ? allTasks.length : allTasks.filter((t) => t.status === f.key).length,
+            count: allTasks.filter((t) => matches(f.key, t.status)).length,
           }))}
           value={filter}
           onChange={setFilter}
@@ -264,7 +253,7 @@ export default function Dashboard() {
             animate={{ opacity: 1 }}
             className="text-muted-foreground text-sm py-12 text-center"
           >
-            No {filter} tasks.
+            Nothing here yet.
           </motion.p>
         ) : (
           <motion.div

@@ -95,12 +95,20 @@ const k = {
   inbox: (id: string) => `pw:inbox:${id}`,
   cancel: (id: string) => `pw:cancel:${id}`,
   lock: (id: string) => `pw:lock:${id}`,
+  counters: (id: string) => `pw:counters:${id}`,
 }
 
 export const taskStore = {
   async get(id: string): Promise<TaskState | null> {
-    const raw = await r().get(k.state(id))
-    return raw ? (JSON.parse(raw) as TaskState) : null
+    const [raw, counters] = await Promise.all([r().get(k.state(id)), r().hgetall(k.counters(id))])
+    if (!raw) return null
+    const s = JSON.parse(raw) as TaskState
+    // Live counters are kept in their own hash so they never race with state writes.
+    for (const key of ["costUsd", "llmCalls", "toolCalls"] as const) {
+      const v = Number(counters?.[key])
+      if (Number.isFinite(v) && v > (s[key] ?? 0)) s[key] = v
+    }
+    return s
   },
   async put(s: TaskState): Promise<TaskState> {
     s.updatedAt = new Date().toISOString()
@@ -111,6 +119,10 @@ export const taskStore = {
     const cur = await this.get(id)
     if (!cur) throw new Error(`Task ${id} not found`)
     return this.put({ ...cur, ...p })
+  },
+  /** Cheap live counters for the UI without rewriting the whole state from a stale copy. */
+  async patchCounters(id: string, c: { costUsd: number; llmCalls: number; toolCalls: number }) {
+    await r().multi().hset(k.counters(id), { costUsd: c.costUsd, llmCalls: c.llmCalls, toolCalls: c.toolCalls }).expire(k.counters(id), TTL).exec()
   },
   async savePatch(id: string, patch: string) {
     await r().set(k.patch(id), patch, "EX", TTL)

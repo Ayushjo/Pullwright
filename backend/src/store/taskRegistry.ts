@@ -73,12 +73,10 @@ export class TaskRegistry {
 
   async list(limit = 50): Promise<TaskRegistryEntry[]> {
     const ids = await this.redis.zrevrange(this.INDEX_KEY, 0, limit - 1)
-    const entries: TaskRegistryEntry[] = []
-    for (const id of ids) {
-      const entry = await this.get(id)
-      if (entry) entries.push(entry)
-    }
-    return entries
+    if (ids.length === 0) return []
+    // One round trip for all entries (Redis may be remote).
+    const raw = await this.redis.mget(ids.map((id) => this.taskKey(id)))
+    return raw.filter((r): r is string => Boolean(r)).map((r) => JSON.parse(r) as TaskRegistryEntry)
   }
 
   async saveMetrics(taskId: string, metrics: TaskMetricsSnapshot): Promise<void> {

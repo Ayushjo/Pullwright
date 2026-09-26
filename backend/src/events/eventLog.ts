@@ -2,7 +2,6 @@ import { Redis } from "ioredis"
 import type { TaskEvent } from "./types.js"
 import { createRedisClient } from "../config/redis.js"
 import { appendEventToDb, clearEventsInDb, listEventsFromDb } from "../repositories/eventRepository.js"
-import { isTaskTerminalInDb } from "../repositories/taskRepository.js"
 import { isDatabaseEnabled } from "../db/prisma.js"
 
 export class EventLog {
@@ -30,14 +29,7 @@ export class EventLog {
   }
 
   async range(taskId: string, from = 0): Promise<TaskEvent[]> {
-    if (isDatabaseEnabled()) {
-      const terminal = await isTaskTerminalInDb(taskId)
-      if (terminal) {
-        const pgEvents = await listEventsFromDb(taskId)
-        return from > 0 ? pgEvents.slice(from) : pgEvents
-      }
-    }
-
+    // Fast path: the live log in Redis (24h). Postgres is the durable fallback for older tasks.
     const items = await this.redis.lrange(this.key(taskId), from, -1)
     if (items.length > 0) {
       return items.map((item) => JSON.parse(item) as TaskEvent)

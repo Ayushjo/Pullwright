@@ -17,7 +17,6 @@ import {
 import { TopNav, MobileBottomNav } from '../components/AppShell'
 import Logo from '../components/svgs/Logo'
 import { createTask } from '../api/client'
-import { addTask } from '../store/taskStore'
 import { useAuth } from '../context/AuthContext'
 import {
   Badge,
@@ -33,14 +32,6 @@ import {
 import { cn } from '../lib/cn'
 import { fadeUp, stagger } from '../lib/motion'
 
-function parseGitHubUrl(url: string) {
-  const numMatch = url.match(/\/issues\/(\d+)/)
-  const repoMatch = url.match(/github\.com\/([^/]+\/[^/]+)\/issues/)
-  return {
-    issueNumber: numMatch ? parseInt(numMatch[1]!, 10) : 0,
-    repoName: repoMatch ? repoMatch[1]! : 'unknown',
-  }
-}
 
 const FLOW = [
   { label: 'Issue', desc: 'Paste the GitHub URL', icon: CircleDot },
@@ -319,27 +310,16 @@ export default function Home() {
     const trimmed = url.trim()
     if (!trimmed) return
     if (!user) {
-      login('/tasks/new')
+      // Keep what they typed across the GitHub sign-in round trip.
+      login(`/tasks/new?url=${encodeURIComponent(trimmed)}`)
       return
     }
     setLoading(true)
     try {
       const { taskId } = await createTask(trimmed)
-      const { issueNumber, repoName } = parseGitHubUrl(trimmed)
-      addTask({
-        id: taskId,
-        issueUrl: trimmed,
-        issueTitle: `Issue #${issueNumber}`,
-        issueNumber,
-        repoName,
-        branchName: `pullwright/task-${taskId}`,
-        status: 'running',
-        steps: [],
-        createdAt: new Date().toISOString(),
-      })
       navigate(`/tasks/${taskId}`)
-    } catch {
-      pushToast('Failed to create task — is the backend running?', 'error')
+    } catch (err) {
+      pushToast((err as Error).message, 'error')
       setLoading(false)
     }
   }

@@ -1,362 +1,328 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Copy, ExternalLink, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Check, Circle, ExternalLink, GitPullRequest, Globe, Loader2, RotateCcw, Square, Undo2 } from 'lucide-react'
 import AppShell from '../components/AppShell'
-import StepList from '../components/StepList'
-import LiveLog from '../components/LiveLog'
-import MetricsPanel from '../components/MetricsPanel'
-import { useTaskStream } from '../hooks/useTaskStream'
-import { getTask, updateTask, addTask, type StoredTask } from '../store/taskStore'
-import { getTaskState, retryTask } from '../api/client'
-import { Badge, Button, useToast } from '../components/ui'
-import type { TaskStatus } from '../types/task'
+import ActivityFeed from '../components/task/ActivityFeed'
+import DiffView from '../components/task/DiffView'
+import PlanCard from '../components/task/PlanCard'
+import ReviewPanel from '../components/task/ReviewPanel'
+import Composer from '../components/task/Composer'
+import { Badge, Button, Tabs, useToast } from '../components/ui'
+import { useTask } from '../hooks/useTask'
+import {
+  approvePlan,
+  cancelTask,
+  getDiff,
+  publishTask,
+  restoreCheckpoint,
+  retryTask,
+  sendMessage,
+  setFileRejected,
+  shareTask,
+} from '../api/client'
+import { statusMeta } from '../lib/status'
 import { cn } from '../lib/cn'
 
-function mapApiStatus(status: unknown): TaskStatus {
-  if (status === 'done' || status === 'failed' || status === 'queued') return status
-  if (status === 'planning' || status === 'verifying' || status === 'running') return 'running'
-  return 'queued'
-}
+type TabKey = 'activity' | 'changes' | 'review'
 
-function taskFromApiState(taskId: string, state: Record<string, unknown>): StoredTask {
-  const issueUrl = String(state.issueUrl ?? '')
-  return {
-    id: taskId,
-    issueUrl,
-    issueTitle: String(state.issueTitle ?? `Task ${taskId.slice(0, 8)}`),
-    issueNumber: Number(state.issueNumber ?? 0),
-    repoName: String(state.repoName ?? issueUrl.replace('https://github.com/', '').split('/').slice(0, 2).join('/')),
-    branchName: String(state.branchName ?? `pullwright/task-${taskId}`),
-    status: mapApiStatus(state.status),
-    steps: [],
-    createdAt: String(state.createdAt ?? new Date().toISOString()),
-    ...(state.prUrl ? { prUrl: String(state.prUrl) } : {}),
-  }
-}
-
-function useElapsedTimer(running: boolean) {
-  const [elapsed, setElapsed] = useState(0)
+function useElapsed(startIso?: string, endIso?: string) {
+  const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
-    if (!running) return
-    const id = setInterval(() => setElapsed((s) => s + 1), 1000)
+    if (endIso) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
-  }, [running])
-  const m = Math.floor(elapsed / 60)
-  const s = elapsed % 60
-  return `${m}:${s.toString().padStart(2, '0')}`
+  }, [endIso])
+  if (!startIso) return ''
+  const secs = Math.max(0, Math.floor(((endIso ? Date.parse(endIso) : now) - Date.parse(startIso)) / 1000))
+  return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`
 }
 
-function StatusBadge({ status, elapsed }: { status: string; elapsed: string }) {
-  if (status === 'done') {
-    return <Badge tone="success" dot>Done</Badge>
-  }
-  if (status === 'failed') {
-    return <Badge tone="danger" dot>Failed</Badge>
-  }
-  return (
-    <Badge tone="warning" dot className="tabular-nums">
-      Running · {elapsed}
-    </Badge>
-  )
-}
-
-function CopyBranchButton({ branch }: { branch: string }) {
-  const [copied, setCopied] = useState(false)
-  const copy = useCallback(async () => {
-    await navigator.clipboard.writeText(branch)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1800)
-  }, [branch])
-
-  return (
-    <button
-      onClick={copy}
-      className="text-muted-foreground hover:text-foreground transition-colors p-0.5"
-      title="Copy branch name"
-      type="button"
-    >
-      <AnimatePresence mode="wait">
-        {copied ? (
-          <motion.span key="check" initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8 }} className="text-success text-[10px] font-medium">
-            ✓
-          </motion.span>
-        ) : (
-          <motion.span key="copy" initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8 }}>
-            <Copy className="w-3 h-3" />
-          </motion.span>
-        )}
-      </AnimatePresence>
-    </button>
-  )
-}
-
-export default function TaskView() {
+export default function TaskViewRoute() {
   const { id } = useParams<{ id: string }>()
-  const taskId = id ?? ''
-  const { push: pushToast } = useToast()
+  // Keyed so navigating between tasks starts from a clean slate.
+  return <TaskView key={id} taskId={id ?? ''} />
+}
 
-  const [task, setTask] = useState<StoredTask | null>(() => getTask(taskId) ?? null)
-  const [taskLoading, setTaskLoading] = useState(() => !getTask(taskId))
-  const { events, steps, isRunning, metrics, failedReason, reconnect } = useTaskStream(taskId)
-  const elapsed = useElapsedTimer(isRunning)
-  const [retrying, setRetrying] = useState(false)
-  const [highlightedStepId, setHighlightedStepId] = useState<number | null>(null)
-  const stepGroupRefs = useRef<Map<number, HTMLDivElement>>(new Map())
+function TaskView({ taskId }: { taskId: string }) {
+  const { push } = useToast()
+  const { state, events, eventsLoaded, loading, notFound, error, refresh } = useTask(taskId)
+  const [pickedTab, setTab] = useState<TabKey | null>(null)
+  const [patch, setPatch] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [isPublic, setIsPublic] = useState(false)
 
-  useEffect(() => { setTask(getTask(taskId) ?? null) }, [taskId, isRunning])
+  const status = state?.status ?? 'queued'
+  const meta = statusMeta(status)
+  const elapsed = useElapsed(state?.startedAt ?? state?.createdAt, meta.active ? undefined : (state?.finishedAt ?? state?.updatedAt))
+  const reviewable = status === 'ready' || status === 'needs_review'
+  const fileCount = state?.stats?.length ?? 0
+  const patchFiles = (patch.match(/^diff --git /gm) ?? []).length
 
-  useEffect(() => {
-    if (!taskId) return
-    const local = getTask(taskId)
-    if (local) {
-      setTask(local)
-      setTaskLoading(false)
-      return
-    }
+  // Until the user picks a tab, show the review as soon as the run finishes.
+  const tab: TabKey = pickedTab ?? (reviewable ? 'review' : 'activity')
 
-    let cancelled = false
-    setTaskLoading(true)
-    void getTaskState(taskId).then((state) => {
-      if (cancelled) return
-      if (!state) {
-        setTask(null)
-        setTaskLoading(false)
-        return
-      }
-      const built = taskFromApiState(taskId, state)
-      addTask(built)
-      setTask(built)
-      setTaskLoading(false)
-    })
-
-    return () => { cancelled = true }
+  const loadDiff = useCallback(() => {
+    return getDiff(taskId)
+      .then((d) => setPatch(d.patch))
+      .catch(() => {
+        /* not ready yet */
+      })
   }, [taskId])
-
+  const updatedAt = state?.updatedAt
+  const editCount = events.filter((e) => e.type === 'checkpoint').length
   useEffect(() => {
-    if (steps.length > 0) {
-      updateTask(taskId, { steps })
-      setTask((prev) => (prev ? { ...prev, steps } : prev))
-    }
-  }, [steps, taskId])
+    if (fileCount > 0 || editCount > 0) void loadDiff()
+  }, [fileCount, editCount, loadDiff, updatedAt])
 
-  const issueTitle = task?.issueTitle ?? `Task ${taskId.slice(0, 8)}`
-  const issueNumber = task?.issueNumber ?? 0
-  const branchName = task?.branchName ?? `pullwright/task-${taskId}`
-  const repoName = task?.repoName ?? ''
-  const prUrl = task?.prUrl
-  const status = failedReason ? 'failed' : isRunning ? 'running' : (task?.status ?? 'running')
-  const isDone = status === 'done'
+  const act = useCallback(
+    async (key: string, fn: () => Promise<unknown>, ok?: string) => {
+      setBusy(key)
+      try {
+        await fn()
+        if (ok) push(ok, 'success')
+        await refresh()
+      } catch (e) {
+        push((e as Error).message, 'error')
+      } finally {
+        setBusy(null)
+      }
+    },
+    [push, refresh],
+  )
 
-  const shortBranch =
-    branchName.length > 40 ? branchName.slice(0, 30) + '…' + branchName.slice(-8) : branchName
+  const checklist = useMemo(() => {
+    if (state?.planChecklist?.length) return state.planChecklist
+    return state?.plan?.steps.map((s) => ({ title: s.title, status: 'pending' })) ?? []
+  }, [state?.planChecklist, state?.plan])
 
-  async function handleRetry() {
-    setRetrying(true)
-    try {
-      await retryTask(taskId, task?.issueUrl)
-      updateTask(taskId, { status: 'running', prUrl: undefined })
-      setTask((prev) => (prev ? { ...prev, status: 'running', prUrl: undefined } : prev))
-      reconnect()
-      pushToast('Task queued for retry', 'success')
-    } catch {
-      pushToast('Retry failed — check backend is running', 'error')
-    } finally {
-      setRetrying(false)
-    }
+  if (loading && !state) {
+    return (
+      <AppShell maxWidth="max-w-6xl">
+        <div className="flex items-center justify-center py-24 text-muted-foreground gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading task…
+        </div>
+      </AppShell>
+    )
   }
-
-  const handleStepClick = useCallback((stepId: number) => {
-    setHighlightedStepId(stepId)
-    const el = stepGroupRefs.current.get(stepId)
-    if (!el) return
-    const motionPref = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    el.scrollIntoView({ behavior: motionPref ? 'auto' : 'smooth', block: 'start' })
-  }, [])
-
-  if (taskLoading) {
+  if (notFound || !state) {
     return (
       <AppShell maxWidth="max-w-6xl">
         <div className="flex flex-col items-center justify-center py-24 text-center">
-          <p className="text-muted-foreground">Loading task…</p>
+          <p className="text-muted-foreground mb-3">{error ?? 'Task not found.'}</p>
+          <Link to="/dashboard" className="text-sm text-primary hover:underline">← Back to dashboard</Link>
         </div>
       </AppShell>
     )
   }
 
-  if (!task) {
-    return (
-      <AppShell maxWidth="max-w-6xl">
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <p className="text-muted-foreground mb-3">Task not found.</p>
-          <Link to="/dashboard" className="text-sm text-accent hover:underline">
-            ← Back to dashboard
-          </Link>
-        </div>
-      </AppShell>
-    )
-  }
+  const repoName = state.source ? `local · ${state.repo}` : `${state.owner}/${state.repo}`
+  const costPct = Math.min(100, (state.costUsd / Math.max(0.0001, state.capUsd)) * 100)
+  const terminal = ['published', 'failed', 'cancelled'].includes(status)
 
   return (
     <AppShell maxWidth="max-w-[1240px]">
-      <div
-        className={cn(
-          'rounded-xl border border-border bg-card overflow-hidden flex flex-col',
-          'md:h-[calc(100vh-7rem)] md:min-h-[520px]',
-        )}
-      >
+      <div className="rounded-xl border border-border bg-card overflow-hidden flex flex-col md:h-[calc(100vh-7rem)] md:min-h-[560px]">
         {/* Header */}
         <div className="shrink-0 px-3 sm:px-5 py-3 sm:py-4 border-b border-border bg-muted/50">
-          <div className="flex items-center justify-between gap-2 sm:gap-3 mb-2 sm:mb-3">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <Link
-                to="/dashboard"
-                className="w-8 h-8 rounded-lg border border-border bg-card hover:bg-muted flex items-center justify-center text-muted-foreground transition-colors shrink-0"
-              >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5 min-w-0">
+              <Link to="/dashboard" className="w-8 h-8 rounded-lg border border-border bg-card hover:bg-muted flex items-center justify-center text-muted-foreground shrink-0">
                 <ArrowLeft className="w-4 h-4" />
               </Link>
-              <div className="flex items-center gap-1.5 font-mono text-[10px] sm:text-xs text-primary bg-primary/5 border border-primary/15 px-2 sm:px-2.5 py-1.5 rounded-lg min-w-0 flex-1">
-                <span className="truncate">{shortBranch}</span>
-                <CopyBranchButton branch={branchName} />
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground truncate">
+                  {state.source ? repoName : <a href={state.issueUrl} target="_blank" rel="noreferrer" className="hover:underline">{repoName} #{state.issueNumber}</a>}
+                </p>
+                <h1 className="text-base sm:text-lg font-bold text-foreground leading-snug line-clamp-2">{state.title}</h1>
               </div>
             </div>
-            <StatusBadge status={status} elapsed={elapsed} />
+            <div className="flex items-center gap-2 shrink-0">
+              <Badge tone={meta.tone} dot className="tabular-nums">
+                {meta.label}{elapsed ? ` · ${elapsed}` : ''}
+              </Badge>
+            </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
-            <div className="min-w-0">
-              {repoName && <p className="text-xs text-muted-foreground mb-0.5 truncate">{repoName}</p>}
-              <h1 className="text-base sm:text-xl font-bold text-foreground leading-snug line-clamp-3 sm:line-clamp-2">
-                {issueNumber > 0 ? `#${issueNumber} — ` : ''}
-                {issueTitle}
-              </h1>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground mr-auto" title="Model spend for this task (hard-capped)">
+              <span className="tabular-nums">${state.costUsd.toFixed(4)}</span>
+              <span className="w-16 h-1.5 rounded-full bg-border overflow-hidden">
+                <span className={cn('block h-full rounded-full', costPct > 80 ? 'bg-warning' : 'bg-primary')} style={{ width: `${costPct}%` }} />
+              </span>
+              <span className="tabular-nums">of ${state.capUsd.toFixed(2)} cap · {state.llmCalls} model calls</span>
+              {state.statusDetail && <span className="hidden md:inline truncate max-w-[320px]">· {state.statusDetail}</span>}
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {(prUrl ?? (isDone && task.prUrl)) && (
-                <a
-                  href={prUrl ?? task.prUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary-foreground bg-primary border border-primary px-3 py-2 rounded-lg hover:brightness-95 transition-all"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  View PR
-                </a>
-              )}
-              {status === 'failed' && !isRunning && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={handleRetry}
-                  disabled={retrying}
-                  className="rounded-lg gap-1.5"
-                >
-                  <RotateCcw className={cn('w-3.5 h-3.5', retrying && 'animate-spin')} />
-                  {retrying ? 'Queuing…' : 'Retry'}
-                </Button>
-              )}
-            </div>
+            {meta.active && (
+              <Button size="sm" variant="secondary" loading={busy === 'cancel'} onClick={() => act('cancel', () => cancelTask(taskId), 'Cancelling…')}>
+                <Square className="w-3 h-3" /> Stop
+              </Button>
+            )}
+            {(status === 'failed' || status === 'cancelled') && (
+              <Button size="sm" variant="secondary" loading={busy === 'retry'} onClick={() => act('retry', () => retryTask(taskId), 'Retrying from scratch')}>
+                <RotateCcw className="w-3.5 h-3.5" /> Retry
+              </Button>
+            )}
+            {terminal && !state.source && (
+              <Button
+                size="sm"
+                variant="ghost"
+                loading={busy === 'share'}
+                onClick={() => act('share', async () => setIsPublic((await shareTask(taskId, !isPublic)).isPublic), isPublic ? 'Replay is private' : 'Public replay link enabled')}
+              >
+                <Globe className="w-3.5 h-3.5" /> {isPublic ? 'Unshare' : 'Share replay'}
+              </Button>
+            )}
+            {isPublic && (
+              <a href={`/r/${taskId}`} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">/r/{taskId.slice(0, 8)}</a>
+            )}
+            {state.prUrl && (
+              <a href={state.prUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary-foreground bg-primary px-3 py-1.5 rounded-button hover:brightness-95">
+                <ExternalLink className="w-3.5 h-3.5" /> View PR
+              </a>
+            )}
           </div>
         </div>
-
-        {/* Mobile plan strip */}
-        {steps.length > 0 && (
-          <div className="sm:hidden shrink-0 border-b border-border bg-muted/30">
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className="text-xs font-semibold text-foreground">Plan</span>
-              <span className="text-[10px] text-muted-foreground tabular-nums">{steps.length} steps</span>
-            </div>
-            <div className="flex gap-2 overflow-x-auto px-3 pb-2.5 scrollbar-none">
-              {steps.map((step) => (
-                <button
-                  key={step.id}
-                  type="button"
-                  onClick={() => handleStepClick(step.id)}
-                  className={cn(
-                    'shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-left transition-colors',
-                    highlightedStepId === step.id
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border bg-card text-foreground hover:bg-muted',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0',
-                      step.status === 'done'
-                        ? 'bg-success text-white'
-                        : step.status === 'running'
-                          ? 'bg-primary text-primary-foreground'
-                          : step.status === 'failed'
-                            ? 'bg-destructive/10 text-destructive border border-destructive/30'
-                            : 'bg-muted text-muted-foreground',
-                    )}
-                  >
-                    {step.id}
-                  </span>
-                  <span className="text-[11px] font-medium max-w-[120px] truncate">
-                    {step.title ?? step.description}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Body */}
-        <div className="flex flex-col sm:flex-row flex-1 min-h-0">
-          <aside className="w-[240px] sm:w-[260px] shrink-0 border-r border-border bg-muted/30 flex-col hidden sm:flex">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-              <span className="text-sm font-semibold text-foreground">Plan</span>
-              <span className="text-xs text-muted-foreground tabular-nums">{steps.length} steps</span>
-            </div>
-            <div className="flex-1 overflow-y-auto py-2 px-2">
-              {steps.length === 0 ? (
-                <p className="text-muted-foreground text-xs text-center pt-6 px-2">
-                  {isRunning ? 'Waiting for planner…' : 'No steps recorded.'}
-                </p>
+        <div className="flex flex-col md:flex-row flex-1 min-h-0">
+          {/* Sidebar */}
+          <aside className="md:w-[270px] shrink-0 border-b md:border-b-0 md:border-r border-border bg-muted/30 md:overflow-y-auto">
+            <div className="px-4 py-3">
+              <p className="text-sm font-semibold text-foreground mb-2">Checklist</p>
+              {checklist.length === 0 ? (
+                <p className="text-xs text-muted-foreground">{meta.active ? 'Waiting for the plan…' : 'No plan.'}</p>
               ) : (
-                <StepList
-                  steps={steps}
-                  onStepClick={handleStepClick}
-                  highlightedStepId={highlightedStepId}
-                />
+                <ol className="space-y-1.5">
+                  {checklist.map((s, i) => (
+                    <li key={i} className="flex gap-2 text-[12.5px]">
+                      {s.status === 'completed' ? (
+                        <Check className="w-3.5 h-3.5 text-success shrink-0 mt-0.5" />
+                      ) : s.status === 'in_progress' ? (
+                        <Loader2 className="w-3.5 h-3.5 text-primary animate-spin shrink-0 mt-0.5" />
+                      ) : (
+                        <Circle className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0 mt-0.5" />
+                      )}
+                      <span className={cn(s.status === 'completed' ? 'text-muted-foreground' : 'text-foreground')}>{s.title}</span>
+                    </li>
+                  ))}
+                </ol>
               )}
             </div>
+            {state.plan?.requirements && state.plan.requirements.length > 0 && (
+              <div className="px-4 py-3 border-t border-border hidden md:block">
+                <p className="text-xs font-semibold text-foreground mb-1.5">Requirements</p>
+                <ul className="space-y-1">
+                  {state.plan.requirements.map((r, i) => {
+                    const check = state.verdict?.requirements?.[i]
+                    return (
+                      <li key={i} className="text-[11.5px] text-muted-foreground flex gap-1.5">
+                        <span className={cn('font-mono', check ? (check.met ? 'text-success' : 'text-destructive') : 'text-primary')}>{check ? (check.met ? '✓' : '✗') : `R${i + 1}`}</span>
+                        <span>{r}</span>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            )}
+            {state.checkpoints.length > 0 && reviewable && (
+              <div className="px-4 py-3 border-t border-border hidden md:block">
+                <p className="text-xs font-semibold text-foreground mb-1.5">Checkpoints</p>
+                <ul className="space-y-1">
+                  {state.checkpoints.slice(-6).reverse().map((c) => (
+                    <li key={c.sha} className="flex items-center justify-between text-[11.5px] text-muted-foreground">
+                      <span className="font-mono">{c.label}</span>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 text-primary hover:underline"
+                        onClick={() => act(`restore-${c.sha}`, () => restoreCheckpoint(taskId, c.sha), `Restored ${c.label}`).then(loadDiff)}
+                      >
+                        <Undo2 className="w-3 h-3" /> restore
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </aside>
 
-          <div className="flex-1 min-w-0 flex flex-col md:overflow-hidden">
-            <div className="shrink-0 px-3 sm:px-4 py-2 sm:py-3 border-b border-border">
-              <MetricsPanel metrics={metrics} isRunning={isRunning} compact />
-            </div>
-            <div className="md:flex-1 md:min-h-0 md:overflow-hidden">
-              <LiveLog
-                events={events}
-                isRunning={isRunning}
-                failedReason={failedReason}
-                hideCompleteBanner={isDone && !!prUrl}
-                registerRef={(stepId, el) => {
-                  if (el) stepGroupRefs.current.set(stepId, el)
-                  else stepGroupRefs.current.delete(stepId)
-                }}
+          {/* Main */}
+          <div className="flex-1 min-w-0 flex flex-col min-h-[420px]">
+            <div className="shrink-0 px-3 sm:px-5 py-2.5 border-b border-border flex items-center justify-between gap-2">
+              <Tabs<TabKey>
+                layoutId="task-tabs"
+                value={tab}
+                onChange={setTab}
+                items={[
+                  { key: 'activity', label: 'Activity' },
+                  { key: 'changes', label: 'Changes', ...(fileCount || patchFiles ? { count: fileCount || patchFiles } : {}) },
+                  { key: 'review', label: 'Review' },
+                ]}
               />
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+              {status === 'awaiting_approval' && state.plan && (
+                <div className="shrink-0 p-3 sm:p-4 border-b border-border max-h-[70%] overflow-y-auto">
+                  <PlanCard
+                    plan={state.plan}
+                    busy={busy === 'approve'}
+                    onApprove={(edited) => void act('approve', () => approvePlan(taskId, edited), 'Plan approved — the agent is starting')}
+                    onCancel={() => void act('cancel', () => cancelTask(taskId), 'Task cancelled')}
+                  />
+                </div>
+              )}
+              {status === 'needs_input' && state.pendingQuestion && (
+                <div className="shrink-0 p-3 sm:p-4 border-b border-border bg-primary/5">
+                  <p className="text-xs font-semibold text-primary mb-1">The agent needs your input</p>
+                  <p className="text-[13px] text-foreground mb-2 whitespace-pre-wrap">{state.pendingQuestion}</p>
+                  <Composer autoFocus placeholder="Your answer…" onSend={(t) => act('answer', () => sendMessage(taskId, t), 'Answer sent — resuming')} />
+                </div>
+              )}
+
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                {tab === 'activity' && <ActivityFeed events={events} live={meta.active} loading={!eventsLoaded} />}
+                {tab === 'changes' && (
+                  <div className="p-3 sm:p-5">
+                    <DiffView
+                      patch={patch}
+                      rejected={state.rejectedFiles}
+                      editable={reviewable}
+                      onToggle={(p, r) => void act('reject', () => setFileRejected(taskId, p, r))}
+                    />
+                  </div>
+                )}
+                {tab === 'review' && (
+                  <div className="p-3 sm:p-5">
+                    <ReviewPanel state={state} />
+                  </div>
+                )}
+              </div>
+
+              {/* Action bar */}
+              {reviewable && (
+                <div className="shrink-0 border-t border-border p-3 sm:px-5 bg-muted/30 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[12.5px] text-muted-foreground">
+                      {status === 'ready' ? 'Validated and reviewed.' : 'Validation or review flagged something — check the Review tab.'} Publishing opens a{' '}
+                      {state.options.draft ? 'draft ' : ''}pull request{state.rejectedFiles.length ? ` without ${state.rejectedFiles.length} excluded file(s)` : ''}.
+                    </p>
+                    {!state.source && (
+                      <Button size="sm" loading={busy === 'publish'} onClick={() => act('publish', () => publishTask(taskId), 'Opening the pull request…')}>
+                        <GitPullRequest className="w-3.5 h-3.5" /> Publish PR
+                      </Button>
+                    )}
+                  </div>
+                  <Composer placeholder="Ask for changes (e.g. “also add a test for the empty case”)" onSend={(t) => act('feedback', () => sendMessage(taskId, t), 'Sent — the agent is revising')} />
+                </div>
+              )}
+              {(status === 'running' || status === 'validating') && (
+                <div className="shrink-0 border-t border-border p-3 sm:px-5">
+                  <Composer placeholder="Send a note to the agent while it works…" onSend={(t) => act('note', () => sendMessage(taskId, t), 'Delivered on the agent’s next step')} />
+                </div>
+              )}
             </div>
           </div>
         </div>
-
-        {/* Done footer */}
-        {isDone && prUrl && (
-          <div className="shrink-0 px-4 py-2.5 border-t border-green-200 bg-green-50 flex items-center justify-between gap-3">
-            <p className="text-xs font-medium text-success">Task complete — PR opened</p>
-            <a
-              href={prUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-xs font-semibold text-success hover:underline inline-flex items-center gap-1"
-            >
-              View PR <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
-        )}
       </div>
     </AppShell>
   )

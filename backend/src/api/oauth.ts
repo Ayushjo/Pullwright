@@ -167,6 +167,42 @@ export function createOAuthRouter(sessionStore: SessionStore) {
     }
   })
 
+  // Local development only: sign in as the owner of GITHUB_TOKEN without the OAuth round trip
+  // (the OAuth app's callback URL points at production). Disabled unless ENABLE_DEV_LOGIN=1,
+  // never in production, and only from loopback.
+  router.get("/dev-login", async (req, res) => {
+    const loopback = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress ?? "")
+    if (process.env.NODE_ENV === "production" || process.env.ENABLE_DEV_LOGIN !== "1" || !loopback || !process.env.GITHUB_TOKEN) {
+      return res.status(404).json({ error: "Not found" })
+    }
+    const accessToken = process.env.GITHUB_TOKEN
+    const userRes = await fetch(GITHUB_USER_URL, { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/vnd.github+json" } })
+    if (!userRes.ok) return res.status(502).json({ error: "GITHUB_TOKEN is not valid" })
+    const user = (await userRes.json()) as { id: number; login: string; name?: string; avatar_url: string; email?: string }
+    let userId: string | undefined
+    if (isDatabaseEnabled()) {
+      userId =
+        (await upsertUserByGithubId({
+          githubId: BigInt(user.id),
+          login: user.login,
+          ...(user.name ? { name: user.name } : {}),
+          avatarUrl: user.avatar_url,
+          ...(user.email ? { email: user.email } : {}),
+        })) ?? undefined
+    }
+    const sessionId = await sessionStore.create({
+      ...(userId ? { userId } : {}),
+      login: user.login,
+      ...(user.name ? { name: user.name } : {}),
+      avatarUrl: user.avatar_url,
+      accessToken,
+      createdAt: new Date().toISOString(),
+    })
+    res.cookie(SESSION_COOKIE, sessionId, cookieOptions())
+    logger.warn(`DEV LOGIN used for ${user.login}`)
+    res.redirect(`${frontendUrl()}${safeReturnTo(req.query.returnTo)}`)
+  })
+
   // Current user (public fields only).
   router.get("/me", (req, res) => {
     if (!req.session) return res.status(200).json({ user: null })

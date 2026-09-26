@@ -40,6 +40,8 @@ export type GateResult = {
 }
 
 const ARTEFACT = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|[^/]+\.tsbuildinfo|[^/]+\.log|\.env(\.[^/]*)?|\.DS_Store)$|(^|\/)(node_modules|dist|build|coverage|\.next)\//
+const TEST_FILE = /(^|\/)(__tests__|tests?)\/|\.(test|spec)\.[a-z]+$|(^|\/)test_[^/]+\.py$/
+const ASSERTION = /\b(assert\w*|expect|should)\s*[.(]|^\s*[-+]?\s*(it|test)\s*\(/
 const SCRATCH = /(^|\/)(scratch|tmp|temp|debug|repro|reproduce|test_repro|try)[^/]*\.(js|ts|mjs|cjs|py|sh)$/i
 
 export async function runVerify(sb: Sandbox, cmds: string[], timeoutMs = 300_000): Promise<VerifyRun[]> {
@@ -111,6 +113,17 @@ export async function runGate(input: {
       if (s.removed >= 30 && s.removed > origLines * 0.4 && s.added < s.removed * 0.6) {
         problems.push(
           `${s.path}: ${s.removed} of ${origLines} lines were removed (only ${s.added} added). This looks like the file was truncated or rewritten. Restore the removed code and make a targeted edit.`,
+        )
+      }
+    }
+    // Weakening the test suite to get green is never acceptable: net removal of assertions blocks.
+    if (s.status !== "A" && TEST_FILE.test(s.path)) {
+      const d = await git(ws.root, ["diff", "--cached", baseSha, "--", s.path])
+      const removedAsserts = d.split("\n").filter((l) => l.startsWith("-") && !l.startsWith("---") && ASSERTION.test(l)).length
+      const addedAsserts = d.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++") && ASSERTION.test(l)).length
+      if (removedAsserts > addedAsserts || (s.status === "D" && removedAsserts > 0)) {
+        problems.push(
+          `${s.path}: ${removedAsserts - addedAsserts} existing test assertion(s) were removed. Never delete or weaken existing tests to make the suite pass — restore them. Pre-existing failures that this issue doesn't cover can stay failing.`,
         )
       }
     }

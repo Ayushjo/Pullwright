@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import type { Task } from '../types/task'
 import { Badge } from './ui'
 import { cn } from '../lib/cn'
+import { statusMeta } from '../lib/status'
 
 function timeAgo(iso: string) {
   const diff = Date.now() - new Date(iso).getTime()
@@ -13,28 +14,11 @@ function timeAgo(iso: string) {
   return `${Math.floor(h / 24)}d ago`
 }
 
-function statusTone(status: Task['status']): 'success' | 'warning' | 'danger' | 'neutral' | 'primary' {
-  if (status === 'done') return 'success'
-  if (status === 'running' || status === 'planning') return 'primary'
-  if (status === 'failed') return 'danger'
-  if (status === 'queued') return 'warning'
-  return 'neutral'
-}
-
-function statusLabel(status: Task['status']): string {
-  const map: Record<Task['status'], string> = {
-    done: 'Done',
-    running: 'Running',
-    planning: 'Planning',
-    verifying: 'Verifying',
-    failed: 'Failed',
-    queued: 'Queued',
-  }
-  return map[status] ?? status
-}
+const statusTone = (status: Task['status']) => statusMeta(status).tone
+const statusLabel = (status: Task['status']) => statusMeta(status).label
 
 function StatusDot({ status }: { status: Task['status'] }) {
-  const isLive = status === 'running' || status === 'planning' || status === 'verifying'
+  const isLive = statusMeta(status).active
   if (!isLive) return null
   return (
     <span className="relative flex items-center justify-center w-2 h-2 shrink-0">
@@ -50,7 +34,7 @@ export default function TaskCard({ task }: { task: Task }) {
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
 
   const progressColor =
-    task.status === 'failed' ? '#CF222E' : task.status === 'done' ? '#1A7F37' : '#2B7FFF'
+    task.status === 'failed' ? '#CF222E' : task.status === 'done' || task.status === 'published' ? '#1A7F37' : '#2B7FFF'
 
   return (
     <Link
@@ -86,17 +70,19 @@ export default function TaskCard({ task }: { task: Task }) {
           </div>
         </div>
 
-        <div className="shrink-0 w-[92px] flex flex-col justify-center items-end self-stretch py-0.5">
-          <p className="text-xs font-medium text-muted-foreground tabular-nums mb-2">
-            {done}/{total} steps
-          </p>
-          <div className="w-full h-1.5 bg-border rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-200"
-              style={{ width: `${pct}%`, background: progressColor }}
-            />
+        {total > 0 && (
+          <div className="shrink-0 w-[92px] flex flex-col justify-center items-end self-stretch py-0.5">
+            <p className="text-xs font-medium text-muted-foreground tabular-nums mb-2">
+              {done}/{total} steps
+            </p>
+            <div className="w-full h-1.5 bg-border rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-200"
+                style={{ width: `${pct}%`, background: progressColor }}
+              />
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </Link>
   )

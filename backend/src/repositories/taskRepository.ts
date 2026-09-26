@@ -358,3 +358,11 @@ export async function isTaskTerminalInDb(taskId: string): Promise<boolean> {
   })
   return row?.status === "done" || row?.status === "failed"
 }
+
+const ACTIVE: TaskStatus[] = ["queued", "preparing", "planning", "running", "validating", "publishing"]
+
+/** Tasks currently consuming a worker for this user (used for per-user concurrency limits). */
+export async function countActiveTasksForUser(userId: string): Promise<number> {
+  if (!isDatabaseEnabled()) return 0
+  return getPrisma().task.count({ where: { userId, status: { in: ACTIVE } } })
+}

@@ -23,6 +23,9 @@ export type SubmittedPlan = {
   files: { path: string; new: boolean }[]
   risks?: string
   blocked?: string
+  /** Set when the user edited steps/requirements at approval time — they override the summary. */
+  editedByUser?: boolean
+  userNotes?: string[]
 }
 
 export type ToolResult = ToolOutput | Control
@@ -287,6 +290,7 @@ export function planTools(ws: Workspace, sb: Sandbox): Tool[] {
 
 export function runTools(ws: Workspace, sb: Sandbox, onPlanUpdate: (steps: { title: string; status: string }[]) => void): Tool[] {
   const editor = new Editor(ws)
+  let asked = 0
   return [
     ...readOnlyTools(ws, sb, false),
     {
@@ -339,7 +343,11 @@ export function runTools(ws: Workspace, sb: Sandbox, onPlanUpdate: (steps: { tit
     },
     {
       def: fn("ask_user", "Ask the user one concrete question when you are blocked by a real ambiguity. Use sparingly.", { question: str("The question") }, ["question"]),
-      handler: async (a) => ({ control: "ask_user", question: argStr(a, "question") }),
+      handler: async (a) => {
+        asked++
+        if (asked > 1) return { ok: false, output: "You already asked the user a question in this run. Follow their answer (or your most reasonable assumption) and continue; note any remaining doubt in your finish summary." }
+        return { control: "ask_user", question: argStr(a, "question") }
+      },
     },
     {
       def: fn(

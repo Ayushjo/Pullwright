@@ -1,75 +1,115 @@
-const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? ''
-const AUTH_HEADERS: Record<string, string> = {}
-const apiToken = import.meta.env.VITE_API_TOKEN as string | undefined
-if (apiToken) AUTH_HEADERS['Authorization'] = `Bearer ${apiToken}`
+import type { TaskState, TaskEvent, DiffStat } from '../types/task'
 
+const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? ''
 // All requests send cookies so the httpOnly session works cross-origin.
 const CREDENTIALS: RequestCredentials = 'include'
 
 export const API_BASE = BASE
 
-export async function createTask(issueUrl: string): Promise<{ taskId: string }> {
-  const res = await fetch(`${BASE}/api/task`, {
-    method: 'POST',
-    credentials: CREDENTIALS,
-    headers: { 'Content-Type': 'application/json', ...AUTH_HEADERS },
-    body: JSON.stringify({ issueUrl }),
-  })
-  if (!res.ok) {
-    const body = await res.text()
-    throw new Error(body || `HTTP ${res.status}`)
-  }
-  return res.json() as Promise<{ taskId: string }>
-}
-
-export function openTaskStream(taskId: string): EventSource {
-  // EventSource can't send headers; pass the token via query param when present.
-  const qs = apiToken ? `?token=${encodeURIComponent(apiToken)}` : ''
-  return new EventSource(`${BASE}/api/task/${taskId}/stream${qs}`, { withCredentials: true })
-}
-
-export async function getTaskEvents(taskId: string) {
-  try {
-    const res = await fetch(`${BASE}/api/task/${taskId}/events`, { credentials: CREDENTIALS, headers: AUTH_HEADERS })
-    if (!res.ok) return []
-    return res.json()
-  } catch {
-    return []
+/** Error carrying the server's own message (never a generic "is the backend running?"). */
+export class ApiError extends Error {
+  readonly status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
   }
 }
 
-export async function getTaskState(taskId: string): Promise<Record<string, unknown> | null> {
+function parseJson(text: string): unknown {
   try {
-    const res = await fetch(`${BASE}/api/task/${taskId}`, { credentials: CREDENTIALS, headers: AUTH_HEADERS })
-    if (res.status === 404) return null
-    if (!res.ok) return null
-    return res.json() as Promise<Record<string, unknown>>
+    return text ? JSON.parse(text) : null
   } catch {
     return null
   }
 }
 
-export async function getTaskMetrics(taskId: string) {
-  const res = await fetch(`${BASE}/api/task/${taskId}/metrics`, { credentials: CREDENTIALS, headers: AUTH_HEADERS })
-  if (!res.ok) return null
-  return res.json()
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      credentials: CREDENTIALS,
+      ...init,
+      headers: { ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...(init.headers ?? {}) },
+    })
+  } catch {
+    throw new ApiError('Can’t reach the Pullwright API. Check your connection and try again.', 0)
+  }
+  const text = await res.text()
+  const data = parseJson(text)
+  if (!res.ok) {
+    const msg =
+      (data && typeof data === 'object' && 'error' in data && typeof (data as { error: unknown }).error === 'string'
+        ? (data as { error: string }).error
+        : null) ?? (res.status === 401 ? 'Please sign in again.' : `Request failed (${res.status})`)
+    throw new ApiError(msg, res.status)
+  }
+  return data as T
 }
 
-export async function retryTask(taskId: string, issueUrl?: string) {
-  const res = await fetch(`${BASE}/api/task/${taskId}/retry`, {
-    method: 'POST',
-    credentials: CREDENTIALS,
-    headers: { ...AUTH_HEADERS, 'Content-Type': 'application/json' },
-    body: JSON.stringify(issueUrl ? { issueUrl } : {}),
-  })
-  if (!res.ok) throw new Error(`Retry failed: ${res.status}`)
-  return res.json()
+const post = <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) })
+
+export type CreateTaskOptions = { autoApprove?: boolean; autoPublish?: boolean; draft?: boolean }
+
+export function createTask(issueUrl: string, options: CreateTaskOptions = {}) {
+  return post<{ taskId: string; status: string }>('/api/task', { issueUrl, ...options })
 }
+
+export function openTaskStream(taskId: string, afterSeq = -1): EventSource {
+  const qs = afterSeq >= 0 ? `?after=${afterSeq}` : ''
+  return new EventSource(`${BASE}/api/task/${taskId}/stream${qs}`, { withCredentials: true })
+}
+
+export async function getTaskEvents(taskId: string): Promise<TaskEvent[]> {
+  try {
+    return await request<TaskEvent[]>(`/api/task/${taskId}/events`)
+  } catch {
+    return []
+  }
+}
+
+export async function getTask(taskId: string): Promise<TaskState | null> {
+  try {
+    return await request<TaskState>(`/api/task/${taskId}`)
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 404 || e.status === 403)) return null
+    throw e
+  }
+}
+
+/** Legacy alias used by older pages. */
+export async function getTaskState(taskId: string): Promise<Record<string, unknown> | null> {
+  return (await getTask(taskId).catch(() => null)) as Record<string, unknown> | null
+}
+
+export async function getTaskMetrics(taskId: string) {
+  try {
+    return await request<Record<string, unknown>>(`/api/task/${taskId}/metrics`)
+  } catch {
+    return null
+  }
+}
+
+export const approvePlan = (taskId: string, body: { steps?: { title: string; files: string[] }[]; requirements?: string[]; note?: string } = {}) =>
+  post<{ ok: true }>(`/api/task/${taskId}/approve`, body)
+export const sendMessage = (taskId: string, text: string) => post<{ ok: true; resumed?: boolean }>(`/api/task/${taskId}/message`, { text })
+export const cancelTask = (taskId: string) => post<{ ok: true }>(`/api/task/${taskId}/cancel`)
+export const publishTask = (taskId: string) => post<{ ok: true }>(`/api/task/${taskId}/publish`)
+export const retryTask = (taskId: string) => post<{ ok: true }>(`/api/task/${taskId}/retry`)
+export const restoreCheckpoint = (taskId: string, sha: string) => post<{ ok: true }>(`/api/task/${taskId}/restore`, { sha })
+export const setFileRejected = (taskId: string, path: string, rejected: boolean) =>
+  post<{ rejectedFiles: string[] }>(`/api/task/${taskId}/files`, { path, rejected })
+export const shareTask = (taskId: string, isPublic: boolean) => post<{ isPublic: boolean }>(`/api/task/${taskId}/share`, { public: isPublic })
+export const getDiff = (taskId: string) =>
+  request<{ patch: string; stats: DiffStat[]; rejectedFiles: string[]; acceptedPatch: string }>(`/api/task/${taskId}/diff`)
 
 export async function listTasks() {
-  const res = await fetch(`${BASE}/api/tasks`, { credentials: CREDENTIALS, headers: AUTH_HEADERS })
-  if (!res.ok) return []
-  return res.json()
+  try {
+    const data = await request<unknown>('/api/tasks')
+    if (Array.isArray(data)) return data
+    return (data as { tasks?: unknown[] })?.tasks ?? []
+  } catch {
+    return []
+  }
 }
 
 export type StatsResponse = {
@@ -78,26 +118,28 @@ export type StatsResponse = {
   done: number
   failed: number
   queued: number
+  needsYou?: number
+  totalCostUsd?: number
 }
 
 export async function getStats(): Promise<StatsResponse | null> {
   try {
-    const res = await fetch(`${BASE}/api/stats`, { credentials: CREDENTIALS, headers: AUTH_HEADERS })
-    if (!res.ok) return null
-    return res.json() as Promise<StatsResponse>
+    return await request<StatsResponse>('/api/stats')
   } catch {
     return null
   }
 }
+
+/* ── Public replays ── */
+export const getPublicTask = (taskId: string) => request<Record<string, unknown>>(`/api/public/task/${taskId}`)
+export const getPublicEvents = (taskId: string) => request<TaskEvent[]>(`/api/public/task/${taskId}/events`)
 
 /* ── Auth ── */
 export type AuthUser = { login: string; name?: string; avatarUrl: string }
 
 export async function getMe(): Promise<AuthUser | null> {
   try {
-    const res = await fetch(`${BASE}/api/auth/me`, { credentials: CREDENTIALS, headers: AUTH_HEADERS })
-    if (!res.ok) return null
-    const data = await res.json()
+    const data = await request<{ user: AuthUser | null }>('/api/auth/me')
     return data?.user ?? null
   } catch {
     return null
@@ -111,7 +153,7 @@ export function githubLoginUrl(returnTo?: string): string {
 
 export async function logout(): Promise<void> {
   try {
-    await fetch(`${BASE}/api/auth/logout`, { method: 'POST', credentials: CREDENTIALS, headers: AUTH_HEADERS })
+    await post('/api/auth/logout')
   } catch {
     /* ignore */
   }

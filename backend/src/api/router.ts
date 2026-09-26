@@ -8,12 +8,12 @@ import type { EventBus } from "../events/eventBus.js"
 import type { TaskRegistry } from "../store/taskRegistry.js"
 import type { EventLog } from "../events/eventLog.js"
 import { requireAuth } from "./auth.js"
-import { isDatabaseEnabled } from "../db/prisma.js"
-import { getStatsForUser, listTasksForUser, userOwnsTask, getMetricsFromDb, getTaskDetailFromDb } from "../repositories/taskRepository.js"
+import { getPrisma, isDatabaseEnabled } from "../db/prisma.js"
+import { countActiveTasksForUser, getStatsForUser, listTasksForUser, userOwnsTask, getMetricsFromDb, getTaskDetailFromDb } from "../repositories/taskRepository.js"
 import { createTask, enqueue } from "../agent/service.js"
 import { taskStore, TERMINAL, type TaskState } from "../agent/store.js"
 import { getSpendLedger } from "../agent/spend.js"
-import { restoreCheckpoint, tasksRoot } from "../agent/git.js"
+import { diffStat, diffVs, restoreCheckpoint, tasksRoot } from "../agent/git.js"
 import { filterPatch, metricsOf } from "../agent/pipeline.js"
 
 const ISSUE_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/issues\/\d+\/?$/
@@ -31,6 +31,7 @@ const LocalTask = z.object({
   autoApprove: z.boolean().optional(),
 })
 const Approve = z.object({
+  requirements: z.array(z.string().trim().min(3).max(500)).max(15).optional(),
   steps: z.array(z.object({ title: z.string().trim().min(3).max(300), files: z.array(z.string().max(300)).max(30) })).min(1).max(8).optional(),
   note: z.string().max(4000).optional(),
 })
@@ -113,13 +114,8 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     }
     try {
       if (!req.isOperator && req.session?.userId) {
-        const active = (await taskRegistry.list(50)).filter((t) => ["queued", "preparing", "planning", "running", "validating", "publishing"].includes(t.status))
-        const mine = []
-        for (const t of active) {
-          const st = await taskStore.get(t.taskId)
-          if (st?.userId === req.session.userId) mine.push(t)
-        }
-        if (mine.length >= Number(process.env.MAX_ACTIVE_TASKS_PER_USER ?? 1)) {
+        const active = await countActiveTasksForUser(req.session.userId)
+        if (active >= Number(process.env.MAX_ACTIVE_TASKS_PER_USER ?? 1)) {
           return res.status(429).json({ error: "You already have a task running. Wait for it to finish or cancel it." })
         }
       }
@@ -223,10 +219,14 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid plan" })
     if (parsed.data.steps && s.plan) {
       s.plan.steps = parsed.data.steps
+      s.planChecklist = parsed.data.steps.map((st) => ({ title: st.title, status: "pending" }))
       const files = new Map(s.plan.files.map((f) => [f.path, f]))
       for (const st of parsed.data.steps) for (const f of st.files) if (!files.has(f)) files.set(f, { path: f, new: false })
       s.plan.files = [...files.values()]
     }
+    if (parsed.data.requirements && s.plan) s.plan.requirements = parsed.data.requirements
+    if ((parsed.data.steps || parsed.data.requirements) && s.plan) s.plan.editedByUser = true
+    if (parsed.data.note && s.plan) s.plan.userNotes = [...(s.plan.userNotes ?? []), parsed.data.note]
     if (parsed.data.note) await taskStore.pushMessage(s.taskId, parsed.data.note)
     await taskStore.put({ ...s, status: "running", statusDetail: "Plan approved" })
     await eventBus.emit(s.taskId, { type: "status", status: "running", detail: "Plan approved" })
@@ -284,8 +284,19 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
   router.get("/task/:taskId/diff", async (req, res) => {
     const s = await load(req, res)
     if (!s) return
-    const patch = (await taskStore.loadPatch(s.taskId)) ?? ""
-    res.json({ patch, stats: s.stats ?? [], rejectedFiles: s.rejectedFiles, acceptedPatch: filterPatch(patch, new Set(s.rejectedFiles)) })
+    let patch = (await taskStore.loadPatch(s.taskId)) ?? ""
+    let stats = s.stats ?? []
+    // While the agent is still working, show the live working-tree diff (host-side, read-only).
+    const live = ["running", "validating", "needs_input"].includes(s.status)
+    if ((live || !patch) && s.workDir && s.baseSha && existsSync(s.workDir)) {
+      try {
+        patch = await diffVs(s.workDir, s.baseSha)
+        stats = await diffStat(s.workDir, s.baseSha)
+      } catch {
+        /* workspace busy or gone */
+      }
+    }
+    res.json({ patch, stats, live, rejectedFiles: s.rejectedFiles, acceptedPatch: filterPatch(patch, new Set(s.rejectedFiles)) })
   })
 
   router.post("/task/:taskId/files", async (req, res) => {
@@ -320,6 +331,19 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     await taskStore.put({ ...s, status: "publishing", statusDetail: "Queued for publishing" })
     await enqueue("publish", s.taskId)
     res.json({ ok: true })
+  })
+
+  const Share = z.object({ public: z.boolean() })
+  router.post("/task/:taskId/share", async (req, res) => {
+    const s = await load(req, res)
+    if (!s) return
+    const parsed = Share.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({ error: "Invalid request" })
+    if (s.source) return res.status(409).json({ error: "Eval tasks can't be shared" })
+    if (!isDatabaseEnabled()) return res.status(409).json({ error: "Sharing needs the database" })
+    if (!["published", "ready", "needs_review", "failed", "cancelled"].includes(s.status)) return res.status(409).json({ error: "Share a task once it has finished" })
+    await getPrisma().task.updateMany({ where: { id: s.taskId }, data: { isPublic: parsed.data.public } })
+    res.json({ isPublic: parsed.data.public })
   })
 
   router.post("/task/:taskId/retry", async (req, res) => {

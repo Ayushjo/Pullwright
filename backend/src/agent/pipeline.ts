@@ -75,6 +75,7 @@ export class Pipeline {
           durationMs: e.durationMs,
         })
         void this.emit(s.taskId, { type: "cost", costUsd: s.costUsd, llmCalls: s.llmCalls, capUsd: ledger.taskCapUsd })
+        void taskStore.patchCounters(s.taskId, { costUsd: s.costUsd, llmCalls: s.llmCalls, toolCalls: s.toolCalls })
       } else if (e.type === "agent_thought") {
         void this.emit(s.taskId, { type: "agent_thought", agent: phase === "plan" ? "planner" : "executor", status: "reasoning", text: e.text })
       } else if (e.type === "tool_call") {
@@ -257,7 +258,13 @@ export class Pipeline {
       const unplannedSeen = new Set<string>()
       let forcedReview = false
       const plannedFiles = s.plan.files.map((f) => f.path)
-      const planText = `${s.plan.summary}\n${s.plan.steps.map((x) => x.title).join("\n")}`
+      const planText = [
+        s.plan.editedByUser
+          ? "The user edited this plan at approval time: the steps and requirements below are authoritative; ignore anything in the original summary that contradicts them."
+          : s.plan.summary,
+        ...s.plan.steps.map((x, i) => `${i + 1}. ${x.title}`),
+        ...(s.plan.userNotes?.length ? [`User notes: ${s.plan.userNotes.join(" | ")}`] : []),
+      ].join("\n")
       let stepNo = s.checkpoints.length
 
       const loop = new AgentLoop(
@@ -480,7 +487,8 @@ function prBody(s: TaskState): string {
     ...files,
     verify.length ? "\n## Verification\n| Command | Before | After |\n|---|---|---|\n" + verify.join("\n") : "",
     s.gate?.warnings.length ? `\n<details><summary>Validation warnings</summary>\n\n- ${s.gate.warnings.join("\n- ")}\n</details>` : "",
-    s.plan?.risks ? `\n**Assumptions / risks:** ${s.plan.risks}` : "",
+    s.plan?.risks && !s.plan.editedByUser ? `\n**Assumptions / risks:** ${s.plan.risks}` : "",
+    s.plan?.userNotes?.length ? `\n**Reviewer notes given to the agent:** ${s.plan.userNotes.join(" · ")}` : "",
     "",
     `---\n<sub>Opened by Pullwright after human review · ${s.llmCalls} model calls · $${cost.toFixed(4)} · plan → sandbox → validation → review</sub>`,
   ]

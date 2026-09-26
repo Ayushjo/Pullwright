@@ -4,14 +4,24 @@
     {
       "name": "devin-frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5174"
+      ],
       "cwd": "frontend",
-      "port": 5173
+      "port": 5174
     },
     {
       "name": "pullwright-backend",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["tsx", "--env-file=.env", "src/index.ts"],
+      "runtimeArgs": [
+        "tsx",
+        "--env-file=.env",
+        "src/index.ts"
+      ],
       "cwd": "backend",
       "port": 3500
     }
