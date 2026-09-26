@@ -15,10 +15,10 @@ Plan: `/Users/jochannnn/.claude/plans/okay-read-the-whole-zippy-breeze.md` (Phas
 - The reference repos are in `references/` (git-ignored locally).
 
 ## Heartbeat
-last-active: 2026-09-27 04:05 IST
+last-active: 2026-09-27 04:50 IST
 
 ## Progress
-- [~] Phase 1: agent core. Built and committed (`ea67f10`). The bookstore ladder passes 11/11 after fixes. Next: real-repo evals on MyOwnDevin itself.
+- [x] Phase 1: agent core. The bookstore ladder passes 11/11, and real-repo issues #13, #1 and #2 pass (see the table).
 - [ ] Phase 2: security + infra
 - [ ] Phase 3: Jules flow UI/API
 - [ ] Phase 4: BYOK + Dodo
@@ -43,6 +43,12 @@ All runs are local eval tasks (fixture `backend/evals/fixtures/bookstore`, hidde
 | 12 | L11 report endpoint (raw text bodies) | 11 | ready | pass | ✔ high | 0.0139 | cross-cutting server change |
 | 13 | L09 (rerun) | 9 | failed = correct | n/a | – | 0.0037 | "Needs clarification: repo does not contain src/middleware/auth.js…" |
 | 14 | L10 (rerun) | 10 | ready | pass | ✔ high | 0.0068 | |
+| 15 | R01 real repo #13: Home.tsx tagline | 12 | needs_review | fail | ✘ | 0.0238 | **Platform bugs:** tests wrote the tracked `app.log`; the gate asked the agent to revert it, so it deleted the file. The baseline ran with network but validation didn't (`EAI_AGAIN localhost`). Fixes: auto-revert artefact side effects, run the baseline in the same no-network container, and drop `NetworkDisabled` (it removed /etc/hosts) |
+| 16 | R01 (rerun) | 12 | ready | pass | ✔ high | 0.0065 | +1/-0 on a 486-line TSX file (the old agent deleted 344 lines here) |
+| 17 | R02 real repo #1: /api/health, no auth | 13 | ready | pass | ✔ high | 0.0102 | registered before requireAuth, correctly |
+| 18 | R03 real repo #2: tasks pagination | 14 | ready | pass | ✔ | 0.0249 | **Missed "update internal usage" (frontend) and the DB branch; the judge didn't notice.** Added a requirements checklist (planner extracts requirements → finish must account for each → judge checks each), a caller-search rule, and a judge fix round |
+| 19 | R03 (rerun) | 14 | failed | – | – | 0.0138 | planner hit 14 steps; 3 were wasted on regex errors from `list(` |
+| 20 | R03 (rerun) | 14 | ready | pass | ✔ high 8/8 requirements | 0.0425 | search falls back to literal on bad regex; plan limit is now 20. DB and Redis paths plus the frontend client were updated |
 
 ## Spend total
-$0.1130 after 176 calls (65% of input tokens were cache hits)
+$0.2346 after ~330 calls

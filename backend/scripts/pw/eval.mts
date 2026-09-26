@@ -29,14 +29,22 @@ type LadderItem = {
   body: string
   expect?: "blocked"
   acceptance: { file: string; code: string } | null
+  gitSource?: string
+  gitRef?: string
+  checks?: ({ type: "contains"; file: string; pattern: string } | { type: "onlyFiles"; files: string[] } | { type: "maxRemoved"; n: number } | { type: "containsAny"; files: string[]; pattern: string })[]
 }
 
 const sh = (cmd: string, args: string[], cwd?: string) =>
   execFileSync(cmd, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 })
 
-function materialise(fixture: string): string {
+function materialise(fixture: string, gitSource?: string, gitRef?: string): string {
   const dir = path.join(evalRepos, fixture)
   if (existsSync(path.join(dir, ".git"))) return fixture
+  if (gitSource) {
+    mkdirSync(evalRepos, { recursive: true })
+    sh("git", ["clone", "-q", "--depth", "1", "--branch", gitRef ?? "main", `file://${gitSource}`, dir])
+    return fixture
+  }
   mkdirSync(dir, { recursive: true })
   cpSync(path.join(backend, "evals/fixtures", fixture), dir, { recursive: true })
   sh("git", ["init", "-q", "-b", "main"], dir)
@@ -59,7 +67,7 @@ async function api(method: string, p: string, body?: unknown) {
 const STOP = new Set(["ready", "needs_review", "failed", "cancelled", "needs_input", "awaiting_approval", "published"])
 
 async function runItem(item: LadderItem) {
-  const repo = materialise(item.fixture)
+  const repo = materialise(item.fixture, item.gitSource, item.gitRef)
   const t0 = Date.now()
   const { taskId } = await api("POST", "/api/eval/task", { localRepo: repo, title: item.title, body: item.body, autoApprove: true })
   process.stdout.write(`\n▶ ${item.id} task=${taskId}\n`)
@@ -113,6 +121,29 @@ async function runItem(item: LadderItem) {
     }
   }
   // "blocked" means the agent stopped to ask instead of inventing code — no patch may be produced.
+  if (item.checks && patch.trim()) {
+    const work = path.join(tasksDir, "eval-check", `${item.id}-${taskId.slice(0, 8)}`)
+    rmSync(work, { recursive: true, force: true })
+    mkdirSync(path.dirname(work), { recursive: true })
+    sh("git", ["clone", "-q", path.join(evalRepos, repo), work])
+    writeFileSync(path.join(work, "pw.patch"), patch)
+    const fails: string[] = []
+    try {
+      sh("git", ["apply", "--whitespace=nowarn", "pw.patch"], work)
+      rmSync(path.join(work, "pw.patch"))
+      const stats = (s.stats ?? []) as { path: string; removed: number }[]
+      for (const c of item.checks) {
+        if (c.type === "contains" && !readFileSync(path.join(work, c.file), "utf8").includes(c.pattern)) fails.push(`${c.file} lacks ${c.pattern}`)
+        if (c.type === "onlyFiles") for (const f of stats) if (!c.files.includes(f.path)) fails.push(`unexpected file ${f.path}`)
+        if (c.type === "containsAny" && !c.files.some((f) => existsSync(path.join(work, f)) && readFileSync(path.join(work, f), "utf8").includes(c.pattern))) fails.push(`none of ${c.files.join(", ")} contain ${c.pattern}`)
+        if (c.type === "maxRemoved") for (const f of stats) if (f.removed > c.n) fails.push(`${f.path} removed ${f.removed} lines`)
+      }
+    } catch (e) {
+      fails.push(`patch did not apply: ${(e as Error).message.slice(0, 200)}`)
+    }
+    accept = fails.length ? "fail" : "pass"
+    acceptOut = fails.join("\n")
+  }
   const blockedOk = item.expect === "blocked" ? !patch.trim() && (s.status === "needs_input" || /^Needs clarification/.test(String(s.failureReason ?? ""))) : null
   const result = {
     ts: new Date().toISOString(),

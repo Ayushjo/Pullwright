@@ -50,13 +50,13 @@ export type TaskEvent =
   | { type: "task_failed"; reason: string; metrics?: TaskMetricsSnapshot; timestamp?: string }
   // ── v2 (Jules-style flow) ──
   | { type: "status"; status: string; detail?: string; timestamp?: string }
-  | { type: "plan_ready"; plan: { summary: string; steps: { title: string; files: string[] }[]; files: { path: string; new: boolean }[]; risks?: string; blocked?: string }; timestamp?: string }
+  | { type: "plan_ready"; plan: { summary: string; requirements?: string[]; steps: { title: string; files: string[] }[]; files: { path: string; new: boolean }[]; risks?: string; blocked?: string }; timestamp?: string }
   | { type: "plan_update"; steps: { title: string; status: string }[]; timestamp?: string }
   | { type: "question"; question: string; timestamp?: string }
   | { type: "user_message"; text: string; timestamp?: string }
   | { type: "notice"; level: "info" | "warn"; message: string; timestamp?: string }
   | { type: "gate_result"; ok: boolean; problems: string[]; warnings: string[]; verify: { cmd: string; before: number | null; after: number }[]; timestamp?: string }
-  | { type: "judge_result"; success: boolean; confidence: string; explanation: string; concerns: string[]; timestamp?: string }
+  | { type: "judge_result"; success: boolean; confidence: string; explanation: string; concerns: string[]; requirements?: { item: string; met: boolean; evidence: string }[]; timestamp?: string }
   | { type: "diff_ready"; files: { path: string; added: number; removed: number; status: string }[]; timestamp?: string }
   | { type: "checkpoint"; label: string; sha: string; timestamp?: string }
   | { type: "cost"; costUsd: number; llmCalls: number; capUsd: number; timestamp?: string }

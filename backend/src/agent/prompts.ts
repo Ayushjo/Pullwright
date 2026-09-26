@@ -13,6 +13,8 @@ How to work:
 - Ground every claim in files you actually saw. Never plan changes to files that do not exist unless the step creates them (mark them "new").
 - If the issue asks you to change or use code it describes as already existing (files, classes, functions, routes, config) and that code is NOT in this repository, do not invent it: set "blocked" with a concrete question explaining what is missing. The task message includes an automated grounding check listing such items.
 - Only plan new files when the issue asks for new functionality; mark them "new". Minor wording mismatches (e.g. a slightly different file name that clearly refers to an existing file) are fine — note them in "risks".
+- List every explicit requirement / acceptance criterion from the issue in "requirements" — the implementation and the reviewer will be checked against this list.
+- When a function signature, exported type or API response shape changes, search for ALL callers/consumers (other modules, the frontend, scripts, tests) and include the necessary updates in the plan.
 - Plan the smallest change that fully resolves the issue. No refactors, no dependency upgrades, no formatting-only changes, no unrelated files.
 - Never include steps to clone, install dependencies, start servers, deploy, commit, push or open a PR — the platform does all of that.
 - 1 to 5 steps. Each step names the exact files it touches.
@@ -39,7 +41,9 @@ If something essential is ambiguous and you cannot make a safe assumption, call 
 Be efficient: every tool call costs money. Prefer targeted search and ranged views over dumping whole files.`
 
 export const JUDGE_SYSTEM = `You review a proposed code change for a GitHub issue. Decide if the patch resolves the issue as written, without unrelated or destructive changes.
-Reply with JSON only: {"success": boolean, "confidence": "low"|"medium"|"high", "explanation": "<2-4 sentences for the pull request body>", "concerns": ["..."]}
+Check every item of the requirements checklist against the patch itself (not against the agent's claims). Also look for logic bugs in the changed code (e.g. filtering after paginating, ignored parameters, wrong totals).
+Reply with JSON only: {"requirements": [{"item": "...", "met": boolean, "evidence": "file/function or why not"}], "success": boolean, "confidence": "low"|"medium"|"high", "explanation": "<2-4 sentences for the pull request body>", "concerns": ["..."]}
+success must be false if any requirement is not met.
 Test/type-check results in "Verification results" are real executions — trust them over speculation about runtime behaviour; only flag behaviour problems you can point to in the patch.
 Mark success=false if: the patch is empty or partial, it misses an explicit requirement, it deletes/rewrites unrelated code, it changes files or fixes bugs the issue does not ask about (scope creep, even if the extra change looks harmless), it adds placeholder/stub logic, or it clearly breaks behaviour.`
 
@@ -68,11 +72,12 @@ export function planTaskMessage(input: {
     .join("\n")
 }
 
-export function runTaskMessage(planMessage: string, plan: { summary: string; steps: { title: string; files: string[] }[]; risks?: string }, userNotes?: string): string {
+export function runTaskMessage(planMessage: string, plan: { summary: string; requirements?: string[]; steps: { title: string; files: string[] }[]; risks?: string }, userNotes?: string): string {
   return [
     planMessage,
     `\n## Approved plan`,
     plan.summary,
+    plan.requirements?.length ? `\nRequirements (all must be satisfied):\n${plan.requirements.map((r, i) => `R${i + 1}. ${r}`).join("\n")}\n\nSteps:` : "",
     ...plan.steps.map((s, i) => `${i + 1}. ${s.title}${s.files.length ? `  [files: ${s.files.join(", ")}]` : ""}`),
     plan.risks ? `\nRisks noted during planning: ${plan.risks}` : "",
     userNotes ? `\n## Notes from the user\n${userNotes}` : "",

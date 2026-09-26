@@ -117,5 +117,90 @@
       "file": "test/zz_accept.test.js",
       "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { createApp, startServer } from '../src/server.js'\nimport { Inventory } from '../src/inventory.js'\nconst app = createApp(Inventory.fromFile())\nconst hdr = (r, k) => Object.fromEntries(Object.entries(r.headers ?? {}).map(([a, b]) => [a.toLowerCase(), String(b)]))[k]\ntest('report endpoint (handler)', async () => {\n  const t = await app({ method: 'GET', url: '/reports/inventory' })\n  assert.equal(t.status, 200)\n  assert.equal(typeof t.body, 'string')\n  assert.match(t.body, /INVENTORY REPORT/)\n  assert.match(hdr(t, 'content-type'), /text\\/plain/)\n  const csv = await app({ method: 'GET', url: '/reports/inventory?format=csv' })\n  assert.match(hdr(csv, 'content-type'), /text\\/csv/)\n  assert.match(csv.body, /^id,title,author/)\n  const md = await app({ method: 'GET', url: '/reports/inventory?format=markdown' })\n  assert.match(hdr(md, 'content-type'), /text\\/markdown/)\n  assert.equal((await app({ method: 'GET', url: '/reports/inventory?format=pdf' })).status, 400)\n})\ntest('report endpoint (http)', async () => {\n  const server = startServer(0)\n  await new Promise((r) => server.once('listening', r))\n  const port = server.address().port\n  try {\n    const res = await fetch(`http://127.0.0.1:${port}/reports/inventory?format=csv`)\n    const text = await res.text()\n    assert.match(res.headers.get('content-type'), /text\\/csv/)\n    assert.ok(text.startsWith('id,title,author'), text.slice(0, 40))\n    const j = await fetch(`http://127.0.0.1:${port}/health`)\n    assert.deepEqual(await j.json(), { status: 'ok' })\n  } finally {\n    server.close()\n  }\n})\n"
     }
+  },
+  {
+    "id": "R01-home-tagline",
+    "level": 12,
+    "fixture": "myowndevin",
+    "gitSource": "/Users/jochannnn/MyOwnDevin",
+    "gitRef": "main",
+    "title": "[DEMO] Add homepage demo tagline (1 file, ~1 min)",
+    "body": "## Demo issue (keep tiny — for screen recording)\n\nAdd a small, visible tag on the marketing homepage so the PR is easy to spot in a demo video.\n\n### Change (one file only)\nIn `frontend/src/pages/Home.tsx`, directly **below** the hero subheadline paragraph\n(`Paste a GitHub issue URL. Get a PR with live logs.`), add:\n\n```tsx\n<p className=\"text-xs text-faint mt-3\">Recorded with Pullwright ✓</p>\n```\n\n### Rules\n- **Only** edit `frontend/src/pages/Home.tsx` — no other files.\n- Do not refactor surrounding code.\n\n### Done when\n- The new line appears under the hero subheadline on the home page.",
+    "acceptance": null,
+    "checks": [
+      {
+        "type": "contains",
+        "file": "frontend/src/pages/Home.tsx",
+        "pattern": "Recorded with Pullwright ✓"
+      },
+      {
+        "type": "onlyFiles",
+        "files": [
+          "frontend/src/pages/Home.tsx"
+        ]
+      },
+      {
+        "type": "maxRemoved",
+        "n": 0
+      }
+    ]
+  },
+  {
+    "id": "R02-api-health",
+    "level": 13,
+    "fixture": "myowndevin",
+    "gitSource": "/Users/jochannnn/MyOwnDevin",
+    "gitRef": "main",
+    "title": "Add GET /api/health endpoint with Redis status",
+    "body": "## Problem\nThe backend has no health check endpoint. We need a simple way to verify the server and Redis are up.\n\n## Requirements\n- Add `GET /api/health` in `backend/src/api/router.ts`\n- Return JSON: `{ \"status\": \"ok\", \"redis\": \"connected\" | \"disconnected\", \"uptime\": <seconds> }`\n- Ping Redis to determine connection status\n- Do not require API auth on this endpoint\n\n## Acceptance criteria\n- `curl http://localhost:3500/api/health` returns 200 with the JSON above\n- Works when Redis is down (returns disconnected, not a crash)",
+    "acceptance": null,
+    "checks": [
+      {
+        "type": "contains",
+        "file": "backend/src/api/router.ts",
+        "pattern": "/health"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/api/router.ts",
+        "pattern": "uptime"
+      }
+    ]
+  },
+  {
+    "id": "R03-tasks-pagination",
+    "level": 14,
+    "fixture": "myowndevin",
+    "gitSource": "/Users/jochannnn/MyOwnDevin",
+    "gitRef": "main",
+    "title": "Add pagination and status filtering to GET /api/tasks",
+    "body": "## Problem\n`GET /api/tasks` currently returns a fixed list of the 50 most recent tasks with no way to page\nthrough older runs or filter by status. As the task history grows this becomes unusable for the\nDashboard and History pages.\n\n## Requirements\nEnhance the tasks listing to support pagination and status filtering, end-to-end.\n\n### 1. `TaskRegistry.list()` — `backend/src/store/taskRegistry.ts`\n- Change the signature to accept an options object:\n  `list(opts?: { limit?: number; offset?: number; status?: \"queued\" | \"running\" | \"done\" | \"failed\" })`\n- Use the existing sorted set index (`tasks:index`) with `zrevrange` to apply `offset` + `limit`\n  (default `limit` = 20, default `offset` = 0).\n- When `status` is provided, only return entries whose `status` matches.\n- Also add a `count(status?)` method that returns the total number of tasks (optionally filtered\n  by status) so the API can report a total for pagination.\n\n### 2. `GET /api/tasks` — `backend/src/api/router.ts`\n- Read `limit`, `offset`, and `status` from the query string (validate/clamp: `limit` between 1 and\n  100, `offset` >= 0; reject an invalid `status` with 400).\n- Return a paginated envelope instead of a bare array:\n  ```json\n  { \"tasks\": [ ... ], \"total\": <number>, \"limit\": <number>, \"offset\": <number> }\n  ```\n\n## Acceptance criteria\n- `curl \"http://localhost:3500/api/tasks?limit=5&offset=0\"` returns at most 5 tasks plus the total.\n- `curl \"http://localhost:3500/api/tasks?status=done\"` returns only completed tasks.\n- `curl \"http://localhost:3500/api/tasks?status=bogus\"` returns HTTP 400.\n- Existing callers still get their data under the new `tasks` key (update any internal usage).\n- `npx tsc -b` in `backend/` passes with no errors.",
+    "acceptance": null,
+    "checks": [
+      {
+        "type": "contains",
+        "file": "backend/src/store/taskRegistry.ts",
+        "pattern": "count("
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/store/taskRegistry.ts",
+        "pattern": "offset"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/api/router.ts",
+        "pattern": "400"
+      },
+      {
+        "type": "containsAny",
+        "files": [
+          "frontend/src/api/client.ts",
+          "frontend/src/pages/Dashboard.tsx",
+          "frontend/src/pages/History.tsx"
+        ],
+        "pattern": ".tasks"
+      }
+    ]
   }
 ]

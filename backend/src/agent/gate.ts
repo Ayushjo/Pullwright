@@ -1,3 +1,5 @@
+import { rm } from "fs/promises"
+import path from "path"
 import { git, diffStat, type FileStat } from "./git.js"
 import { newSyntaxErrors } from "./tools/syntax.js"
 import type { Workspace } from "./workspace.js"
@@ -49,6 +51,24 @@ export async function runVerify(sb: Sandbox, cmds: string[], timeoutMs = 300_000
   return out
 }
 
+/**
+ * Build/test runs leave artefacts behind (logs, tsbuildinfo, lockfile rewrites, coverage). Those are
+ * not the agent's change: restore tracked ones from the base commit and delete new ones, deterministically.
+ */
+export async function revertSideEffects(root: string, baseSha: string, planned: string[]): Promise<string[]> {
+  const plannedSet = new Set(planned)
+  const stats = await diffStat(root, baseSha)
+  const reverted: string[] = []
+  for (const s of stats) {
+    if (!ARTEFACT.test(s.path) || plannedSet.has(s.path)) continue
+    if (s.status === "A") await git(root, ["rm", "-q", "-f", "--cached", "--", s.path]).then(() => rm(path.join(root, s.path), { force: true }))
+    else await git(root, ["checkout", baseSha, "--", s.path])
+    reverted.push(s.path)
+  }
+  if (reverted.length) await git(root, ["reset", "-q"])
+  return reverted
+}
+
 export async function runGate(input: {
   ws: Workspace
   sb: Sandbox
@@ -63,6 +83,10 @@ export async function runGate(input: {
   const { ws, baseSha } = input
   const problems: string[] = []
   const warnings: string[] = []
+  // Run verification first (it may write artefacts), then clean side effects, then inspect the diff.
+  const after = await runVerify(input.sb, input.verifyCmds)
+  const reverted = await revertSideEffects(ws.root, baseSha, input.plannedFiles)
+  if (reverted.length) warnings.push(`Auto-reverted build/test side effects: ${reverted.join(", ")}`)
   const stats = await diffStat(ws.root, baseSha)
   const planned = new Set(input.plannedFiles)
   const allowRewrite = /\b(rewrite|replace|remove|delete|drop|strip|rename|move)\b/i.test(input.planText)
@@ -76,7 +100,7 @@ export async function runGate(input: {
 
   for (const s of stats) {
     if (ARTEFACT.test(s.path) && !planned.has(s.path)) {
-      problems.push(`${s.path} is a lockfile/build artefact/env file and should not be in this change. Revert it (restore original content or delete it if new).`)
+      problems.push(`${s.path} is a lockfile/build artefact/env file and should not be in this change. Undo your edit to it.`)
     }
     if (SCRATCH.test(s.path) && s.status === "A" && !planned.has(s.path)) {
       problems.push(`${s.path} looks like a scratch/debug file. Delete it before finishing.`)
@@ -117,7 +141,6 @@ export async function runGate(input: {
 
   // Verification commands: only regressions block — a command that passed now fails, or
   // (for suites that were already red) tests that newly fail. Pre-existing failures are warnings.
-  const after = await runVerify(input.sb, input.verifyCmds)
   const verify = after.map((a) => {
     const b = input.baseline.find((x) => x.cmd === a.cmd)
     const before = new Set(b?.failures ?? [])

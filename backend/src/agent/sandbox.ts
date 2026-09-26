@@ -73,7 +73,6 @@ export class Sandbox {
       User: process.env.SANDBOX_USER ?? "1000:1000",
       Env: ["HOME=/tmp", "CI=1", "GIT_OPTIONAL_LOCKS=0", "PAGER=cat", "npm_config_cache=/tmp/.npm", "NO_COLOR=1"],
       Labels: { "pullwright.task": taskId },
-      NetworkDisabled: !opts.network,
       HostConfig: {
         Binds: binds,
         ReadonlyRootfs: true,

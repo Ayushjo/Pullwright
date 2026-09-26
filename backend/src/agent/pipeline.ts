@@ -13,7 +13,7 @@ import { buildRepoMap } from "./repoMap.js"
 import { detectRepoConfig } from "./repoConfig.js"
 import { planTools, runTools } from "./tools/index.js"
 import { PLAN_SYSTEM, RUN_SYSTEM, planTaskMessage, runTaskMessage } from "./prompts.js"
-import { runGate, runVerify, gateFeedback } from "./gate.js"
+import { runGate, runVerify, gateFeedback, revertSideEffects } from "./gate.js"
 import { judgePatch } from "./judge.js"
 import { groundIssue, groundingNote } from "./grounding.js"
 import { checkpoint, cloneForTask, cloneLocal, diffStat, diffVs, fetchIssue, git, publishPatch, redact, tasksRoot } from "./git.js"
@@ -31,7 +31,7 @@ function spec(role: "plan" | "run" | "judge", override?: string): ModelSpec {
 }
 
 const LIMITS = {
-  plan: { maxSteps: Number(process.env.PW_PLAN_MAX_STEPS ?? 14), maxWallMs: 8 * 60_000, maxFormatErrors: 3, maxOutputTokens: 6_000 },
+  plan: { maxSteps: Number(process.env.PW_PLAN_MAX_STEPS ?? 20), maxWallMs: 8 * 60_000, maxFormatErrors: 3, maxOutputTokens: 6_000 },
   run: { maxSteps: Number(process.env.PW_RUN_MAX_STEPS ?? 40), maxWallMs: 18 * 60_000, maxFormatErrors: 3, maxOutputTokens: 10_000 },
 }
 
@@ -136,7 +136,7 @@ export class Pipeline {
       // Setup (network on) + baseline verification on the untouched base commit.
       if (cfg.setup.length || cfg.verify.length) {
         await this.setStatus(s, "preparing", cfg.setup.length ? "Installing dependencies in the sandbox" : "Running baseline checks")
-        sb = await Sandbox.create(taskId, workDir, { network: true })
+        sb = await Sandbox.create(taskId, workDir, { network: true, memoryMb: 2048, cpus: 2 })
         for (const cmd of cfg.setup) {
           const r = await sb.exec(cmd, 600_000)
           await this.emit(taskId, { type: "tool_result", tool: "setup", success: r.exitCode === 0, output: `$ ${cmd}\n${r.stdout.slice(-1500)}`, durationMs: r.durationMs })
@@ -147,9 +147,16 @@ export class Pipeline {
         const untracked = dirty.filter((l) => l.startsWith("??")).map((l) => l.slice(3))
         if (modified.length) await git(workDir, ["checkout", "--", ...modified])
         if (untracked.length) await appendFile(path.join(workDir, ".git", "info", "exclude"), untracked.join("\n") + "\n")
-        s.baseline = await runVerify(sb, cfg.verify)
         await sb.destroy()
         sb = null
+        // Baseline under the same conditions as validation later (no network).
+        if (cfg.verify.length) {
+          sb = await Sandbox.create(taskId, workDir, { network: false })
+          s.baseline = await runVerify(sb, cfg.verify)
+          await sb.destroy()
+          sb = null
+          await revertSideEffects(workDir, baseSha, [])
+        }
       }
 
       await this.setStatus(s, "planning", "Reading the code and drafting a plan")
@@ -222,6 +229,28 @@ export class Pipeline {
       sb = await Sandbox.create(taskId, ws.root, { network: false })
       const sandbox = sb
       let gateAttempts = 0
+      let judgeRounds = 0
+      const review = async (patch: string) => {
+        try {
+          const verifyText = (s.gate?.verify ?? [])
+            .map((v) => `${v.cmd}: exit before=${v.before ?? "n/a"} after=${v.after}` + (v.newFailures.length ? `; NEW failures: ${v.newFailures.join("; ")}` : "; no new test failures") + (v.fixed.length ? `; now passing: ${v.fixed.join("; ")}` : ""))
+            .join("\n")
+          const v = await judgePatch(spec("judge"), taskId, {
+            title: s.title,
+            body: s.body,
+            plan: planText,
+            requirements: s.plan!.requirements ?? [],
+            summary: s.summary ?? "",
+            patch,
+            verify: verifyText,
+          }, (u) => this.loopEvents(s, "run")({ type: "llm_call", purpose: "judge", ...u }))
+          await this.emit(taskId, { type: "judge_result", ...v })
+          return v
+        } catch (err) {
+          logger.warn(`judge failed: ${(err as Error).message}`)
+          return null
+        }
+      }
       const unplannedSeen = new Set<string>()
       let forcedReview = false
       const plannedFiles = s.plan.files.map((f) => f.path)
@@ -265,7 +294,23 @@ export class Pipeline {
             s.stats = g.stats
             await this.emit(taskId, { type: "gate_result", ok: g.ok, problems: g.problems, warnings: g.warnings, verify: g.verify.map((v) => ({ cmd: v.cmd, before: v.before, after: v.after })) })
             s.summary = summary
-            if (g.ok) return null
+            if (g.ok) {
+              // Independent reviewer: checks every requirement against the patch. One fix round on failure.
+              const patch = await diffVs(ws.root, s.baseSha!)
+              const v = await review(patch)
+              if (!v) return null
+              s.verdict = v
+              if (v.success || judgeRounds >= 1) return null
+              const remaining = getSpendLedger().taskCapUsd - getSpendLedger().taskSpent(taskId)
+              if (remaining < 0.03) return null
+              judgeRounds++
+              await this.setStatus(s, "running", "Addressing reviewer findings")
+              return (
+                `An independent reviewer checked your patch against the requirements and found problems:\n` +
+                v.concerns.map((c) => `- ${c}`).join("\n") +
+                `\n\nFix them. If you are sure a finding is wrong, explain why in your finish summary. Then call finish again.`
+              )
+            }
             if (gateAttempts >= 3 || (g.problems.length === 1 && g.problems[0]!.startsWith("The diff is empty") && gateAttempts >= 2)) {
               forcedReview = true
               return null
@@ -302,6 +347,7 @@ export class Pipeline {
         s.summary = `Stopped early: ${out.reason}`
       }
 
+      await revertSideEffects(ws.root, s.baseSha!, plannedFiles)
       const patch = await diffVs(ws.root, s.baseSha!)
       await taskStore.savePatch(taskId, patch)
       s.stats = await diffStat(ws.root, s.baseSha!)
@@ -309,24 +355,11 @@ export class Pipeline {
 
       if (!patch.trim()) return this.fail(s, "The agent finished without changing any files")
 
-      // Cheap independent review of the final patch.
-      try {
-        const verifyText = (s.gate?.verify ?? [])
-          .map((v) => `${v.cmd}: exit before=${v.before ?? "n/a"} after=${v.after}` + (v.newFailures.length ? `; NEW failures: ${v.newFailures.join("; ")}` : "; no new test failures") + (v.fixed.length ? `; now passing: ${v.fixed.join("; ")}` : ""))
-          .join("\n")
-        s.verdict = await judgePatch(spec("judge"), taskId, {
-          title: s.title,
-          body: s.body,
-          plan: planText,
-          summary: s.summary ?? "",
-          patch,
-          verify: verifyText,
-        }, (u) => this.loopEvents(s, "run")({ type: "llm_call", purpose: "judge", ...u }))
-        await this.emit(taskId, { type: "judge_result", ...s.verdict })
-      } catch (err) {
-        logger.warn(`judge failed: ${(err as Error).message}`)
+      // Independent review if the finish path didn't already produce a verdict (e.g. forced review).
+      if (!s.verdict) {
+        const v = await review(patch)
+        if (v) s.verdict = v
       }
-
       const good = !forcedReview && (s.gate?.ok ?? false) && (s.verdict?.success ?? false)
       s.costUsd = getSpendLedger().taskSpent(taskId)
       if (good && s.options.autoPublish) {

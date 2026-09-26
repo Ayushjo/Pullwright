@@ -18,6 +18,7 @@ export type Control =
 
 export type SubmittedPlan = {
   summary: string
+  requirements: string[]
   steps: { title: string; files: string[] }[]
   files: { path: string; new: boolean }[]
   risks?: string
@@ -94,14 +95,26 @@ async function search(ws: Workspace, pattern: string, p: string, glob: string): 
     const pathspec = glob
       ? `:(glob)${rel ? rel + "/" : ""}${glob.includes("/") ? glob : "**/" + glob}`
       : rel || "."
-    const args = ["grep", "--untracked", "-n", "-I", "-E", "--no-color", "-e", pattern, "--", pathspec]
+    const run = async (mode: "-E" | "-F") => {
+      const args = ["grep", "--untracked", "-n", "-I", mode, "--no-color", "-e", pattern, "--", pathspec]
+      return (await execFileP("git", args, { cwd: ws.root, maxBuffer: 16 * 1024 * 1024 })).stdout
+    }
     let stdout = ""
+    let literal = false
     try {
-      stdout = (await execFileP("git", args, { cwd: ws.root, maxBuffer: 16 * 1024 * 1024 })).stdout
+      stdout = await run("-E")
     } catch (err) {
       const e = err as { code?: number; stderr?: string }
       if (e.code === 1) return { ok: true, output: `No matches for /${pattern}/${rel ? " in " + rel : ""}.` }
-      return { ok: false, output: `search failed: ${e.stderr?.trim() || "invalid pattern"}. Patterns are POSIX extended regex.` }
+      // Invalid regex (e.g. unbalanced "(") → search the text literally instead of failing.
+      try {
+        literal = true
+        stdout = await run("-F")
+      } catch (err2) {
+        const e2 = err2 as { code?: number; stderr?: string }
+        if (e2.code === 1) return { ok: true, output: `No matches for "${pattern}" (searched literally)${rel ? " in " + rel : ""}.` }
+        return { ok: false, output: `search failed: ${e2.stderr?.trim() || "invalid pattern"}` }
+      }
     }
     const lines = stdout.split("\n").filter(Boolean).filter((l) => !/(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml):/.test(l))
     if (lines.length > 60) {
@@ -114,7 +127,7 @@ async function search(ws: Workspace, pattern: string, p: string, glob: string): 
       if (files.length > 100) return { ok: true, output: `${lines.length} matches in ${files.length} files — too broad. Narrow the pattern or pass a path/glob.` }
       return { ok: true, output: `${lines.length} matches in ${files.length} files (search inside one file to see lines):\n${files.map(([f, n]) => `${f}: ${n}`).join("\n")}` }
     }
-    return { ok: true, output: lines.map((l) => (l.length > 300 ? l.slice(0, 300) + "…" : l)).join("\n") }
+    return { ok: true, output: (literal ? "(pattern was not a valid regex — searched literally)\n" : "") + lines.map((l) => (l.length > 300 ? l.slice(0, 300) + "…" : l)).join("\n") }
   } catch (err) {
     return { ok: false, output: err instanceof PathError ? err.message : `search failed: ${(err as Error).message}` }
   }
@@ -174,7 +187,7 @@ export function readOnlyTools(ws: Workspace, sb: Sandbox, planMode: boolean): To
     {
       def: fn(
         "search",
-        "Search file contents with a POSIX extended regex (git grep). Returns matching lines, or per-file counts when there are many hits.",
+        "Search file contents (git grep, POSIX extended regex; invalid regexes are searched literally). Returns matching lines, or per-file counts when there are many hits.",
         { pattern: str("Regex, e.g. 'function divide|divide\\('"), path: str("Optional directory or file to limit the search"), glob: str("Optional file glob, e.g. '*.ts'") },
         ["pattern"],
       ),
@@ -203,6 +216,13 @@ export function planTools(ws: Workspace, sb: Sandbox): Tool[] {
         "Submit the implementation plan. Call exactly once when you understand the change.",
         {
           summary: str("1-3 sentences: what will change and why"),
+          requirements: {
+            type: "array",
+            description: "Every explicit requirement / acceptance criterion from the issue, one per item, phrased so it can be checked against a diff (e.g. 'GET /api/tasks returns { tasks, total, limit, offset }', 'Frontend callers read the new tasks key'). Include implied updates to callers when a signature or response shape changes.",
+            items: { type: "string" },
+            minItems: 1,
+            maxItems: 15,
+          },
           steps: {
             type: "array",
             minItems: 1,
@@ -222,7 +242,7 @@ export function planTools(ws: Workspace, sb: Sandbox): Tool[] {
           risks: str("Ambiguities, assumptions, or mismatches between the issue and the code (empty if none)"),
           blocked: str("Only if the issue cannot be implemented without clarification: the question to ask. Otherwise empty."),
         },
-        ["summary", "steps", "files", "risks", "blocked"],
+        ["summary", "requirements", "steps", "files", "risks", "blocked"],
       ),
       handler: async (a) => {
         const steps = Array.isArray(a.steps) ? (a.steps as { title?: unknown; files?: unknown }[]) : []
@@ -230,6 +250,7 @@ export function planTools(ws: Workspace, sb: Sandbox): Tool[] {
         if (steps.length === 0) throw new ArgError("steps must have 1-5 items")
         const plan: SubmittedPlan = {
           summary: argStr(a, "summary"),
+          requirements: Array.isArray(a.requirements) ? (a.requirements as unknown[]).map(String).filter((r) => r.trim()).slice(0, 15) : [],
           steps: steps.slice(0, 5).map((s) => ({
             title: String(s.title ?? "").trim(),
             files: Array.isArray(s.files) ? s.files.map(String) : [],
@@ -324,10 +345,23 @@ export function runTools(ws: Workspace, sb: Sandbox, onPlanUpdate: (steps: { tit
       def: fn(
         "finish",
         "Call when the change is implemented and verified. The platform then validates the diff (syntax, tests) and may send you back with findings.",
-        { summary: str("What changed (files + behaviour) and how it was verified; note assumptions and pre-existing failures") },
-        ["summary"],
+        {
+          summary: str("What changed (files + behaviour) and how it was verified; note assumptions and pre-existing failures"),
+          requirements: {
+            type: "array",
+            description: "One entry per requirement from the approved plan, in order: where/how it is satisfied (file + function), or 'NOT DONE: reason'.",
+            items: { type: "string" },
+          },
+        },
+        ["summary", "requirements"],
       ),
-      handler: async (a) => ({ control: "finish", summary: argStr(a, "summary") }),
+      handler: async (a) => {
+        const reqs = Array.isArray(a.requirements) ? (a.requirements as unknown[]).map(String) : []
+        const notDone = reqs.filter((r) => /^\s*not done/i.test(r))
+        const summary = argStr(a, "summary") + (reqs.length ? `\n\nRequirements:\n${reqs.map((r, i) => `${i + 1}. ${r}`).join("\n")}` : "")
+        if (notDone.length) return { ok: false, output: `You marked ${notDone.length} requirement(s) as not done. Implement them, or if impossible, explain in the summary and call finish again with the reason.` }
+        return { control: "finish", summary }
+      },
     },
   ]
 }
