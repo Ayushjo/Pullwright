@@ -15,6 +15,7 @@ import { planTools, runTools } from "./tools/index.js"
 import { PLAN_SYSTEM, RUN_SYSTEM, planTaskMessage, runTaskMessage } from "./prompts.js"
 import { runGate, runVerify, gateFeedback } from "./gate.js"
 import { judgePatch } from "./judge.js"
+import { groundIssue, groundingNote } from "./grounding.js"
 import { checkpoint, cloneForTask, cloneLocal, diffStat, diffVs, fetchIssue, git, publishPatch, redact, tasksRoot } from "./git.js"
 import { taskStore, type TaskState, type TaskStatus } from "./store.js"
 
@@ -24,7 +25,7 @@ export type StatusSink = (s: TaskState) => Promise<void>
 
 function spec(role: "plan" | "run" | "judge", override?: string): ModelSpec {
   const env = { plan: process.env.PW_PLAN_MODEL, run: process.env.PW_RUN_MODEL, judge: process.env.PW_JUDGE_MODEL }[role]
-  const model = override ?? env ?? (role === "judge" ? "gpt-5-nano" : "gpt-5-mini")
+  const model = override && role !== "judge" ? override : (env ?? "gpt-5-mini")
   const effort = (process.env[`PW_${role.toUpperCase()}_EFFORT`] as ModelSpec["reasoningEffort"]) ?? "low"
   return { provider: "openai", model, reasoningEffort: effort }
 }
@@ -153,6 +154,10 @@ export class Pipeline {
 
       await this.setStatus(s, "planning", "Reading the code and drafting a plan")
       const map = await buildRepoMap(new Workspace(workDir), `${issue.title}\n${issue.body}\n${issue.comments.join("\n")}`)
+      const grounding = await groundIssue(new Workspace(workDir), `${issue.title}\n${issue.body}`)
+      if (grounding.missingPaths.length || grounding.missingSymbols.length) {
+        await this.emit(taskId, { type: "notice", level: "warn", message: `Issue mentions things not found in the repo: ${[...grounding.missingPaths, ...grounding.missingSymbols].join(", ")}` })
+      }
       s.planMessage = planTaskMessage({
         repo: `${s.owner}/${s.repo}`,
         issueNumber: s.issueNumber,
@@ -160,7 +165,7 @@ export class Pipeline {
         body: issue.body,
         comments: issue.comments,
         repoMap: map.text,
-        instructions: cfg.instructions,
+        instructions: [cfg.instructions, groundingNote(grounding)].filter(Boolean).join("\n\n"),
         verifyCommands: cfg.verify.map((c) => {
           const b = s.baseline?.find((x) => x.cmd === c)
           return b ? `${c}   (currently ${b.exitCode === 0 ? "passing" : `FAILING, exit ${b.exitCode}`})` : c
@@ -306,7 +311,9 @@ export class Pipeline {
 
       // Cheap independent review of the final patch.
       try {
-        const verifyText = (s.gate?.verify ?? []).map((v) => `${v.cmd}: before=${v.before ?? "n/a"} after=${v.after}`).join("\n")
+        const verifyText = (s.gate?.verify ?? [])
+          .map((v) => `${v.cmd}: exit before=${v.before ?? "n/a"} after=${v.after}` + (v.newFailures.length ? `; NEW failures: ${v.newFailures.join("; ")}` : "; no new test failures") + (v.fixed.length ? `; now passing: ${v.fixed.join("; ")}` : ""))
+          .join("\n")
         s.verdict = await judgePatch(spec("judge"), taskId, {
           title: s.title,
           body: s.body,

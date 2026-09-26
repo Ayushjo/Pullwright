@@ -11,6 +11,7 @@ import { filterPatch } from "../pipeline.js"
 import { redact } from "../git.js"
 import { SpendLedger, costOf } from "../spend.js"
 import { parseFailures } from "../gate.js"
+import { groundIssue } from "../grounding.js"
 
 let root: string
 let ed: Editor
@@ -169,5 +170,15 @@ describe("parseFailures", () => {
     expect(parseFailures("✖ divide by zero throws RangeError (0.69ms)\n✖ failing tests:")).toEqual(["divide by zero throws RangeError"])
     expect(parseFailures(" × src/a.test.ts > adds 3ms")).toEqual(["src/a.test.ts > adds"])
     expect(parseFailures("FAILED tests/test_x.py::test_y - assert")).toEqual(["tests/test_x.py::test_y"])
+  })
+})
+
+describe("grounding", () => {
+  it("flags missing paths and symbols, keeps real ones", async () => {
+    execFileSync("git", ["add", "-A"], { cwd: root })
+    const g = await groundIssue(ws, "The middleware in `src/middleware/auth.js` should use the existing `RateLimiter` from src/lib/rateLimiter.js. Also `divide()` in src/math.js and https://example.com/a/b.js")
+    expect(g.missingPaths.sort()).toEqual(["src/lib/rateLimiter.js", "src/middleware/auth.js"])
+    expect(g.missingSymbols).toEqual(["RateLimiter"])
+    expect(g.foundPaths).toEqual(["src/math.js"])
   })
 })

@@ -112,7 +112,8 @@ async function runItem(item: LadderItem) {
       acceptOut = `patch did not apply: ${(e as Error).message.slice(0, 300)}`
     }
   }
-  const blockedOk = item.expect === "blocked" ? /clarification|does not exist|not exist|missing|blocked/i.test(`${s.failureReason ?? ""} ${s.statusDetail ?? ""} ${s.pendingQuestion ?? ""} ${s.plan?.risks ?? ""}`) : null
+  // "blocked" means the agent stopped to ask instead of inventing code — no patch may be produced.
+  const blockedOk = item.expect === "blocked" ? !patch.trim() && (s.status === "needs_input" || /^Needs clarification/.test(String(s.failureReason ?? ""))) : null
   const result = {
     ts: new Date().toISOString(),
     id: item.id,
