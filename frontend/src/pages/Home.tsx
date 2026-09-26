@@ -1,5 +1,5 @@
-import { useState, type ElementType } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState, type ElementType } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   ArrowRight,
@@ -35,32 +35,32 @@ import { fadeUp, stagger } from '../lib/motion'
 
 const FLOW = [
   { label: 'Issue', desc: 'Paste the GitHub URL', icon: CircleDot },
-  { label: 'Plan', desc: 'Agent maps the repo', icon: GitBranch },
-  { label: 'Sandbox', desc: 'Code runs in Docker', icon: Box },
-  { label: 'PR', desc: 'Pull request opened', icon: GitPullRequest },
+  { label: 'Plan', desc: 'You approve or edit it', icon: GitBranch },
+  { label: 'Sandbox', desc: 'Edits + tests, no network', icon: Box },
+  { label: 'PR', desc: 'Opens after your review', icon: GitPullRequest },
 ] as const
 
 const PILLARS = [
-  { n: '01', title: 'Plan', desc: 'Breaks the issue into verifiable steps.', icon: GitBranch },
-  { n: '02', title: 'Execute', desc: 'Edits files and runs commands in isolation.', icon: Box },
-  { n: '03', title: 'Ship', desc: 'Commits, pushes, and opens the PR.', icon: GitPullRequest },
+  { n: '01', title: 'Plan you control', desc: 'A ranked map of your repo, a short plan and a checklist of requirements — you approve or edit before anything runs.', icon: GitBranch },
+  { n: '02', title: 'Strict execution', desc: 'Targeted edits that are syntax-checked and reverted if broken. Your tests and type-checks run in a network-less sandbox.', icon: Box },
+  { n: '03', title: 'Reviewed, then shipped', desc: 'A validation gate plus an independent reviewer check every requirement. You review the diff; the PR opens on your click.', icon: GitPullRequest },
 ] as const
 
 const BENEFITS = [
-  { icon: Shield, text: 'GitHub OAuth — your token, your PRs' },
-  { icon: Container, text: 'Docker sandbox — no host access' },
-  { icon: Wallet, text: 'Per-task LLM budget cap' },
-  { icon: Radio, text: 'Live SSE logs while it runs' },
+  { icon: Shield, text: 'Nothing ships without your click — draft PRs only' },
+  { icon: Container, text: 'Sandbox with no network and no credentials inside' },
+  { icon: Wallet, text: 'Hard spend cap — most tasks cost $0.004–$0.04' },
+  { icon: Radio, text: 'Watch every read, edit and test live' },
 ] as const
 
 const LOG_LINES = [
-  { t: 'phase', text: 'Planning issue #11…' },
-  { t: 'tool', text: 'view_file  frontend/src/pages/TaskView.tsx' },
-  { t: 'tool', text: 'write_file  src/components/Timeline.tsx' },
-  { t: 'ok', text: 'Step 1 verified' },
-  { t: 'tool', text: 'run_command  npm run build' },
-  { t: 'ok', text: 'Step 2 verified' },
-  { t: 'phase', text: 'Opening pull request…' },
+  { t: 'phase', text: 'Plan approved · 4 requirements' },
+  { t: 'tool', text: 'read    src/api/router.ts:180–240' },
+  { t: 'tool', text: 'patch   src/api/router.ts  (+14 −0)' },
+  { t: 'tool', text: 'shell   npx tsc --noEmit && npm test' },
+  { t: 'ok', text: 'Validation passed · no new test failures' },
+  { t: 'ok', text: 'Reviewer: 4/4 requirements met' },
+  { t: 'phase', text: 'Ready — review the diff and publish' },
 ] as const
 
 function LogMock({ lines, limit }: { lines: readonly { t: string; text: string }[]; limit?: number }) {
@@ -108,14 +108,14 @@ function TaskViewMock() {
     <BentoCard className="h-full">
       <BentoHeader action={<span className="text-xs font-mono text-muted-foreground tabular-nums">2:14</span>}>
         <div className="flex items-center gap-2.5 min-w-0">
-          <Badge tone="primary" dot>Running</Badge>
-          <span className="text-sm font-medium text-foreground truncate">#11 — Activity timeline</span>
+          <Badge tone="primary" dot>Working</Badge>
+          <span className="text-sm font-medium text-foreground truncate">#1 — Add GET /api/health</span>
         </div>
       </BentoHeader>
       <div className="grid sm:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-border">
         <div className="sm:col-span-2 p-4 space-y-2 bg-card">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Plan</p>
-          {['Implement changes', 'Verify build', 'Commit'].map((s, i) => (
+          {['Add the endpoint', 'Run type-check + tests', 'Independent review'].map((s, i) => (
             <div
               key={s}
               className={cn(
@@ -141,7 +141,7 @@ function TaskViewMock() {
 function LiveRunCard() {
   return (
     <BentoCard className="h-full flex flex-col">
-      <BentoHeader action={<span className="text-[10px] font-mono text-muted-foreground">issue #11</span>}>
+      <BentoHeader action={<span className="text-[10px] font-mono text-muted-foreground">issue #1</span>}>
         <div className="flex items-center gap-2">
           <Terminal className="w-3.5 h-3.5 text-primary" />
           <span className="text-sm font-medium text-foreground">Live run</span>
@@ -192,7 +192,7 @@ function PillarCard({ n, title, desc, icon: Icon }: (typeof PILLARS)[number]) {
 function GitHubFlowStrip() {
   return (
     <BentoCard interactive={false}>
-      <BentoHeader action={<span className="text-[10px] font-mono text-muted-foreground">issue #11</span>}>
+      <BentoHeader action={<a href={DEMO_PR_URL} target="_blank" rel="noreferrer" className="text-[10px] font-mono text-primary hover:underline">view on GitHub</a>}>
         <div>
           <p className="text-sm font-semibold text-foreground">What you end up with</p>
           <p className="text-xs text-muted-foreground mt-0.5">Same repo · your account · real branch &amp; PR</p>
@@ -204,18 +204,18 @@ function GitHubFlowStrip() {
           <div className="flex items-center gap-2 mb-3">
             <CircleDot className="w-3.5 h-3.5 text-success shrink-0" strokeWidth={2} />
             <span className="text-xs font-medium text-success">Open issue</span>
-            <span className="text-xs text-muted-foreground ml-auto font-mono">#11</span>
+            <span className="text-xs text-muted-foreground ml-auto font-mono">#3</span>
           </div>
           <h3 className="text-base font-semibold text-foreground leading-snug mb-1">
-            Activity timeline + TaskView integration
+            Add a modulo(a, b) helper to math.js
           </h3>
-          <p className="text-sm text-muted-foreground mb-5">Ayushjo/MyOwnDevin</p>
+          <p className="text-sm text-muted-foreground mb-5">Ayushjo/devin-test-app</p>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs mt-auto">
             {[
-              ['Label', 'enhancement'],
-              ['Steps', '3 planned'],
-              ['Runtime', '~9 min'],
-              ['Input', '…/issues/11'],
+              ['Requirements', '5 extracted'],
+              ['Plan', 'edited by a human'],
+              ['Caught', 'a deleted test'],
+              ['Input', '…/issues/3'],
             ].map(([k, v]) => (
               <div key={k}>
                 <dt className="text-muted-foreground text-[10px] uppercase tracking-wide">{k}</dt>
@@ -238,32 +238,32 @@ function GitHubFlowStrip() {
             <span className="text-xs text-muted-foreground ml-auto font-mono">open</span>
           </div>
           <h3 className="text-base font-semibold text-foreground leading-snug mb-1">
-            fix: Activity timeline integration
+            feat: add a modulo(a, b) helper to math.js
           </h3>
           <p className="text-xs font-mono text-muted-foreground mb-5">
-            <span className="text-primary">pullwright/task-b0efb2ec</span>
+            <span className="text-primary">pullwright/issue-3</span>
             <span className="text-muted-foreground"> → </span>main
           </p>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs mt-auto">
             <div>
               <dt className="text-muted-foreground text-[10px] uppercase tracking-wide">Files</dt>
               <dd className="text-foreground font-medium mt-0.5">
-                <span className="text-success">+12</span>
+                <span className="text-success">+15</span>
                 <span className="text-muted-foreground mx-0.5">/</span>
-                <span className="text-danger">−2</span>
+                <span className="text-danger">−1</span>
               </dd>
             </div>
             <div>
               <dt className="text-muted-foreground text-[10px] uppercase tracking-wide">Cost</dt>
-              <dd className="text-foreground font-medium mt-0.5">$0.013</dd>
+              <dd className="text-foreground font-medium mt-0.5">$0.047</dd>
             </div>
             <div>
-              <dt className="text-muted-foreground text-[10px] uppercase tracking-wide">Steps</dt>
-              <dd className="text-foreground font-medium mt-0.5">3 / 3</dd>
+              <dt className="text-muted-foreground text-[10px] uppercase tracking-wide">Review</dt>
+              <dd className="text-foreground font-medium mt-0.5">5 / 5 met</dd>
             </div>
             <div>
               <dt className="text-muted-foreground text-[10px] uppercase tracking-wide">Closes</dt>
-              <dd className="text-foreground font-medium mt-0.5">#11</dd>
+              <dd className="text-foreground font-medium mt-0.5">#3</dd>
             </div>
           </dl>
         </div>
@@ -272,8 +272,17 @@ function GitHubFlowStrip() {
   )
 }
 
+const DEMO_REPLAY_ID = (import.meta.env.VITE_DEMO_REPLAY_ID as string | undefined) ?? '8e9c51d8-f35c-4623-b365-5c745a7ae01d'
+const DEMO_PR_URL = 'https://github.com/Ayushjo/devin-test-app/pull/4'
+
 function DemoVideo() {
-  const [hasVideo] = useState(false)
+  const [hasVideo, setHasVideo] = useState(false)
+  useEffect(() => {
+    // Show the recorded demo only once public/demo.mp4 exists.
+    fetch('/demo.mp4', { method: 'HEAD' })
+      .then((r) => setHasVideo(r.ok && (r.headers.get('content-type') ?? '').startsWith('video')))
+      .catch(() => setHasVideo(false))
+  }, [])
 
   return (
     <BentoCard interactive={false} className="overflow-hidden">
@@ -287,10 +296,13 @@ function DemoVideo() {
             <div className="w-12 h-12 rounded-full bg-white/10 border border-white/10 flex items-center justify-center">
               <Play className="w-5 h-5 text-white ml-0.5" fill="white" fillOpacity={0.85} />
             </div>
-            <p className="text-white/80 text-sm font-medium">Demo video</p>
-            <p className="text-white/40 text-xs">
-              Drop <code className="text-white/55">public/demo.mp4</code> when ready
+            <p className="text-white/80 text-sm font-medium">See a real run</p>
+            <p className="text-white/50 text-xs max-w-sm">
+              Replay an actual task — plan, edits, tests, review and PR — at 20× speed. No sign-in needed.
             </p>
+            <Link to={`/r/${DEMO_REPLAY_ID}`} className="mt-2 text-xs font-semibold text-white bg-primary rounded-button px-3.5 py-2 hover:brightness-95">
+              Watch the replay
+            </Link>
           </div>
         )}
       </div>
@@ -344,7 +356,7 @@ export default function Home() {
                 <span className="block text-muted-foreground font-semibold mt-2">Automatically.</span>
               </motion.h1>
               <motion.p variants={fadeUp} className="text-muted-foreground text-base sm:text-lg mt-5 mb-8 max-w-md" style={{ lineHeight: 'var(--leading-body)' }}>
-                Paste a GitHub issue URL. Get a PR with live logs.
+                Paste a GitHub issue URL. Approve the plan, watch it work, review the diff — then ship the PR.
               </motion.p>
               <motion.form variants={fadeUp} onSubmit={handleSubmit} className="max-w-md">
                 <div className="flex flex-col sm:flex-row gap-2">
@@ -451,13 +463,12 @@ export default function Home() {
       <footer className="border-t border-border py-7">
         <div className="max-w-6xl mx-auto px-gutter sm:px-gutter flex items-center justify-between gap-4">
           <Logo height={36} linked={false} animated={false} />
-          <div className="flex items-center gap-5 text-xs text-muted-foreground">
-            <span>GitHub Issues</span>
-            <span>OAuth</span>
-            <span>Pull Requests</span>
-            <span className="hidden sm:inline">·</span>
+          <nav className="flex items-center gap-5 text-xs text-muted-foreground">
+            <Link to="/pricing" className="hover:text-foreground">Pricing</Link>
+            <Link to={`/r/${DEMO_REPLAY_ID}`} className="hover:text-foreground">Live replay</Link>
+            <a href="https://github.com/Ayushjo/MyOwnDevin" target="_blank" rel="noreferrer" className="hover:text-foreground">GitHub</a>
             <span className="hidden sm:inline">MIT</span>
-          </div>
+          </nav>
         </div>
       </footer>
       <MobileBottomNav />
