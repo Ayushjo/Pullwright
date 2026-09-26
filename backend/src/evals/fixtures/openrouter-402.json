@@ -1,8 +1,0 @@
-{
-  "error": {
-    "message": "402 Payment Required: insufficient credits"
-  },
-  "status": 402,
-  "provider": "openrouter",
-  "model": "meta-llama/llama-3.3-70b-instruct"
-}

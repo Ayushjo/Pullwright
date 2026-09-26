@@ -44,7 +44,7 @@ export function publicView(s: TaskState) {
   return {
     ...rest,
     baseline: baseline?.map((b) => ({ cmd: b.cmd, exitCode: b.exitCode })),
-    costUsd: getSpendLedger().taskSpent(s.taskId),
+    costUsd: Math.max(s.costUsd, getSpendLedger().taskSpent(s.taskId)),
     capUsd: getSpendLedger().taskCapUsd,
   }
 }
@@ -356,8 +356,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
 
   router.get("/budget", async (req, res) => {
     const l = getSpendLedger()
-    l.refresh()
-    res.json({ taskCapUsd: l.taskCapUsd, ...(req.isOperator ? { platformSpentUsd: l.platformSpent(), hardStopUsd: l.hardStopUsd } : {}) })
+    res.json({ taskCapUsd: l.taskCapUsd, ...(req.isOperator ? { platformSpentUsd: await l.platformSpent(), hardStopUsd: l.hardStopUsd } : {}) })
   })
 
   return router

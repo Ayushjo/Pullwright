@@ -1,12 +1,12 @@
 {
-  "name": "myowndevin-backend",
+  "name": "pullwright-backend",
   "version": "1.0.0",
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "tsc -b && node dist/index.js",
-    "dev": "nodemon --watch src --ext ts --exec \"npm run build && node --env-file=.env dist/index.js\"",
-    "build": "prisma generate && tsc -b && cp src/sandbox/Dockerfile dist/sandbox/Dockerfile",
+    "start": "node dist/index.js",
+    "dev": "tsx watch --env-file=.env src/index.ts",
+    "build": "prisma generate && tsc -b && mkdir -p dist/sandbox && cp src/sandbox/Dockerfile dist/sandbox/Dockerfile",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
@@ -15,12 +15,8 @@
     "postinstall": "prisma generate",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:llm": "vitest run src/llm",
-    "test:eval": "vitest run src/evals",
-    "benchmark": "node --env-file=.env --loader ts-node/esm benchmarks/runBenchmark.ts",
-    "watch": "node --env-file=.env scripts/watchAndRun.mjs",
-    "monitor": "node --env-file=.env scripts/monitorTask.mjs",
-    "issue:hard": "node --env-file=.env scripts/createIssue10.mjs"
+    "eval": "tsx --env-file=.env scripts/pw/eval.mts",
+    "typecheck": "tsc --noEmit -p ."
   },
   "keywords": [],
   "author": "",

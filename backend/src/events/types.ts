@@ -1,4 +1,4 @@
-import type { Step } from "../Agents/plannerAgent.js"
+export type Step = { id: number; title?: string; description: string }
 
 export type PhaseName = "planning" | "recon" | "executing" | "verifying" | "pushing" | "pr" | "preparing" | "validating" | "publishing"
 

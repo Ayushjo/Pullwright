@@ -1,0 +1,25 @@
+[Unit]
+Description=Pullwright task worker
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+User=pullwright
+WorkingDirectory=/srv/pullwright/app/backend
+EnvironmentFile=/etc/pullwright/worker.env
+Environment=NODE_ENV=production WORKER_MODE=worker PORT=3600
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+# Caps for the worker process itself (sandbox containers have their own limits).
+MemoryMax=700M
+CPUQuota=100%
+TasksMax=512
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/srv/pullwright
+
+[Install]
+WantedBy=multi-user.target

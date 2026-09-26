@@ -92,7 +92,7 @@ export async function chat(spec: ModelSpec, opts: CallOptions): Promise<LLMResul
   // Worst case assumes zero cache hits and a full-length completion.
   const worstCase =
     (estimateInputTokens(opts.messages, opts.tools) * price.input + opts.maxOutputTokens * price.output) / 1_000_000
-  ledger.assertCanSpend(opts.taskId, keyOwner, worstCase, opts.taskCapUsd)
+  await ledger.assertCanSpend(opts.taskId, keyOwner, worstCase, opts.taskCapUsd)
 
   const client = clientFor(spec)
   const reasoning = isReasoningModel(spec.model)
@@ -118,7 +118,7 @@ export async function chat(spec: ModelSpec, opts: CallOptions): Promise<LLMResul
       const cachedInputTokens = res.usage?.prompt_tokens_details?.cached_tokens ?? 0
       const outputTokens = res.usage?.completion_tokens ?? 0
       const costUsd = costOf(spec.model, { inputTokens, cachedInputTokens, outputTokens })
-      ledger.record({
+      await ledger.record({
         taskId: opts.taskId,
         keyOwner,
         provider: spec.provider,

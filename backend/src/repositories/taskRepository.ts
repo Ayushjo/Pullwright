@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client"
 import type { TaskStatus } from "@prisma/client"
 import type { TaskMetricsSnapshot } from "../events/types.js"
-import type { Step } from "../Agents/plannerAgent.js"
+import type { Step } from "../events/types.js"
 import { getPrisma, isDatabaseEnabled } from "../db/prisma.js"
 import { parseRepoFromIssueUrl } from "../utils/parseRepo.js"
 import type { TaskRegistryEntry } from "../store/taskRegistry.js"

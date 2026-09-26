@@ -1,15 +1,18 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
+import type { Redis } from "ioredis"
 
 /**
  * Exact spend metering for every paid LLM call.
  *
- * Every call is appended to a JSONL ledger (one line per call) and checked against
- * two hard caps before the call is made:
+ * Every call is priced from real usage and checked against two hard caps *before* it is made:
  *   - per task   (TASK_BUDGET_USD, default $0.15)
- *   - global key (SPEND_HARD_STOP_USD, default $1.80) — protects the owner's own API key.
+ *   - global key (SPEND_HARD_STOP_USD, default $1.80) — protects the operator's own API key.
  * BYOK calls are metered too but only count against the task cap.
+ *
+ * Counters live in Redis so the API and any number of workers share one truth; a local JSONL
+ * ledger keeps an audit trail of every call (model, tokens, cost).
  */
 
 export type Price = { input: number; cachedInput: number; output: number } // USD per 1M tokens
@@ -34,7 +37,6 @@ const FALLBACK_PRICE: Price = { input: 3.0, cachedInput: 3.0, output: 15.0 }
 
 export function priceFor(model: string): Price {
   if (PRICES[model]) return PRICES[model]
-  // dated snapshots, e.g. gpt-5-mini-2025-08-07
   const base = Object.keys(PRICES)
     .sort((a, b) => b.length - a.length)
     .find((k) => model.startsWith(k))
@@ -72,30 +74,40 @@ export type LedgerEntry = {
   costUsd: number
 }
 
+const K_PLATFORM = "pw:spend:platform"
+const kTask = (id: string) => `pw:spend:task:${id}`
+const kCalls = (id: string) => `pw:spend:calls:${id}`
+
 export class SpendLedger {
-  private platformTotal: number
-  private taskTotals = new Map<string, number>()
   readonly file: string
+  private seeded: Promise<void> | null = null
+  // Local mirrors so synchronous readers (UI snapshots) get a recent value without awaiting Redis.
+  private platformCache = 0
+  private taskCache = new Map<string, number>()
 
   constructor(
+    private redis: Redis | null,
     dir = process.env.SPEND_LEDGER_DIR ?? DEFAULT_LEDGER_DIR,
     readonly hardStopUsd = Number(process.env.SPEND_HARD_STOP_USD ?? 1.8),
     readonly taskCapUsd = Number(process.env.TASK_BUDGET_USD ?? 0.15),
   ) {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     this.file = path.join(dir, "openai-ledger.jsonl")
-    this.platformTotal = 0
-    this.refresh()
+    for (const e of this.readAll()) {
+      if (e.keyOwner === "platform") this.platformCache += e.costUsd
+      this.taskCache.set(e.taskId, (this.taskCache.get(e.taskId) ?? 0) + e.costUsd)
+    }
   }
 
-  /** Re-read the ledger so several processes (API, worker, eval scripts) share one truth. */
-  refresh() {
-    this.platformTotal = 0
-    this.taskTotals.clear()
-    for (const e of this.readAll()) {
-      if (e.keyOwner === "platform") this.platformTotal += e.costUsd
-      this.taskTotals.set(e.taskId, (this.taskTotals.get(e.taskId) ?? 0) + e.costUsd)
-    }
+  /** First use: make sure Redis knows at least what the local audit ledger already recorded. */
+  private seed(): Promise<void> {
+    this.seeded ??= (async () => {
+      if (!this.redis) return
+      const cur = Number((await this.redis.get(K_PLATFORM)) ?? 0)
+      if (cur < this.platformCache) await this.redis.set(K_PLATFORM, String(this.platformCache))
+      this.platformCache = Math.max(cur, this.platformCache)
+    })()
+    return this.seeded
   }
 
   readAll(): LedgerEntry[] {
@@ -106,43 +118,73 @@ export class SpendLedger {
       .map((l) => JSON.parse(l) as LedgerEntry)
   }
 
-  platformSpent(): number {
-    return this.platformTotal
+  async platformSpent(): Promise<number> {
+    await this.seed()
+    if (!this.redis) return this.platformCache
+    this.platformCache = Number((await this.redis.get(K_PLATFORM)) ?? 0)
+    return this.platformCache
   }
 
+  async taskSpentAsync(taskId: string): Promise<number> {
+    if (!this.redis) return this.taskCache.get(taskId) ?? 0
+    const v = Number((await this.redis.get(kTask(taskId))) ?? this.taskCache.get(taskId) ?? 0)
+    this.taskCache.set(taskId, v)
+    return v
+  }
+
+  /** Last known value (sync) — for UI snapshots only, never for enforcement. */
   taskSpent(taskId: string): number {
-    return this.taskTotals.get(taskId) ?? 0
+    return this.taskCache.get(taskId) ?? 0
+  }
+
+  async taskCalls(taskId: string): Promise<number> {
+    if (!this.redis) return this.readAll().filter((e) => e.taskId === taskId).length
+    return Number((await this.redis.get(kCalls(taskId))) ?? 0)
   }
 
   /** Throws before a call that could push past either cap. */
-  assertCanSpend(taskId: string, keyOwner: LedgerEntry["keyOwner"], worstCaseUsd: number, taskCapUsd = this.taskCapUsd) {
-    this.refresh()
-    if (keyOwner === "platform" && this.platformTotal + worstCaseUsd > this.hardStopUsd) {
-      throw new SpendLimitError(
-        "global",
-        `Platform key spend $${this.platformTotal.toFixed(4)} + next call (≤$${worstCaseUsd.toFixed(4)}) would exceed hard stop $${this.hardStopUsd}`,
-      )
+  async assertCanSpend(taskId: string, keyOwner: LedgerEntry["keyOwner"], worstCaseUsd: number, taskCapUsd = this.taskCapUsd) {
+    await this.seed()
+    if (keyOwner === "platform") {
+      const spent = await this.platformSpent()
+      if (spent + worstCaseUsd > this.hardStopUsd) {
+        throw new SpendLimitError(
+          "global",
+          `Platform key spend $${spent.toFixed(4)} + next call (≤$${worstCaseUsd.toFixed(4)}) would exceed hard stop $${this.hardStopUsd}`,
+        )
+      }
     }
-    const t = this.taskSpent(taskId)
+    const t = await this.taskSpentAsync(taskId)
     if (t + worstCaseUsd > taskCapUsd) {
-      throw new SpendLimitError(
-        "task",
-        `Task spend $${t.toFixed(4)} + next call (≤$${worstCaseUsd.toFixed(4)}) would exceed task cap $${taskCapUsd}`,
-      )
+      throw new SpendLimitError("task", `Task spend $${t.toFixed(4)} + next call (≤$${worstCaseUsd.toFixed(4)}) would exceed task cap $${taskCapUsd}`)
     }
   }
 
-  record(entry: Omit<LedgerEntry, "ts">): LedgerEntry {
+  async record(entry: Omit<LedgerEntry, "ts">): Promise<LedgerEntry> {
     const full: LedgerEntry = { ts: new Date().toISOString(), ...entry }
     appendFileSync(this.file, JSON.stringify(full) + "\n")
-    if (entry.keyOwner === "platform") this.platformTotal += entry.costUsd
-    this.taskTotals.set(entry.taskId, this.taskSpent(entry.taskId) + entry.costUsd)
+    this.taskCache.set(entry.taskId, this.taskSpent(entry.taskId) + entry.costUsd)
+    if (entry.keyOwner === "platform") this.platformCache += entry.costUsd
+    if (this.redis) {
+      await this.seed()
+      const m = this.redis.multi()
+      if (entry.keyOwner === "platform") m.incrbyfloat(K_PLATFORM, entry.costUsd)
+      m.incrbyfloat(kTask(entry.taskId), entry.costUsd).expire(kTask(entry.taskId), 60 * 60 * 24 * 30)
+      m.incr(kCalls(entry.taskId)).expire(kCalls(entry.taskId), 60 * 60 * 24 * 30)
+      await m.exec()
+    }
     return full
   }
 }
 
 let singleton: SpendLedger | null = null
+let redisFactory: (() => Redis) | null = null
+/** Wire Redis in once at startup (kept out of this module to avoid import cycles in tests). */
+export function useRedisForSpend(factory: () => Redis) {
+  redisFactory = factory
+  singleton = null
+}
 export function getSpendLedger(): SpendLedger {
-  singleton ??= new SpendLedger()
+  singleton ??= new SpendLedger(redisFactory ? redisFactory() : null)
   return singleton
 }

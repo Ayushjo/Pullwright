@@ -1,5 +1,7 @@
 import { Router } from "express"
+import crypto from "crypto"
 import logger from "../logger.js"
+import { createRedisClient } from "../config/redis.js"
 import { SessionStore, SESSION_COOKIE } from "../auth/session.js"
 import { upsertUserByGithubId } from "../repositories/userRepository.js"
 import { isDatabaseEnabled } from "../db/prisma.js"
@@ -29,8 +31,16 @@ function cookieOptions() {
   }
 }
 
+const STATE_COOKIE = "pw_oauth_state"
+
+/** Only same-site relative paths — never "//evil.com" or absolute URLs (open redirect). */
+function safeReturnTo(v: unknown): string {
+  return typeof v === "string" && /^\/(?!\/)[\w\-./?=&%#]*$/.test(v) ? v : "/dashboard"
+}
+
 export function createOAuthRouter(sessionStore: SessionStore) {
   const router = Router()
+  const redis = createRedisClient()
 
   // Step 1 — redirect the user to GitHub's consent screen.
   router.get("/github", (req, res) => {
@@ -38,8 +48,11 @@ export function createOAuthRouter(sessionStore: SessionStore) {
     if (!clientId) {
       return res.status(500).json({ error: "GitHub OAuth is not configured (missing GITHUB_CLIENT_ID)" })
     }
-    const returnTo = typeof req.query.returnTo === "string" ? req.query.returnTo : "/dashboard"
-    const state = Buffer.from(JSON.stringify({ returnTo, n: Date.now() })).toString("base64url")
+    const returnTo = safeReturnTo(req.query.returnTo)
+    // CSRF protection: random state bound to this browser (cookie) and stored server-side (single use).
+    const state = crypto.randomBytes(24).toString("base64url")
+    void redis.set(`oauth:${state}`, returnTo, "EX", 600)
+    res.cookie(STATE_COOKIE, state, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 600_000, path: "/" })
 
     const params = new URLSearchParams({
       client_id: clientId,
@@ -54,16 +67,15 @@ export function createOAuthRouter(sessionStore: SessionStore) {
   // Step 2 — GitHub redirects back with a code; exchange it for a token.
   router.get("/github/callback", async (req, res) => {
     const code = req.query.code as string | undefined
-    const stateRaw = req.query.state as string | undefined
-    let returnTo = "/dashboard"
-    try {
-      if (stateRaw) {
-        const decoded = JSON.parse(Buffer.from(stateRaw, "base64url").toString("utf8"))
-        if (typeof decoded.returnTo === "string") returnTo = decoded.returnTo
-      }
-    } catch {
-      /* ignore malformed state */
+    const state = typeof req.query.state === "string" ? req.query.state : ""
+    const cookieState = req.cookies?.[STATE_COOKIE] as string | undefined
+    res.clearCookie(STATE_COOKIE, { path: "/" })
+    const stored = state ? await redis.getdel(`oauth:${state}`) : null
+    if (!state || !cookieState || state !== cookieState || stored === null) {
+      logger.warn("OAuth callback rejected: state mismatch")
+      return res.redirect(`${frontendUrl()}/login?error=state_mismatch`)
     }
+    const returnTo = safeReturnTo(stored)
 
     if (!code) return res.redirect(`${frontendUrl()}/login?error=missing_code`)
 
@@ -81,7 +93,7 @@ export function createOAuthRouter(sessionStore: SessionStore) {
       const tokenJson = (await tokenRes.json()) as { access_token?: string; error?: string }
       const accessToken = tokenJson.access_token
       if (!accessToken) {
-        logger.error("OAuth token exchange failed: " + JSON.stringify(tokenJson))
+        logger.error(`OAuth token exchange failed: ${tokenJson.error ?? "no access_token"}`)
         return res.redirect(`${frontendUrl()}/login?error=token_exchange`)
       }
 
@@ -148,7 +160,7 @@ export function createOAuthRouter(sessionStore: SessionStore) {
 
       res.cookie(SESSION_COOKIE, sessionId, cookieOptions())
       logger.info("User signed in: " + user.login)
-      res.redirect(`${frontendUrl()}${returnTo.startsWith("/") ? returnTo : "/dashboard"}`)
+      res.redirect(`${frontendUrl()}${returnTo}`)
     } catch (error) {
       logger.error("OAuth callback error: " + error)
       res.redirect(`${frontendUrl()}/login?error=oauth_failed`)

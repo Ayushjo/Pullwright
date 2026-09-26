@@ -62,6 +62,9 @@ export class Pipeline {
       if (e.type === "llm_call") {
         s.llmCalls++
         s.costUsd = ledger.taskSpent(s.taskId)
+        s.inputTokens = (s.inputTokens ?? 0) + e.inputTokens
+        s.cachedInputTokens = (s.cachedInputTokens ?? 0) + e.cachedInputTokens
+        s.outputTokens = (s.outputTokens ?? 0) + e.outputTokens
         void this.emit(s.taskId, {
           type: "llm_call",
           agent: phase === "plan" ? "planner" : "executor",
@@ -418,26 +421,23 @@ export class Pipeline {
 }
 
 export function metricsOf(s: TaskState): TaskMetricsSnapshot {
-  const ledger = getSpendLedger()
-  const entries = ledger.readAll().filter((e) => e.taskId === s.taskId)
-  const input = entries.reduce((a, e) => a + e.inputTokens, 0)
-  const output = entries.reduce((a, e) => a + e.outputTokens, 0)
-  const cost = entries.reduce((a, e) => a + e.costUsd, 0)
+  const cap = getSpendLedger().taskCapUsd
+  const cost = Math.max(s.costUsd, getSpendLedger().taskSpent(s.taskId))
   const start = s.startedAt ? Date.parse(s.startedAt) : Date.parse(s.createdAt)
   const end = s.finishedAt ? Date.parse(s.finishedAt) : Date.now()
   return {
-    inputTokens: input,
-    outputTokens: output,
+    inputTokens: s.inputTokens ?? 0,
+    outputTokens: s.outputTokens ?? 0,
     costUsd: cost,
     shadowCostUsd: cost,
-    llmCalls: entries.length,
+    llmCalls: s.llmCalls,
     toolCalls: s.toolCalls,
     retries: 0,
     durationMs: Math.max(0, end - start),
     phases: {},
     budgetUsedUsd: cost,
-    budgetLimitUsd: ledger.taskCapUsd,
-    budgetRemainingUsd: Math.max(0, ledger.taskCapUsd - cost),
+    budgetLimitUsd: cap,
+    budgetRemainingUsd: Math.max(0, cap - cost),
   }
 }
 

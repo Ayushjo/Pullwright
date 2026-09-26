@@ -17,6 +17,10 @@ import { createDockerClient, resolveDockerSocket } from './config/docker.js';
 import { disconnectPrisma, verifyDatabaseConnection } from './db/prisma.js';
 import { startPipelineWorker } from './agent/service.js';
 import { Sandbox } from './agent/sandbox.js';
+import { useRedisForSpend } from './agent/spend.js';
+import { createRedisClient } from './config/redis.js';
+
+useRedisForSpend(() => createRedisClient());
 
 // WORKER_MODE: "both" (default, single process), "api" (HTTP only), "worker" (sandbox host only).
 const MODE = (process.env.WORKER_MODE ?? "both") as "both" | "api" | "worker"

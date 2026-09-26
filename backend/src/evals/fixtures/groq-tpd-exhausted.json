@@ -1,9 +1,0 @@
-{
-  "error": {
-    "code": "rate_limit_exceeded",
-    "message": "Rate limit reached for model 'openai/gpt-oss-120b' tokens per day (TPD): Limit 200000, Used 199722"
-  },
-  "status": 429,
-  "provider": "groq",
-  "model": "openai/gpt-oss-120b"
-}

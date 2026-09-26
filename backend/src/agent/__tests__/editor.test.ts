@@ -153,14 +153,16 @@ describe("misc", () => {
     expect(redact("https://x-access-token:abc123@github.com")).toContain("[REDACTED]")
     expect(redact("key sk-proj-abcdefghijklmnopqrstuv")).toBe("key [REDACTED]")
   })
-  it("prices cached tokens and enforces caps", () => {
+  it("prices cached tokens and enforces caps", async () => {
     expect(costOf("gpt-5-mini", { inputTokens: 1_000_000, cachedInputTokens: 1_000_000, outputTokens: 0 })).toBeCloseTo(0.025)
     const dir = mkdtempSync(path.join(os.tmpdir(), "pw-spend-"))
-    const l = new SpendLedger(dir, 0.05, 0.03)
-    l.record({ taskId: "t", keyOwner: "platform", provider: "openai", model: "gpt-5-mini", purpose: "x", inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, costUsd: 0.025 })
-    expect(() => l.assertCanSpend("t", "platform", 0.01)).toThrow(/task cap/)
-    expect(() => l.assertCanSpend("u", "platform", 0.03)).toThrow(/hard stop/)
-    expect(() => l.assertCanSpend("u", "byok", 0.02)).not.toThrow()
+    const l = new SpendLedger(null, dir, 0.05, 0.03)
+    await l.record({ taskId: "t", keyOwner: "platform", provider: "openai", model: "gpt-5-mini", purpose: "x", inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, costUsd: 0.025 })
+    await expect(l.assertCanSpend("t", "platform", 0.01)).rejects.toThrow(/task cap/)
+    await expect(l.assertCanSpend("u", "platform", 0.03)).rejects.toThrow(/hard stop/)
+    await expect(l.assertCanSpend("u", "byok", 0.02)).resolves.toBeUndefined()
+    // a fresh ledger over the same audit file sees the earlier spend
+    expect(await new SpendLedger(null, dir, 0.05, 0.03).platformSpent()).toBeCloseTo(0.025)
   })
 })
 

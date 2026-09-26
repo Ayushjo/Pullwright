@@ -69,6 +69,9 @@ export type TaskState = {
   prBranch?: string
   failureReason?: string
   costUsd: number
+  inputTokens?: number
+  cachedInputTokens?: number
+  outputTokens?: number
   llmCalls: number
   toolCalls: number
   createdAt: string
