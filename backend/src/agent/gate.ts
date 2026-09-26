@@ -35,6 +35,8 @@ export type GateResult = {
   ok: boolean
   problems: string[]
   warnings: string[]
+  /** Other places that use routes/APIs this change modified (impact analysis). */
+  impact?: string[]
   stats: FileStat[]
   verify: { cmd: string; before: number | null; after: number; output: string; newFailures: string[]; fixed: string[] }[]
 }
@@ -81,6 +83,8 @@ export async function runGate(input: {
   baseline: VerifyRun[]
   /** Unplanned files already flagged once; a second finish with them is accepted as a warning. */
   unplannedSeen?: Set<string>
+  /** Impact findings already surfaced once. */
+  impactSeen?: Set<string>
 }): Promise<GateResult> {
   const { ws, baseSha } = input
   const problems: string[] = []
@@ -178,7 +182,18 @@ export async function runGate(input: {
     }
   }
 
-  return { ok: problems.length === 0, problems, warnings, stats, verify }
+  // Impact analysis: consumers of HTTP routes this change touched, outside the diff.
+  const impact = await routeConsumers(ws, baseSha, stats)
+  const freshImpact = impact.filter((h) => !input.impactSeen?.has(h))
+  if (freshImpact.length) {
+    freshImpact.forEach((h) => input.impactSeen?.add(h))
+    problems.push(
+      `You changed HTTP route handlers that other code calls, and these call sites were not updated:\n${freshImpact.map((h) => `  - ${h}`).join("\n")}\n` +
+        `Check whether they still work with your change (e.g. a new response shape). Update them if needed; if they genuinely need no change, call finish again.`,
+    )
+  } else if (impact.length) warnings.push(`Other code calls the changed routes (reviewed): ${impact.slice(0, 5).join("; ")}`)
+
+  return { ok: problems.length === 0, problems, warnings, stats, verify, impact }
 }
 
 export function gateFeedback(g: GateResult): string {
@@ -187,4 +202,40 @@ export function gateFeedback(g: GateResult): string {
     g.problems.map((p, i) => `${i + 1}. ${p}`).join("\n\n") +
     (g.warnings.length ? `\n\nWarnings (fix if they are mistakes):\n- ${g.warnings.join("\n- ")}` : "")
   )
+}
+
+const ROUTE_RE = /\.(get|post|put|patch|delete)\(\s*["'`](\/[^"'`]+)["'`]/
+
+/** Find call sites of routes whose handlers were modified, in files the diff did not touch. */
+export async function routeConsumers(ws: Workspace, baseSha: string, stats: FileStat[]): Promise<string[]> {
+  const changed = new Set(stats.map((s) => s.path))
+  const routes = new Set<string>()
+  for (const s of stats) {
+    if (s.status !== "M" || !/\.(ts|js|mjs|cjs)$/.test(s.path)) continue
+    const d = await git(ws.root, ["diff", "--cached", "-U12", baseSha, "--", s.path]).catch(() => "")
+    // A hunk that touches lines near a route registration counts as a change to that route.
+    // Attribute each changed line to the nearest route registration above it (within the hunk context).
+    for (const hunk of d.split(/^@@/m).slice(1)) {
+      let current: string | null = null
+      for (const line of hunk.split("\n").slice(1)) {
+        const m = line.match(ROUTE_RE)
+        if (m?.[2] && m[2].length > 1 && !m[2].includes(":")) current = m[2]
+        if (/^[+-](?![+-])/.test(line) && current) routes.add(current)
+      }
+    }
+  }
+  const hits: string[] = []
+  for (const r of [...routes].slice(0, 6)) {
+    const escaped = r.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    const pattern = `(api${escaped}|["'\`]${escaped})([?"'\`/]|$)`
+    const out = await git(ws.root, ["grep", "-n", "-I", "-E", "-e", pattern, "--", "."]).catch(() => "")
+    for (const line of out.split("\n").filter(Boolean)) {
+      const file = line.slice(0, line.indexOf(":"))
+      if (changed.has(file) || /(^|\/)(test|tests|__tests__)\/|\.test\.|\.spec\.|\.md$|ladder\.json$/.test(file)) continue
+      if (ROUTE_RE.test(line)) continue // another route registration, not a consumer
+      hits.push(line.length > 180 ? line.slice(0, 180) + "…" : line)
+      if (hits.length >= 10) return hits
+    }
+  }
+  return hits
 }

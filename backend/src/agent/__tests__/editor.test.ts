@@ -10,7 +10,8 @@ import { newSyntaxErrors } from "../tools/syntax.js"
 import { filterPatch } from "../pipeline.js"
 import { redact } from "../git.js"
 import { SpendLedger, costOf } from "../spend.js"
-import { parseFailures } from "../gate.js"
+import { parseFailures, routeConsumers } from "../gate.js"
+import { diffStat } from "../git.js"
 import { groundIssue } from "../grounding.js"
 
 let root: string
@@ -182,5 +183,25 @@ describe("grounding", () => {
     expect(g.missingPaths.sort()).toEqual(["src/lib/rateLimiter.js", "src/middleware/auth.js"])
     expect(g.missingSymbols).toEqual(["RateLimiter"])
     expect(g.foundPaths).toEqual(["src/math.js"])
+  })
+})
+
+describe("route consumer impact analysis", () => {
+  it("finds frontend callers of a modified route, ignoring the route file itself", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "pw-impact-"))
+    const g = (...a: string[]) => execFileSync("git", a, { cwd: dir })
+    g("init", "-q")
+    mkdirSync(path.join(dir, "api"))
+    mkdirSync(path.join(dir, "web"))
+    writeFileSync(path.join(dir, "api/router.ts"), 'router.get("/tasks", async (req, res) => {\n  res.json(list)\n})\nrouter.get("/stats", h)\n')
+    writeFileSync(path.join(dir, "web/client.ts"), "export const listTasks = () => fetch(`${BASE}/api/tasks`)\nexport const stats = () => fetch('/api/stats')\n")
+    g("add", "-A")
+    g("-c", "user.email=a@b", "-c", "user.name=t", "commit", "-qm", "base")
+    const base = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir }).toString().trim()
+    writeFileSync(path.join(dir, "api/router.ts"), 'router.get("/tasks", async (req, res) => {\n  res.json({ tasks: list, total })\n})\nrouter.get("/stats", h)\n')
+    const ws = new Workspace(dir)
+    const hits = await routeConsumers(ws, base, await diffStat(dir, base))
+    expect(hits.some((h) => h.startsWith("web/client.ts:1:"))).toBe(true)
+    expect(hits.some((h) => h.includes("/api/stats"))).toBe(false) // unchanged route
   })
 })

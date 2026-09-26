@@ -202,5 +202,89 @@
         "pattern": ".tasks"
       }
     ]
+  },
+  {
+    "id": "R04-search-stats",
+    "level": 15,
+    "fixture": "myowndevin",
+    "gitSource": "/Users/jochannnn/MyOwnDevin",
+    "gitRef": "main",
+    "title": "Add task search API and aggregate stats with total cost",
+    "body": "## Problem\nThe Dashboard and History pages can only filter tasks client-side after downloading the full list.\nThere is no way to search tasks by title/URL from the API, and `GET /api/stats` recomputes counts by\nloading up to 200 tasks in memory. We also have per-task metrics in Redis (`metrics:{taskId}`) but no\naggregate cost reporting for the dashboard.\n\n## Requirements\nImplement server-side task search and richer stats, wired through to the frontend.\n\n### 1. `TaskRegistry` — `backend/src/store/taskRegistry.ts`\n- Add `search(query: string, opts?: { limit?: number })` that:\n  - Reads recent task IDs from `tasks:index` via `zrevrange` (newest first).\n  - Loads each entry and keeps those where `issueTitle` or `issueUrl` contains `query` (case-insensitive).\n  - Default `limit` = 20, cap at 50.\n- Add `aggregateStats()` returning:\n  `{ total, queued, running, done, failed, totalCostUsd }`\n  - Count statuses by scanning recent tasks from the index (at least the most recent 200).\n  - `totalCostUsd` = sum of `metrics.costUsd` from `getMetrics(taskId)` for those tasks (treat missing metrics as 0).\n\n### 2. `GET /api/tasks` — `backend/src/api/router.ts`\n- Support optional query param `q` (search string). When present, call `taskRegistry.search(q, { limit })` where\n  `limit` comes from `?limit=` (default 20, clamp 1–50).\n- When `q` is absent, keep existing list behaviour unchanged.\n- Return `400` if `q` is provided but empty/whitespace-only.\n\n### 3. Refactor `GET /api/stats` — `backend/src/api/router.ts`\n- Replace the inline loop over `taskRegistry.list(200)` with `taskRegistry.aggregateStats()`.\n- Response must include `totalCostUsd` (number, 2 decimal places in JSON is fine).\n\n### 4. Frontend API client — `frontend/src/api/client.ts`\n- Add `searchTasks(q: string, limit?: number)` calling `GET /api/tasks?q=...`.\n- Extend `StatsResponse` type with optional `totalCostUsd`.\n\n### 5. History page — `frontend/src/pages/History.tsx`\n- When the user types in the search box, debounce (300ms) and call `searchTasks` instead of filtering only\n  the already-loaded client list. Fall back to client filter if the API call fails.\n\n### 6. Dashboard — `frontend/src/pages/Dashboard.tsx`\n- If `stats.totalCostUsd` is present, show it in the stats row (e.g. label \"Total cost\").\n\n## Acceptance criteria\n- `curl \"http://localhost:3500/api/tasks?q=pagination\"` returns only tasks whose title or URL matches.\n- `curl \"http://localhost:3500/api/tasks?q=\"` returns HTTP 400.\n- `curl http://localhost:3500/api/stats` returns `totalCostUsd` alongside status counts.\n- History search box triggers server-side search (network tab shows `/api/tasks?q=`).\n- `npx tsc -b` in `backend/` and `frontend/` passes with no errors.\n\n## Notes\n- Do NOT add clone/setup/deploy steps — the sandbox already has the repo.\n- Use existing Redis keys (`tasks:index`, `task:{id}`, `metrics:{id}`) — no new database.\n- Keep changes minimal and match existing code style.",
+    "acceptance": null,
+    "checks": [
+      {
+        "type": "contains",
+        "file": "backend/src/store/taskRegistry.ts",
+        "pattern": "aggregateStats"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/store/taskRegistry.ts",
+        "pattern": "search("
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/api/router.ts",
+        "pattern": "aggregateStats"
+      },
+      {
+        "type": "contains",
+        "file": "frontend/src/api/client.ts",
+        "pattern": "searchTasks"
+      },
+      {
+        "type": "contains",
+        "file": "frontend/src/pages/History.tsx",
+        "pattern": "searchTasks"
+      },
+      {
+        "type": "contains",
+        "file": "frontend/src/pages/Dashboard.tsx",
+        "pattern": "totalCostUsd"
+      }
+    ]
+  },
+  {
+    "id": "R05-cancellation",
+    "level": 16,
+    "fixture": "myowndevin",
+    "gitSource": "/Users/jochannnn/MyOwnDevin",
+    "gitRef": "main",
+    "title": "Add task cancellation, run-attempt history, and cancelled status",
+    "body": "## Problem\nUsers cannot cancel a long-running or stuck agent task. When a task fails and is retried,\nthere is no persisted record of prior attempts (duration, cost, failure reason). The Task View\nalso has no way to surface run history. `GET /api/stats` does not include cancelled tasks.\n\n## Requirements\nImplement task cancellation end-to-end, persist run-attempt history, and expose it in the API + UI.\n\n### 1. Cancel flag + orchestrator — `backend/src/Orchestrator/index.ts`\n- Before each step loop iteration, check Redis key `cancel:{taskId}` (set with 24h TTL).\n- If set: clean up sandbox container, set task status to `cancelled`, emit `task_cancelled` event\n  with cumulative metrics, and return without throwing.\n- Do not delete the checkpoint (user may want to retry later).\n\n### 2. `POST /api/task/:taskId/cancel` — `backend/src/api/router.ts`\n- Require auth (same as other task routes).\n- Set `cancel:{taskId}` in Redis.\n- If the task is `queued`, remove the BullMQ job if possible.\n- Return `{ taskId, status: \"cancelling\" }`.\n- Return `404` if task not found, `400` if already `done` or `cancelled`.\n\n### 3. Run attempt history — new `backend/src/store/runHistoryStore.ts`\n- Redis list key `attempts:{taskId}` (LPUSH, max 10 entries, 7-day TTL).\n- Each entry:\n  `{ attempt: number, startedAt: string, endedAt: string, status: \"failed\" | \"cancelled\", reason?: string, metrics: TaskMetricsSnapshot }`\n- On task failure or cancellation, append an attempt with the cumulative metrics snapshot.\n- On successful completion, optionally append a final `status: \"done\"` attempt (or skip — your call, but document it).\n\n### 4. Extend `GET /api/task/:taskId` — `backend/src/api/router.ts`\n- Include `attempts: RunAttempt[]` from `runHistoryStore.list(taskId)`.\n- Include `cumulativeMetrics` from `taskRegistry.getMetrics(taskId)` when present.\n\n### 5. `TaskRegistry` status — `backend/src/store/taskRegistry.ts`\n- Add `\"cancelled\"` to the `status` union type.\n- Update `GET /api/stats` to count `cancelled` tasks.\n\n### 6. Frontend API client — `frontend/src/api/client.ts`\n- Add `cancelTask(taskId)` calling `POST /api/task/:taskId/cancel`.\n- Extend task detail types with `attempts` and `cumulativeMetrics`.\n\n### 7. Task View — `frontend/src/pages/TaskView.tsx`\n- Show a **Cancel** button when status is `running` or `queued` (disabled while cancelling).\n- Add a **Run History** section below metrics: list each attempt with status, duration, cost, and failure reason.\n- Handle `task_cancelled` SSE event (set status, show reason).\n\n### 8. Dashboard — `frontend/src/pages/Dashboard.tsx`\n- Add a stat chip for `cancelled` count when `stats.cancelled > 0`.\n\n## Acceptance criteria\n- `curl -X POST http://localhost:3500/api/task/<running-id>/cancel` stops the task within one step boundary.\n- Cancelled task shows status `cancelled` in `GET /api/tasks`.\n- `GET /api/task/:id` returns `attempts` array after a failed then retried run.\n- Task View Cancel button works; Run History shows prior failed attempt metrics.\n- `npx tsc -b` in `backend/` and `frontend/` passes.\n\n## Notes\n- Reuse existing Redis connection patterns (`getRedisUrl`, TTLs like task registry).\n- Cumulative metrics on retry are already partially implemented — wire run history on failure/cancel.\n- Do NOT add clone/setup/deploy steps — sandbox already has the repo.\n- Match existing code style and event bus patterns.",
+    "acceptance": null,
+    "checks": [
+      {
+        "type": "contains",
+        "file": "backend/src/store/runHistoryStore.ts",
+        "pattern": "attempts:"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/api/router.ts",
+        "pattern": "/cancel"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/Orchestrator/index.ts",
+        "pattern": "cancel:"
+      },
+      {
+        "type": "contains",
+        "file": "frontend/src/api/client.ts",
+        "pattern": "cancelTask"
+      },
+      {
+        "type": "contains",
+        "file": "frontend/src/pages/TaskView.tsx",
+        "pattern": "History"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/store/taskRegistry.ts",
+        "pattern": "cancelled"
+      }
+    ]
   }
 ]
