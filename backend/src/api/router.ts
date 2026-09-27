@@ -282,6 +282,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
       await enqueue("run", s.taskId)
       return res.json({ ok: true, resumed: true })
     }
+    await eventBus.emit(s.taskId, { type: "user_message", text })
     await taskStore.pushMessage(s.taskId, text)
     res.json({ ok: true, queued: true })
   })

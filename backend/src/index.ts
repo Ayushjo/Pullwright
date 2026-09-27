@@ -18,6 +18,7 @@ import { createDockerClient, resolveDockerSocket } from './config/docker.js';
 import { disconnectPrisma, verifyDatabaseConnection } from './db/prisma.js';
 import { startPipelineWorker } from './agent/service.js';
 import { Sandbox } from './agent/sandbox.js';
+import { startJanitor } from './agent/janitor.js';
 import { useRedisForSpend } from './agent/spend.js';
 import { createRedisClient } from './config/redis.js';
 
@@ -81,6 +82,7 @@ if (MODE !== "api") {
   void createDockerClient().ping()
     .then(() => logger.info(`Docker connected (${resolveDockerSocket() ?? "default socket"})`))
     .catch((err) => logger.warn(`Docker not reachable — sandbox tasks will fail until it is: ${err instanceof Error ? err.message : err}`))
+  startJanitor()
 }
 
 const server = app.listen(PORT, () => logger.info(`Pullwright ${MODE} listening on ${PORT}`));

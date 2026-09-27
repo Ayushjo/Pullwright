@@ -157,6 +157,9 @@ function ToolItem({ t }: { t: ToolRow }) {
         <span className="min-w-0 truncate">{label}</span>
         {!t.result && <span className="ml-1 w-1.5 h-1.5 rounded-full bg-primary animate-pulse shrink-0" />}
         {failed && <span className="text-[10px] font-medium text-destructive bg-red-50 border border-red-200 rounded px-1.5 shrink-0">{failLabel}</span>}
+        {t.tool === 'setup' && t.result?.success && t.result.output.includes('from the dependency cache') && (
+          <span className="text-[10px] font-medium text-success bg-green-50 border border-green-200 rounded px-1.5 shrink-0">cached</span>
+        )}
         {hasBody && <ChevronRight className={cn('w-3 h-3 ml-auto shrink-0 transition-transform', open && 'rotate-90')} />}
       </button>
       {open && (

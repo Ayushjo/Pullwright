@@ -11,6 +11,7 @@ import { Workspace } from "./workspace.js"
 import { Sandbox } from "./sandbox.js"
 import { buildRepoMap, outline } from "./repoMap.js"
 import { detectRepoConfig } from "./repoConfig.js"
+import { cacheableInstall, depKey, restoreDeps, saveDeps } from "./depCache.js"
 import { planTools, runTools } from "./tools/index.js"
 import { PLAN_SYSTEM, RUN_SYSTEM, planTaskMessage, runTaskMessage } from "./prompts.js"
 import { runGate, runVerify, gateFeedback, revertSideEffects } from "./gate.js"
@@ -163,20 +164,7 @@ export class Pipeline {
       // Setup (network on) + baseline verification on the untouched base commit.
       if (cfg.setup.length || cfg.verify.length) {
         await this.setStatus(s, "preparing", cfg.setup.length ? "Installing dependencies in the sandbox" : "Running baseline checks")
-        sb = await Sandbox.create(taskId, workDir, { network: true, memoryMb: 2048, cpus: 2 })
-        for (const cmd of cfg.setup) {
-          await this.emit(taskId, { type: "tool_call", tool: "setup", args: { command: cmd } })
-          const r = await sb.exec(cmd, 600_000)
-          await this.emit(taskId, { type: "tool_result", tool: "setup", success: r.exitCode === 0, output: `$ ${cmd}\n${r.stdout.slice(-1500)}`, durationMs: r.durationMs })
-        }
-        // Setup must not leak into the diff: restore tracked files it touched, ignore new ones.
-        const dirty = (await git(workDir, ["status", "--porcelain"])).split("\n").filter(Boolean)
-        const modified = dirty.filter((l) => l.startsWith(" M")).map((l) => l.slice(3))
-        const untracked = dirty.filter((l) => l.startsWith("??")).map((l) => l.slice(3))
-        if (modified.length) await git(workDir, ["checkout", "--", ...modified])
-        if (untracked.length) await appendFile(path.join(workDir, ".git", "info", "exclude"), untracked.join("\n") + "\n")
-        await sb.destroy()
-        sb = null
+        if (cfg.setup.length) await this.installDeps(s, workDir, cfg.setup, false)
         // Baseline under the same conditions as validation later (no network).
         if (cfg.verify.length) {
           sb = await Sandbox.create(taskId, workDir, { network: false })
@@ -254,6 +242,52 @@ export class Pipeline {
     }
   }
 
+  /**
+   * Run setup commands in a network-enabled sandbox, restoring node_modules from the dependency cache
+   * when the lockfile is unchanged. `onlyMissing` re-installs just the package dirs whose node_modules
+   * are gone (the janitor removes them from idle workspaces).
+   */
+  private async installDeps(s: TaskState, workDir: string, cmds: string[], onlyMissing: boolean) {
+    const scope = s.source?.kind === "local" ? `local:${s.source.repoPath}` : `${s.owner}/${s.repo}`.toLowerCase()
+    const todo = onlyMissing
+      ? cmds.filter((c) => {
+          const ci = cacheableInstall(c) ?? (/\b(npm (ci|install)|pnpm install|yarn install)\b/.test(c) ? { dir: c.match(/^cd (\S+) && /)?.[1] ?? "." } : null)
+          return ci && !existsSync(path.join(workDir, ci.dir, "node_modules"))
+        })
+      : cmds
+    if (!todo.length) return
+    // A restored package dir still needs the non-install setup that follows it (e.g. prisma generate).
+    const dirs = new Set(todo.map((c) => c.match(/^cd (\S+) && /)?.[1] ?? "."))
+    const run = onlyMissing ? cmds.filter((c) => dirs.has(c.match(/^cd (\S+) && /)?.[1] ?? ".")) : cmds
+    let sb: Sandbox | null = null
+    try {
+      for (const cmd of run) {
+        await this.emit(s.taskId, { type: "tool_call", tool: "setup", args: { command: cmd } })
+        const ci = cacheableInstall(cmd)
+        const key = ci ? await depKey(scope, workDir, ci.dir, ci.install).catch(() => null) : null
+        const t0 = Date.now()
+        if (ci && key && (await restoreDeps(key, path.join(workDir, ci.dir)))) {
+          await this.emit(s.taskId, { type: "tool_result", tool: "setup", success: true, output: `$ ${cmd}\nrestored node_modules from the dependency cache`, durationMs: Date.now() - t0 })
+          continue
+        }
+        sb ??= await Sandbox.create(s.taskId, workDir, { network: true, memoryMb: 2048, cpus: 2 })
+        const r = await sb.exec(cmd, 600_000)
+        await this.emit(s.taskId, { type: "tool_result", tool: "setup", success: r.exitCode === 0, output: `$ ${cmd}\n${r.stdout.slice(-1500)}`, durationMs: r.durationMs })
+        if (ci && key && r.exitCode === 0) await saveDeps(key, path.join(workDir, ci.dir), scope)
+      }
+    } finally {
+      if (sb) await sb.destroy()
+    }
+    // Setup must not leak into the diff: restore tracked files it touched, ignore new ones.
+    if (!onlyMissing) {
+      const dirty = (await git(workDir, ["status", "--porcelain"])).split("\n").filter(Boolean)
+      const modified = dirty.filter((l) => l.startsWith(" M")).map((l) => l.slice(3))
+      const untracked = dirty.filter((l) => l.startsWith("??")).map((l) => l.slice(3))
+      if (modified.length) await git(workDir, ["checkout", "--", ...modified])
+      if (untracked.length) await appendFile(path.join(workDir, ".git", "info", "exclude"), untracked.join("\n") + "\n")
+    }
+  }
+
   // ── Stage 2: implement + validate + judge ─────────────────────────────────
   async run(taskId: string) {
     const s = await taskStore.get(taskId)
@@ -263,6 +297,8 @@ export class Pipeline {
     try {
       const ws = this.workspace(s)
       await this.setStatus(s, "running", "Implementing the plan")
+      // The janitor drops node_modules from idle workspaces; bring them back (cache first) before running.
+      if (s.setupCmds?.length) await this.installDeps(s, ws.root, s.setupCmds, true)
       sb = await Sandbox.create(taskId, ws.root, { network: false })
       const sandbox = sb
       let gateAttempts = 0
@@ -309,7 +345,7 @@ export class Pipeline {
       const syncChecklist = (final: boolean) => {
         const cl = s.planChecklist
         const steps = s.plan!.steps
-        if (!cl || cl.length !== steps.length) return
+        if (!cl || cl.length < steps.length) return
         let changed = false
         const full = steps.map((st) => st.files.length > 0 && st.files.every((f) => touched.has(f)))
         const latest = full.lastIndexOf(true)
@@ -333,8 +369,8 @@ export class Pipeline {
         RUN_SYSTEM,
         runTaskMessage(s.planMessage, s.plan) + (s.runMessages ? "" : await plannedFilesContext(ws, plannedFiles)),
         runTools(ws, sandbox, (steps) => {
-          s.planChecklist = steps
-          void this.emit(taskId, { type: "plan_update", steps })
+          s.planChecklist = mergeChecklist(s.plan!.steps, s.planChecklist, steps)
+          void this.emit(taskId, { type: "plan_update", steps: s.planChecklist })
         }, s.baseline),
         {
           ...LIMITS.run,
@@ -346,11 +382,8 @@ export class Pipeline {
         {
           emit: this.loopEvents(s, "run"),
           isCancelled: () => taskStore.isCancelled(taskId),
-          pollUserMessages: async () => {
-            const msgs = await taskStore.drainMessages(taskId)
-            for (const m of msgs) await this.emit(taskId, { type: "user_message", text: m })
-            return msgs
-          },
+          // The API emits user_message when a message arrives; here we only consume the inbox.
+          pollUserMessages: () => taskStore.drainMessages(taskId),
           onMutation: (files) => {
             for (const f of files) touched.add(f)
             syncChecklist(false)
@@ -379,7 +412,8 @@ export class Pipeline {
               const v = await review(patch)
               if (!v) return null
               s.verdict = v
-              if (v.success || judgeRounds >= 1) return null
+              // In-context fix rounds after a rejection; anything still unmet goes to the fresh-context repair pass.
+              if (v.success || judgeRounds >= Number(process.env.PW_JUDGE_ROUNDS ?? 1)) return null
               const remaining = getSpendLedger().taskCapUsd - getSpendLedger().taskSpent(taskId)
               if (remaining < 0.03) return null
               judgeRounds++
@@ -578,6 +612,43 @@ export function filterPatch(patch: string, rejected: Set<string>): string {
       return !m || (!rejected.has(m[1]!) && !rejected.has(m[2]!))
     })
     .join("")
+}
+
+type Check = { title: string; status: string }
+const words = (t: string) => new Set(t.toLowerCase().match(/[a-z0-9]{3,}/g) ?? [])
+function similar(a: string, b: string): number {
+  const A = words(a)
+  const B = words(b)
+  let inter = 0
+  for (const w of A) if (B.has(w)) inter++
+  return inter / Math.max(1, new Set([...A, ...B]).size)
+}
+
+/**
+ * The approved plan's steps stay the checklist: the model's update_plan only moves statuses.
+ * (Seen live: the agent rewrote a 6-step plan into 2 steps, which hid the remaining work from the UI.)
+ * Incoming items are matched to approved steps by title (or by position when the counts agree);
+ * items that match nothing are appended as extra steps.
+ */
+export function mergeChecklist(approved: { title: string }[], prev: Check[] | undefined, incoming: Check[]): Check[] {
+  const out: Check[] = approved.map((st, i) => ({ title: st.title, status: prev?.[i]?.title === st.title ? prev[i]!.status : "pending" }))
+  const extras: Check[] = []
+  incoming.forEach((inc, j) => {
+    let best = -1
+    let score = 0.34
+    out.forEach((st, i) => {
+      const sc = similar(st.title, inc.title)
+      if (sc > score) {
+        score = sc
+        best = i
+      }
+    })
+    if (best < 0 && incoming.length === approved.length) best = j
+    if (best >= 0) out[best]!.status = inc.status
+    else if (!approved.length) extras.push(inc)
+    else if (!extras.some((e) => e.title === inc.title)) extras.push(inc)
+  })
+  return [...out, ...extras.slice(0, 4)]
 }
 
 /**

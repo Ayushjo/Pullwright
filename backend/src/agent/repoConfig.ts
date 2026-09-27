@@ -1,5 +1,6 @@
 import path from "path"
 import type { Workspace } from "./workspace.js"
+import { tsSettingsNote } from "./tsNotes.js"
 
 /**
  * Per-repo knowledge the agent needs but should never guess:
@@ -77,7 +78,8 @@ export async function detectRepoConfig(ws: Workspace, override?: RepoConfigOverr
   }
   if (fileSet.has(".pullwright/setup.sh")) setup.splice(0, setup.length, "bash .pullwright/setup.sh")
 
-  let instructions = ""
+  const tsNote = await tsSettingsNote(ws, pkgDirs).catch(() => "")
+  let instructions = tsNote ? `${tsNote}\n\n` : ""
   for (const f of INSTRUCTION_FILES) {
     if (!fileSet.has(f)) continue
     const txt = (await ws.read(f).catch(() => "")).trim()
@@ -88,7 +90,7 @@ export async function detectRepoConfig(ws: Workspace, override?: RepoConfigOverr
   return {
     setup: override?.setup ?? fromFile.setup ?? setup,
     verify: override?.verify ?? fromFile.verify ?? verify,
-    instructions: (override?.instructions ? `### Platform notes\n${override.instructions}\n\n` : "") + instructions.slice(0, 6000),
+    instructions: (override?.instructions ? `### Platform notes\n${override.instructions}\n\n` : "") + instructions.slice(0, 7000),
     packageDirs: pkgDirs,
   }
 }

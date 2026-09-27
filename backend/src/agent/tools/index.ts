@@ -9,6 +9,7 @@ import type { Sandbox } from "../sandbox.js"
 import { truncateOutput } from "../sandbox.js"
 import { Editor, type ToolOutput } from "./editor.js"
 import { parseFailures } from "../gate.js"
+import { tsErrorHints } from "../tsNotes.js"
 
 const execFileP = promisify(execFile)
 
@@ -184,9 +185,11 @@ async function shell(sb: Sandbox, cmd: string, timeoutS: number | undefined, pla
   const r = await sb.exec(cmd, t * 1000)
   const body = truncateOutput(r.stdout.trimEnd(), 8_000)
   const status = r.timedOut ? `Command timed out after ${t}s and was killed.` : `exit code ${r.exitCode}`
-  const note = r.exitCode !== 0 ? annotateFailures(r.stdout, baseline) : ""
+  const note = r.exitCode !== 0 ? annotateFailures(r.stdout, baseline) + tsErrorHints(r.stdout) : ""
   return { ok: r.exitCode === 0, output: `${body ? body + "\n" : ""}[${status}]${note}` }
 }
+
+const PERMISSION_Q = /\b(do you want me to|would you like me to|should i (go ahead|proceed|continue|implement)|shall i|may i|ok(ay)? to proceed|confirm (to|before|that i should) (proceed|continue)|proceed\?|continue\?)/i
 
 // ── tool sets ────────────────────────────────────────────────────────────────
 
@@ -340,7 +343,7 @@ export function runTools(ws: Workspace, sb: Sandbox, onPlanUpdate: (steps: { tit
     {
       def: fn(
         "update_plan",
-        "Update the checklist shown to the user. Exactly one step should be in_progress while working.",
+        "Update step statuses on the checklist shown to the user. Keep the approved plan's steps (same titles, same order) — only change their status. Exactly one step should be in_progress while working.",
         {
           steps: {
             type: "array",
@@ -363,6 +366,10 @@ export function runTools(ws: Workspace, sb: Sandbox, onPlanUpdate: (steps: { tit
     {
       def: fn("ask_user", "Ask the user one concrete question when you are blocked by a real ambiguity. Use sparingly.", { question: str("The question") }, ["question"]),
       handler: async (a) => {
+        // Asking permission to do already-approved work only stalls the run (seen live).
+        const q = argStr(a, "question")
+        if (PERMISSION_Q.test(q))
+          return { ok: false, output: "Not sent: the plan is already approved, so do not ask for permission or confirmation. Implement every remaining step now. Only ask when you are blocked by a genuine ambiguity the issue does not resolve." }
         asked++
         if (asked > 1) return { ok: false, output: "You already asked the user a question in this run. Follow their answer (or your most reasonable assumption) and continue; note any remaining doubt in your finish summary." }
         return { control: "ask_user", question: argStr(a, "question") }

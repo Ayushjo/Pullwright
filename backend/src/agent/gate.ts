@@ -5,6 +5,7 @@ import { newSyntaxErrors } from "./tools/syntax.js"
 import type { Workspace } from "./workspace.js"
 import type { Sandbox } from "./sandbox.js"
 import { truncateOutput } from "./sandbox.js"
+import { tsErrorHints } from "./tsNotes.js"
 
 /**
  * Deterministic pre-PR gate (no LLM). A change only reaches review/publish if:
@@ -217,7 +218,7 @@ export async function runGate(input: {
   for (const v of verify) {
     if (v.after === 0) continue
     if (v.before === 0 || v.before === null) {
-      problems.push(`\`${v.cmd}\` ${v.before === 0 ? "passed before your change but now fails" : "fails"} (exit ${v.after}):\n${truncateOutput(v.output, 2_500)}`)
+      problems.push(`\`${v.cmd}\` ${v.before === 0 ? "passed before your change but now fails" : "fails"} (exit ${v.after}):\n${truncateOutput(v.output, 2_500)}${tsErrorHints(v.output)}`)
     } else if (v.newFailures.length) {
       problems.push(`\`${v.cmd}\`: your change broke tests that passed before: ${v.newFailures.slice(0, 8).join("; ")}\n${truncateOutput(v.output, 2_000)}`)
     } else {
