@@ -85,6 +85,10 @@ export async function runGate(input: {
   unplannedSeen?: Set<string>
   /** Impact findings already surfaced once. */
   impactSeen?: Set<string>
+  /** Plan steps (to point at the step that mentions an untouched planned file). */
+  planSteps?: { title: string; files: string[] }[]
+  /** Planned-but-untouched files already surfaced once. */
+  untouchedSeen?: Set<string>
 }): Promise<GateResult> {
   const { ws, baseSha } = input
   const problems: string[] = []
@@ -204,6 +208,20 @@ export async function runGate(input: {
     } else {
       warnings.push(`\`${v.cmd}\` was already failing before this change (exit ${v.before}) and still fails${v.fixed.length ? ` (fixed: ${v.fixed.join("; ")})` : ""}.`)
     }
+  }
+
+  // Plan completion: every file the approved plan said it would change must be touched (once-only nudge).
+  const touched = new Set(stats.map((x) => x.path))
+  const untouched = input.plannedFiles.filter((f) => !touched.has(f) && !input.untouchedSeen?.has(f) && !/\.(md|txt)$/.test(f))
+  if (untouched.length && input.untouchedSeen) {
+    untouched.forEach((f) => input.untouchedSeen!.add(f))
+    const lines = untouched.map((f) => {
+      const i = input.planSteps?.findIndex((st) => st.files.includes(f)) ?? -1
+      return `  - ${f}${i >= 0 ? ` (step ${i + 1}: ${input.planSteps![i]!.title})` : ""}`
+    })
+    problems.push(
+      `The approved plan changes these files, but they were not modified:\n${lines.join("\n")}\nImplement those steps now. If a step turned out to be unnecessary, say why in your finish summary and call finish again.`,
+    )
   }
 
   // Impact analysis: consumers of HTTP routes this change touched, outside the diff.

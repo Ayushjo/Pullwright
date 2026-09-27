@@ -281,6 +281,7 @@ export class Pipeline {
       }
       const unplannedSeen = new Set<string>()
       const impactSeen = new Set<string>()
+      const untouchedSeen = new Set<string>()
       let forcedReview = false
       const plannedFiles = s.plan.files.map((f) => f.path)
       const planText = [
@@ -330,7 +331,7 @@ export class Pipeline {
           onFinish: async (summary) => {
             gateAttempts++
             await this.setStatus(s, "validating", `Validating the change (attempt ${gateAttempts})`)
-            const g = await runGate({ ws, sb: sandbox, baseSha: s.baseSha!, plannedFiles, planText, verifyCmds: s.verifyCmds ?? [], baseline: s.baseline ?? [], unplannedSeen, impactSeen })
+            const g = await runGate({ ws, sb: sandbox, baseSha: s.baseSha!, plannedFiles, planText, verifyCmds: s.verifyCmds ?? [], baseline: s.baseline ?? [], unplannedSeen, impactSeen, untouchedSeen, planSteps: s.plan!.steps })
             s.gate = { ok: g.ok, problems: g.problems, warnings: g.warnings, verify: g.verify, ...(g.impact ? { impact: g.impact } : {}) }
             s.stats = g.stats
             await this.emit(taskId, { type: "gate_result", ok: g.ok, problems: g.problems, warnings: g.warnings, verify: g.verify.map((v) => ({ cmd: v.cmd, before: v.before, after: v.after })) })
