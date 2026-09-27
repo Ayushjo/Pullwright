@@ -47,6 +47,8 @@ export type CallOptions = {
   maxOutputTokens: number
   taskCapUsd?: number
   toolChoice?: "auto" | "required" | "none"
+  /** Force a syntactically valid JSON object response. */
+  jsonMode?: boolean
   onUsage?: (r: LLMResult & { model: string; purpose: string }) => void
 }
 
@@ -105,6 +107,7 @@ export async function chat(spec: ModelSpec, opts: CallOptions): Promise<LLMResul
       ? { tools: opts.tools, tool_choice: opts.toolChoice ?? "auto", parallel_tool_calls: true }
       : {}),
     ...(reasoning ? { reasoning_effort: spec.reasoningEffort ?? "low" } : { temperature: 0 }),
+    ...(opts.jsonMode ? { response_format: { type: "json_object" as const } } : {}),
   }
 
   let lastErr: unknown

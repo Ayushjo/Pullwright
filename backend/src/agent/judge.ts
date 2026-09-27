@@ -34,14 +34,19 @@ export async function judgePatch(
       { role: "system", content: JUDGE_SYSTEM },
       { role: "user", content: user },
     ],
-    maxOutputTokens: 6000,
+    maxOutputTokens: 12000,
+    jsonMode: true,
     ...(onUsage ? { onUsage: (u) => onUsage({ ...u }) } : {}),
   })
   const m = res.text.match(/\{[\s\S]*\}/)
   try {
     const j = JSON.parse(m ? m[0] : res.text) as Partial<Verdict>
+    // The reviewer answers with requirement ids (R1…); map them back to the checklist text.
     const reqs = Array.isArray(j.requirements)
-      ? j.requirements.map((r) => ({ item: String(r.item ?? ""), met: Boolean(r.met), evidence: String(r.evidence ?? "") }))
+      ? (j.requirements as { id?: string; item?: string; met?: boolean; evidence?: string }[]).map((r, i) => {
+          const n = Number(String(r.id ?? "").replace(/\D/g, "")) || i + 1
+          return { item: r.item ?? `R${n}. ${input.requirements[n - 1] ?? ""}`, met: Boolean(r.met), evidence: String(r.evidence ?? "") }
+        })
       : []
     const unmet = reqs.filter((r) => !r.met)
     return {

@@ -304,13 +304,13 @@ function TaskView({ taskId }: { taskId: string }) {
                 <div className="shrink-0 border-t border-border p-3 sm:px-5 bg-muted/30 space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-[12.5px] text-muted-foreground">
-                      {state.stoppedByBudget
-                        ? `Stopped at its $${state.capUsd.toFixed(2)} budget with partial work — continue, or review what’s there.`
+                      {state.stoppedEarly
+                        ? `Stopped early (${state.stoppedByBudget ? `$${state.capUsd.toFixed(2)} budget` : 'step limit'}) with partial work — continue, or review what’s there.`
                         : status === 'ready' ? 'Validated and reviewed.' : 'Validation or review flagged something — check the Review tab.'} Publishing opens a{' '}
                       {state.options.draft ? 'draft ' : ''}pull request{state.rejectedFiles.length ? ` without ${state.rejectedFiles.length} excluded file(s)` : ''}.
                     </p>
                     <div className="flex items-center gap-2">
-                      {state.stoppedByBudget && (
+                      {state.stoppedEarly && (
                         <Button size="sm" variant="secondary" loading={busy === 'extend'} onClick={() => act('extend', () => extendBudget(taskId, 0.1), 'Budget raised — continuing')}>
                           Continue (+$0.10)
                         </Button>

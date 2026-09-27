@@ -49,6 +49,7 @@ export function publicView(s: TaskState) {
     costUsd: Math.max(s.costUsd, getSpendLedger().taskSpent(s.taskId)),
     capUsd: taskCap(s),
     stoppedByBudget: /Budget cap reached/.test(`${s.summary ?? ""} ${s.failureReason ?? ""}`),
+    stoppedEarly: /Stopped early|Budget cap reached|Step limit reached|Time limit reached/.test(`${s.summary ?? ""} ${s.failureReason ?? ""}`) && Boolean(s.runMessages?.length),
   }
 }
 
