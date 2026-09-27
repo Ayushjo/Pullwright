@@ -12,6 +12,7 @@ import { useTask } from '../hooks/useTask'
 import {
   approvePlan,
   cancelTask,
+  extendBudget,
   getDiff,
   publishTask,
   restoreCheckpoint,
@@ -303,14 +304,23 @@ function TaskView({ taskId }: { taskId: string }) {
                 <div className="shrink-0 border-t border-border p-3 sm:px-5 bg-muted/30 space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-[12.5px] text-muted-foreground">
-                      {status === 'ready' ? 'Validated and reviewed.' : 'Validation or review flagged something — check the Review tab.'} Publishing opens a{' '}
+                      {state.stoppedByBudget
+                        ? `Stopped at its $${state.capUsd.toFixed(2)} budget with partial work — continue, or review what’s there.`
+                        : status === 'ready' ? 'Validated and reviewed.' : 'Validation or review flagged something — check the Review tab.'} Publishing opens a{' '}
                       {state.options.draft ? 'draft ' : ''}pull request{state.rejectedFiles.length ? ` without ${state.rejectedFiles.length} excluded file(s)` : ''}.
                     </p>
-                    {!state.source && (
-                      <Button size="sm" loading={busy === 'publish'} onClick={() => act('publish', () => publishTask(taskId), 'Opening the pull request…')}>
-                        <GitPullRequest className="w-3.5 h-3.5" /> Publish PR
-                      </Button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {state.stoppedByBudget && (
+                        <Button size="sm" variant="secondary" loading={busy === 'extend'} onClick={() => act('extend', () => extendBudget(taskId, 0.1), 'Budget raised — continuing')}>
+                          Continue (+$0.10)
+                        </Button>
+                      )}
+                      {!state.source && (
+                        <Button size="sm" loading={busy === 'publish'} onClick={() => act('publish', () => publishTask(taskId), 'Opening the pull request…')}>
+                          <GitPullRequest className="w-3.5 h-3.5" /> Publish PR
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   <Composer placeholder="Ask for changes (e.g. “also add a test for the empty case”)" onSend={(t) => act('feedback', () => sendMessage(taskId, t), 'Sent — the agent is revising')} />
                 </div>

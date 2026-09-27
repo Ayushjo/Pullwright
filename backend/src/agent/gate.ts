@@ -91,6 +91,28 @@ export async function runGate(input: {
   const warnings: string[] = []
   // Run verification first (it may write artefacts), then clean side effects, then inspect the diff.
   const after = await runVerify(input.sb, input.verifyCmds)
+  const verifyRed = async () =>
+    after.some((a) => {
+      const b = input.baseline.find((x) => x.cmd === a.cmd)
+      return a.exitCode !== 0 && (!b || b.exitCode === 0 || a.failures.some((f) => !b.failures.includes(f)))
+    })
+  const neededForBuild = async (f: FileStat): Promise<boolean> => {
+    if (!input.verifyCmds.length || f.status !== "M") return false
+    const current = await ws.read(f.path).catch(() => null)
+    const original = await git(ws.root, ["show", `${baseSha}:${f.path}`]).catch(() => null)
+    if (current === null || original === null) return false
+    const fast = input.verifyCmds.filter((c) => /tsc|type-?check|build|compile|mypy|go vet/.test(c))
+    try {
+      await ws.write(f.path, original)
+      const probe = await runVerify(input.sb, fast.length ? fast : input.verifyCmds, 180_000)
+      return probe.some((p) => {
+        const now = after.find((a) => a.cmd === p.cmd)
+        return p.exitCode !== 0 && (!now || now.exitCode === 0 || p.failures.some((x) => !now.failures.includes(x)))
+      })
+    } finally {
+      await ws.write(f.path, current)
+    }
+  }
   const reverted = await revertSideEffects(ws.root, baseSha, input.plannedFiles)
   if (reverted.length) warnings.push(`Auto-reverted build/test side effects: ${reverted.join(", ")}`)
   const stats = await diffStat(ws.root, baseSha)
@@ -139,7 +161,9 @@ export async function runGate(input: {
       if (/^[+-]\s*"[^"]+":\s*"[\^~]?\d/m.test(d)) problems.push(`${s.path}: dependency versions changed but the plan does not include dependency changes. Revert those lines.`)
     }
     if (!planned.has(s.path) && !/(^|\/)(__tests__|tests?)\/|\.(test|spec)\.[a-z]+$/.test(s.path) && s.status !== "D") {
-      if (input.unplannedSeen && !input.unplannedSeen.has(s.path)) {
+      // Unplanned edits are often plumbing the build needs (type unions, exhaustive maps). Test it:
+      // temporarily revert the file and re-run verification — only flag it if nothing breaks.
+      if (input.unplannedSeen && !input.unplannedSeen.has(s.path) && !(await verifyRed()) && !(await neededForBuild(s))) {
         input.unplannedSeen.add(s.path)
         problems.push(
           `${s.path} is not part of the approved plan. Revert your changes to it (restore the original lines exactly) unless this issue cannot be resolved without it — if it truly is required, keep it and explain why in your finish summary.`,

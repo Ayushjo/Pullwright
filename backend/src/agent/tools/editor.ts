@@ -5,7 +5,7 @@ import { outline } from "../repoMap.js"
 
 export type ToolOutput = { ok: boolean; output: string; changedFiles?: string[] }
 
-const MAX_VIEW_LINES = 250
+const MAX_VIEW_LINES = 180
 const MAX_OUTPUT_CHARS = 16_000
 const SNIPPET_CONTEXT = 4
 

@@ -240,13 +240,13 @@ export class AgentLoop {
   }
 
   /**
-   * Observation masking with hysteresis: once more than 12 old tool outputs are unmasked,
-   * mask all but the most recent 5. The prefix only changes occasionally, so prompt caching keeps working.
+   * Observation masking with hysteresis: once more than 9 old tool outputs are unmasked,
+   * mask all but the most recent 4. The prefix only changes occasionally, so prompt caching keeps working.
    */
   private maskOldObservations() {
     const toolIdx = this.messages.map((m, i) => (m.role === "tool" && typeof m.content === "string" && !m.content.startsWith("[masked]") ? i : -1)).filter((i) => i >= 0)
-    if (toolIdx.length <= 12) return
-    for (const i of toolIdx.slice(0, toolIdx.length - 5)) {
+    if (toolIdx.length <= 9) return
+    for (const i of toolIdx.slice(0, toolIdx.length - 4)) {
       const m = this.messages[i] as { role: "tool"; content: string; tool_call_id: string }
       if (m.content.length > 300) {
         m.content = `[masked] Earlier tool output (${m.content.length} chars) removed to save context. Re-run the tool if you need it again.\n${m.content.slice(0, 200)}…`

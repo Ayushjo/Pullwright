@@ -98,6 +98,7 @@ export const retryTask = (taskId: string) => post<{ ok: true }>(`/api/task/${tas
 export const restoreCheckpoint = (taskId: string, sha: string) => post<{ ok: true }>(`/api/task/${taskId}/restore`, { sha })
 export const setFileRejected = (taskId: string, path: string, rejected: boolean) =>
   post<{ rejectedFiles: string[] }>(`/api/task/${taskId}/files`, { path, rejected })
+export const extendBudget = (taskId: string, addUsd: number) => post<{ ok: true; capUsd: number }>(`/api/task/${taskId}/extend`, { addUsd })
 export const shareTask = (taskId: string, isPublic: boolean) => post<{ isPublic: boolean }>(`/api/task/${taskId}/share`, { public: isPublic })
 export const getDiff = (taskId: string) =>
   request<{ patch: string; stats: DiffStat[]; rejectedFiles: string[]; acceptedPatch: string }>(`/api/task/${taskId}/diff`)

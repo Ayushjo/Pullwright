@@ -112,6 +112,7 @@ export type TaskState = {
   failureReason?: string
   costUsd: number
   capUsd: number
+  stoppedByBudget?: boolean
   llmCalls: number
   toolCalls: number
   createdAt: string

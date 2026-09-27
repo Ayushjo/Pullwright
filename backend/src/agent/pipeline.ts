@@ -46,6 +46,13 @@ async function modelSpec(s: TaskState, role: "plan" | "run" | "judge"): Promise<
   }
 }
 
+export function taskCap(s: TaskState): number {
+  const base = getSpendLedger().taskCapUsd
+  if (s.options.capUsd) return s.options.capUsd
+  const files = s.plan?.files.length ?? 0
+  return Math.min(Number(process.env.TASK_BUDGET_MAX_USD ?? 0.3), base + Math.max(0, files - 3) * 0.015)
+}
+
 const LIMITS = {
   plan: { maxSteps: Number(process.env.PW_PLAN_MAX_STEPS ?? 20), maxWallMs: 8 * 60_000, maxFormatErrors: 3, maxOutputTokens: 6_000 },
   run: { maxSteps: Number(process.env.PW_RUN_MAX_STEPS ?? 40), maxWallMs: 18 * 60_000, maxFormatErrors: 3, maxOutputTokens: 10_000 },
@@ -90,7 +97,7 @@ export class Pipeline {
           costUsd: e.costUsd,
           durationMs: e.durationMs,
         })
-        void this.emit(s.taskId, { type: "cost", costUsd: s.costUsd, llmCalls: s.llmCalls, capUsd: ledger.taskCapUsd })
+        void this.emit(s.taskId, { type: "cost", costUsd: s.costUsd, llmCalls: s.llmCalls, capUsd: taskCap(s) })
         void taskStore.patchCounters(s.taskId, { costUsd: s.costUsd, llmCalls: s.llmCalls, toolCalls: s.toolCalls })
       } else if (e.type === "agent_thought") {
         void this.emit(s.taskId, { type: "agent_thought", agent: phase === "plan" ? "planner" : "executor", status: "reasoning", text: e.text })
@@ -203,7 +210,7 @@ export class Pipeline {
       const ws = new Workspace(s.workDir!)
 
       sb = await Sandbox.create(taskId, ws.root, { network: false, readOnlyWorkspace: true })
-      const loop = new AgentLoop(taskId, "plan", await modelSpec(s, "plan"), PLAN_SYSTEM, s.planMessage!, planTools(ws, sb), LIMITS.plan, {
+      const loop = new AgentLoop(taskId, "plan", await modelSpec(s, "plan"), PLAN_SYSTEM, s.planMessage!, planTools(ws, sb), { ...LIMITS.plan, taskCapUsd: taskCap(s) }, {
         emit: this.loopEvents(s, "plan"),
         isCancelled: () => taskStore.isCancelled(taskId),
       })
@@ -263,6 +270,7 @@ export class Pipeline {
             summary: s.summary ?? "",
             patch,
             verify: verifyText,
+            capUsd: taskCap(s),
           }, (u) => this.loopEvents(s, "run")({ type: "llm_call", purpose: "judge", ...u }))
           await this.emit(taskId, { type: "judge_result", ...v })
           return v
@@ -299,6 +307,7 @@ export class Pipeline {
           // Bigger plans get more steps; the per-task dollar cap remains the hard guard.
           maxSteps: Math.min(80, Math.max(LIMITS.run.maxSteps, 25 + 8 * plannedFiles.length)),
           maxWallMs: Math.min(30 * 60_000, LIMITS.run.maxWallMs + plannedFiles.length * 60_000),
+          taskCapUsd: taskCap(s),
         },
         {
           emit: this.loopEvents(s, "run"),
@@ -343,7 +352,8 @@ export class Pipeline {
                 `\n\nFix them. If you are sure a finding is wrong, explain why in your finish summary. Then call finish again.`
               )
             }
-            if (gateAttempts >= 3 || (g.problems.length === 1 && g.problems[0]!.startsWith("The diff is empty") && gateAttempts >= 2)) {
+            const maxGateAttempts = 3 + Math.floor(plannedFiles.length / 4)
+            if (gateAttempts >= maxGateAttempts || (g.problems.length === 1 && g.problems[0]!.startsWith("The diff is empty") && gateAttempts >= 2)) {
               forcedReview = true
               return null
             }
@@ -450,7 +460,7 @@ export class Pipeline {
 }
 
 export function metricsOf(s: TaskState): TaskMetricsSnapshot {
-  const cap = getSpendLedger().taskCapUsd
+  const cap = taskCap(s)
   const cost = Math.max(s.costUsd, getSpendLedger().taskSpent(s.taskId))
   const start = s.startedAt ? Date.parse(s.startedAt) : Date.parse(s.createdAt)
   const end = s.finishedAt ? Date.parse(s.finishedAt) : Date.now()

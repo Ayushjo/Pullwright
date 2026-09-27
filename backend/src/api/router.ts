@@ -15,7 +15,7 @@ import { taskStore, TERMINAL, type TaskState } from "../agent/store.js"
 import { getSpendLedger } from "../agent/spend.js"
 import { getEntitlement } from "../billing/index.js"
 import { diffStat, diffVs, restoreCheckpoint, tasksRoot } from "../agent/git.js"
-import { filterPatch, metricsOf } from "../agent/pipeline.js"
+import { filterPatch, metricsOf, taskCap } from "../agent/pipeline.js"
 
 const ISSUE_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/issues\/\d+\/?$/
 
@@ -47,7 +47,8 @@ export function publicView(s: TaskState) {
     ...rest,
     baseline: baseline?.map((b) => ({ cmd: b.cmd, exitCode: b.exitCode })),
     costUsd: Math.max(s.costUsd, getSpendLedger().taskSpent(s.taskId)),
-    capUsd: getSpendLedger().taskCapUsd,
+    capUsd: taskCap(s),
+    stoppedByBudget: /Budget cap reached/.test(`${s.summary ?? ""} ${s.failureReason ?? ""}`),
   }
 }
 
@@ -341,6 +342,27 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     await taskStore.put({ ...s, status: "publishing", statusDetail: "Queued for publishing" })
     await enqueue("publish", s.taskId)
     res.json({ ok: true })
+  })
+
+  // Budget extension: a run stopped by its spend cap can continue with more budget (user's decision).
+  const Extend = z.object({ addUsd: z.number().min(0.05).max(0.5) })
+  router.post("/task/:taskId/extend", async (req, res) => {
+    const s = await load(req, res)
+    if (!s) return
+    const parsed = Extend.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({ error: "Add between $0.05 and $0.50" })
+    if (!["needs_review", "failed"].includes(s.status) || !s.runMessages?.length) {
+      return res.status(409).json({ error: "Only a run that stopped early can be continued" })
+    }
+    const current = taskCap(s)
+    const next: TaskState = { ...s, status: "running", statusDetail: "Continuing with more budget", options: { ...s.options, capUsd: +(current + parsed.data.addUsd).toFixed(2) } }
+    delete next.failureReason
+    delete next.finishedAt
+    await taskStore.put(next)
+    await taskStore.pushMessage(s.taskId, "The budget was increased. Continue where you left off: finish the remaining requirements, verify, then call finish.")
+    await eventBus.emit(s.taskId, { type: "status", status: "running", detail: `Budget raised to $${next.options.capUsd}` })
+    await enqueue("run", s.taskId)
+    res.json({ ok: true, capUsd: next.options.capUsd })
   })
 
   const Share = z.object({ public: z.boolean() })
