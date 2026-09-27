@@ -9,7 +9,7 @@ import type { ModelSpec } from "./llm.js"
 import { getSpendLedger, SpendLimitError } from "./spend.js"
 import { Workspace } from "./workspace.js"
 import { Sandbox } from "./sandbox.js"
-import { buildRepoMap } from "./repoMap.js"
+import { buildRepoMap, outline } from "./repoMap.js"
 import { detectRepoConfig } from "./repoConfig.js"
 import { planTools, runTools } from "./tools/index.js"
 import { PLAN_SYSTEM, RUN_SYSTEM, planTaskMessage, runTaskMessage } from "./prompts.js"
@@ -165,6 +165,7 @@ export class Pipeline {
         await this.setStatus(s, "preparing", cfg.setup.length ? "Installing dependencies in the sandbox" : "Running baseline checks")
         sb = await Sandbox.create(taskId, workDir, { network: true, memoryMb: 2048, cpus: 2 })
         for (const cmd of cfg.setup) {
+          await this.emit(taskId, { type: "tool_call", tool: "setup", args: { command: cmd } })
           const r = await sb.exec(cmd, 600_000)
           await this.emit(taskId, { type: "tool_result", tool: "setup", success: r.exitCode === 0, output: `$ ${cmd}\n${r.stdout.slice(-1500)}`, durationMs: r.durationMs })
         }
@@ -179,7 +180,16 @@ export class Pipeline {
         // Baseline under the same conditions as validation later (no network).
         if (cfg.verify.length) {
           sb = await Sandbox.create(taskId, workDir, { network: false })
-          s.baseline = await runVerify(sb, cfg.verify)
+          await this.emit(taskId, { type: "status", status: "preparing", detail: "Running the project's tests on the unchanged code (baseline)" })
+          // One command at a time so each result lands right after its call in the activity feed.
+          s.baseline = []
+          for (const cmd of cfg.verify) {
+            await this.emit(taskId, { type: "tool_call", tool: "baseline", args: { command: cmd } })
+            const [b] = await runVerify(sb, [cmd])
+            if (!b) continue
+            s.baseline.push(b)
+            await this.emit(taskId, { type: "tool_result", tool: "baseline", success: b.exitCode === 0, output: `$ ${b.cmd}\n${b.exitCode === 0 ? "passes" : `already failing (exit ${b.exitCode})${b.failures.length ? ": " + b.failures.slice(0, 5).join("; ") : ""}`}`, durationMs: b.durationMs })
+          }
           await sb.destroy()
           sb = null
           await revertSideEffects(workDir, baseSha, [])
@@ -210,7 +220,7 @@ export class Pipeline {
       const ws = new Workspace(s.workDir!)
 
       sb = await Sandbox.create(taskId, ws.root, { network: false, readOnlyWorkspace: true })
-      const loop = new AgentLoop(taskId, "plan", await modelSpec(s, "plan"), PLAN_SYSTEM, s.planMessage!, planTools(ws, sb), { ...LIMITS.plan, taskCapUsd: taskCap(s) }, {
+      const loop = new AgentLoop(taskId, "plan", await modelSpec(s, "plan"), PLAN_SYSTEM, s.planMessage!, planTools(ws, sb, s.baseline), { ...LIMITS.plan, taskCapUsd: taskCap(s) }, {
         emit: this.loopEvents(s, "plan"),
         isCancelled: () => taskStore.isCancelled(taskId),
       })
@@ -283,6 +293,7 @@ export class Pipeline {
       const impactSeen = new Set<string>()
       const untouchedSeen = new Set<string>()
       let forcedReview = false
+      let mainSummary = ""
       const plannedFiles = s.plan.files.map((f) => f.path)
       const planText = [
         s.plan.editedByUser
@@ -292,17 +303,39 @@ export class Pipeline {
         ...(s.plan.userNotes?.length ? [`User notes: ${s.plan.userNotes.join(" | ")}`] : []),
       ].join("\n")
       let stepNo = s.checkpoints.length
+      // The model rarely calls update_plan, so derive progress from edits: all of a step's files
+      // edited → at least in progress; at the end, fully-edited steps count as done.
+      const touched = new Set<string>()
+      const syncChecklist = (final: boolean) => {
+        const cl = s.planChecklist
+        const steps = s.plan!.steps
+        if (!cl || cl.length !== steps.length) return
+        let changed = false
+        const full = steps.map((st) => st.files.length > 0 && st.files.every((f) => touched.has(f)))
+        const latest = full.lastIndexOf(true)
+        steps.forEach((st, i) => {
+          if (!full[i]) return
+          const cur = cl[i]!.status
+          // Work has moved on to a later step → this one is done; the latest fully-edited step is in progress.
+          const next = final || i < latest ? "completed" : cur === "pending" ? "in_progress" : cur
+          if (next !== cur) {
+            cl[i] = { ...cl[i]!, status: next }
+            changed = true
+          }
+        })
+        if (changed) void this.emit(taskId, { type: "plan_update", steps: cl })
+      }
 
       const loop = new AgentLoop(
         taskId,
         "run",
         await modelSpec(s, "run"),
         RUN_SYSTEM,
-        runTaskMessage(s.planMessage, s.plan),
+        runTaskMessage(s.planMessage, s.plan) + (s.runMessages ? "" : await plannedFilesContext(ws, plannedFiles)),
         runTools(ws, sandbox, (steps) => {
           s.planChecklist = steps
           void this.emit(taskId, { type: "plan_update", steps })
-        }),
+        }, s.baseline),
         {
           ...LIMITS.run,
           // Bigger plans get more steps; the per-task dollar cap remains the hard guard.
@@ -318,7 +351,9 @@ export class Pipeline {
             for (const m of msgs) await this.emit(taskId, { type: "user_message", text: m })
             return msgs
           },
-          onMutation: () => {
+          onMutation: (files) => {
+            for (const f of files) touched.add(f)
+            syncChecklist(false)
             stepNo++
             void checkpoint(ws.root, taskId, `edit-${stepNo}`, s.baseSha!)
               .then((sha) => {
@@ -335,7 +370,9 @@ export class Pipeline {
             s.gate = { ok: g.ok, problems: g.problems, warnings: g.warnings, verify: g.verify, ...(g.impact ? { impact: g.impact } : {}) }
             s.stats = g.stats
             await this.emit(taskId, { type: "gate_result", ok: g.ok, problems: g.problems, warnings: g.warnings, verify: g.verify.map((v) => ({ cmd: v.cmd, before: v.before, after: v.after })) })
-            s.summary = summary
+            // A reviewer-round finish only describes the fix; keep the main summary and append it.
+            s.summary = judgeRounds > 0 && mainSummary ? `${mainSummary}\n\nAfter review: ${summary}` : summary
+            if (judgeRounds === 0) mainSummary = summary
             if (g.ok) {
               // Independent reviewer: checks every requirement against the patch. One fix round on failure.
               const patch = await diffVs(ws.root, s.baseSha!)
@@ -373,6 +410,54 @@ export class Pipeline {
         out = await loop.run()
       }
       s.runMessages = loop.messages
+
+      // Focused repair pass: after a long run the model tends to skip the last big step even when the
+      // reviewer points at it. A fresh, short loop that sees only the unmet requirements does much better.
+      const unmet = s.verdict?.requirements?.filter((r) => !r.met) ?? []
+      const left = getSpendLedger().taskCapUsd - getSpendLedger().taskSpent(taskId)
+      if (out.status === "finished" && !forcedReview && s.gate?.ok && s.verdict && !s.verdict.success && unmet.length && left >= 0.04) {
+        await this.setStatus(s, "running", "Completing unmet requirements")
+        await this.emit(taskId, { type: "notice", level: "info", message: `Focused repair pass for ${unmet.length} unmet requirement(s)` })
+        const changed = (await diffStat(ws.root, s.baseSha!).catch(() => [])).map((f) => f.path)
+        let repairGate = 0
+        const repair = new AgentLoop(
+          taskId,
+          "repair",
+          await modelSpec(s, "run"),
+          RUN_SYSTEM,
+          repairMessage(s, unmet, changed) + (await plannedFilesContext(ws, changed)),
+          runTools(ws, sandbox, () => {}, s.baseline),
+          { ...LIMITS.run, maxSteps: 18, maxWallMs: 7 * 60_000, taskCapUsd: taskCap(s) },
+          {
+            emit: this.loopEvents(s, "run"),
+            isCancelled: () => taskStore.isCancelled(taskId),
+            onFinish: async (summary) => {
+              repairGate++
+              await this.setStatus(s, "validating", "Validating the repair")
+              const g = await runGate({ ws, sb: sandbox, baseSha: s.baseSha!, plannedFiles, planText, verifyCmds: s.verifyCmds ?? [], baseline: s.baseline ?? [], unplannedSeen, impactSeen, untouchedSeen, planSteps: s.plan!.steps })
+              s.gate = { ok: g.ok, problems: g.problems, warnings: g.warnings, verify: g.verify, ...(g.impact ? { impact: g.impact } : {}) }
+              await this.emit(taskId, { type: "gate_result", ok: g.ok, problems: g.problems, warnings: g.warnings, verify: g.verify.map((v) => ({ cmd: v.cmd, before: v.before, after: v.after })) })
+              if (!g.ok) {
+                if (repairGate >= 2) return null
+                await this.setStatus(s, "running", "Fixing validation findings")
+                return gateFeedback(g)
+              }
+              s.summary = `${s.summary ?? ""}\n\nRepair pass: ${summary}`.trim()
+              const v = await review(await diffVs(ws.root, s.baseSha!))
+              if (v) s.verdict = v
+              return null
+            },
+          },
+        )
+        const r = await repair.run()
+        if (r.status === "cancelled") {
+          await sb.destroy()
+          sb = null
+          return this.cancelled(s)
+        }
+        if (r.status === "failed") await this.emit(taskId, { type: "notice", level: "warn", message: `Repair pass stopped: ${r.reason}` })
+        if (!s.gate?.ok) forcedReview = true
+      }
       await sb.destroy()
       sb = null
 
@@ -394,6 +479,9 @@ export class Pipeline {
       const patch = await diffVs(ws.root, s.baseSha!)
       await taskStore.savePatch(taskId, patch)
       s.stats = await diffStat(ws.root, s.baseSha!)
+      touched.clear()
+      for (const f of s.stats) touched.add(f.path)
+      if (out.status === "finished") syncChecklist(true)
       await this.emit(taskId, { type: "diff_ready", files: s.stats })
 
       if (!patch.trim()) return this.fail(s, "The agent finished without changing any files")
@@ -490,6 +578,43 @@ export function filterPatch(patch: string, rejected: Set<string>): string {
       return !m || (!rejected.has(m[1]!) && !rejected.has(m[2]!))
     })
     .join("")
+}
+
+/**
+ * The run starts with a fresh context, so without this it re-reads every file the planner already read.
+ * Small planned files go in whole, big ones as an outline (line: declaration) for targeted views.
+ */
+async function plannedFilesContext(ws: Workspace, files: string[]): Promise<string> {
+  const parts: string[] = []
+  let budget = 40_000
+  for (const f of files) {
+    if (!ws.exists(f) || ws.isDir(f)) continue
+    const content = await ws.read(f).catch(() => "")
+    const lines = content.split("\n")
+    const body =
+      lines.length <= 150 && content.length <= 8_000 && content.length <= budget
+        ? `### ${f} (${lines.length} lines, full)\n${lines.map((l, i) => `${String(i + 1).padStart(4)}\t${l}`).join("\n")}`
+        : `### ${f} (${lines.length} lines — outline; view the ranges you need)\n${outline(f, content, 60) || "(no declarations found)"}`
+    if (body.length > budget) break
+    budget -= body.length
+    parts.push(body)
+  }
+  return parts.length ? `\n\n## Planned files (current content — no need to re-read these in full)\n${parts.join("\n\n")}` : ""
+}
+
+function repairMessage(s: TaskState, unmet: { item: string; evidence: string }[], changed: string[]): string {
+  return [
+    `# Issue: ${s.title}`,
+    s.body.slice(0, 3000),
+    `\n## Status`,
+    `Most of this issue is already implemented in the working tree (files changed so far: ${changed.join(", ") || "none"}).`,
+    `An independent reviewer found these requirements NOT met:`,
+    ...unmet.map((r) => `- ${r.item}\n  Reviewer: ${r.evidence || "(no detail)"}`),
+    `\nYour only job is to complete exactly these requirements. View the relevant file sections first, then make the edits`,
+    `(targeted apply_patch / str_replace; for a large UI piece, add it in a few medium-sized edits rather than one huge one).`,
+    `Do not rework what is already done and do not touch unrelated files. Run the type-check/tests once, then call finish`,
+    `with a short summary of what you added for each requirement.`,
+  ].join("\n")
 }
 
 function prTitle(s: TaskState): string {

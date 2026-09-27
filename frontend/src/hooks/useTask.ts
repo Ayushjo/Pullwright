@@ -41,10 +41,20 @@ export function useTask(taskId: string) {
     }, 350)
   }, [refresh])
 
+  const countRef = useRef(0)
+  /** Fetch only events we don't have yet (the full log can be large on slow links). */
   const resyncEvents = useCallback(async () => {
-    const all = await getTaskEvents(taskId)
-    setEvents((prev) => (all.length >= prev.length ? all : prev))
-    return all.length
+    const have = countRef.current
+    const fresh = await getTaskEvents(taskId, have - 1)
+    if (fresh.length) {
+      setEvents((prev) => {
+        if (prev.length !== have) return prev // SSE moved on meanwhile; it will fill the gap
+        const next = [...prev, ...fresh]
+        countRef.current = next.length
+        return next
+      })
+    }
+    return have + fresh.length
   }, [taskId])
 
   useEffect(() => {
@@ -73,9 +83,10 @@ export function useTask(taskId: string) {
           if (!Number.isFinite(seq)) return [...prev, ev]
           if (seq < prev.length) return prev // already have it
           if (seq > prev.length) {
-            void resyncEvents() // gap — fetch the full log
+            void resyncEvents() // gap — fetch what we missed
             return prev
           }
+          countRef.current = prev.length + 1
           return [...prev, ev]
         })
         if (['status', 'plan_ready', 'gate_result', 'judge_result', 'diff_ready', 'pr_opened', 'task_failed', 'task_complete', 'question', 'cost'].includes(ev.type)) {
@@ -92,16 +103,16 @@ export function useTask(taskId: string) {
     }
   }, [taskId, refresh, resyncEvents, scheduleRefresh])
 
-  // Safety net: poll state while the task is active (covers proxies that buffer SSE).
+  // Safety net: only when the live stream is down, poll state + new events.
   const active = state ? statusMeta(state.status).active : true
   useEffect(() => {
-    if (!taskId || !active) return
+    if (!taskId || !active || connected) return
     const id = setInterval(() => {
       void refresh()
       void resyncEvents()
-    }, 6000)
+    }, 8000)
     return () => clearInterval(id)
-  }, [taskId, active, refresh, resyncEvents])
+  }, [taskId, active, connected, refresh, resyncEvents])
 
   return { state, setState, events, eventsLoaded, loading, notFound, error, connected, refresh }
 }

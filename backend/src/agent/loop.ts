@@ -43,6 +43,8 @@ export class AgentLoop {
   private formatErrors = 0
   private history: { action: string; obs: string; err: boolean }[] = []
   private stuckWarnings = 0
+  /** Views/searches of the same target since the last edit — exploration churn that the exact-repeat detector misses. */
+  private explore = new Map<string, number>()
   private started = Date.now()
   private toolsByName: Map<string, Tool>
 
@@ -208,9 +210,20 @@ export class AgentLoop {
 
     const out = result as ToolOutput
     if (out.ok) this.formatErrors = 0
-    const safe = redact(out.output)
+    let safe = redact(out.output)
+    if (out.changedFiles?.length) this.explore.clear()
+    else if (out.ok && (name === "view" || name === "search") && typeof (name === "view" ? args.path : args.pattern) === "string") {
+      const key = `${name}:${String(name === "view" ? args.path : args.pattern)}`
+      const n = (this.explore.get(key) ?? 0) + 1
+      this.explore.set(key, n)
+      if (n === 4 || n === 7) {
+        safe +=
+          `\n\n[platform note] This is ${name === "view" ? `view #${n} of ${String(args.path)}` : `search #${n} for "${String(args.pattern)}"`} since your last edit. ` +
+          `You already have this context — make the edit now (targeted apply_patch/str_replace), or move on to the next plan step.`
+      }
+    }
     reply(safe)
-    this.hooks.emit({ type: "tool_result", tool: name, success: out.ok, output: safe.slice(0, 3000), durationMs: Date.now() - t0 })
+    this.hooks.emit({ type: "tool_result", tool: name, success: out.ok, output: safe.length > 1800 ? safe.slice(0, 1200) + "\n…\n" + safe.slice(-500) : safe, durationMs: Date.now() - t0 })
     if (out.changedFiles?.length) this.hooks.onMutation?.(out.changedFiles)
     this.record(`${name}:${stableJson(args)}`, safe, !out.ok)
     return null
@@ -240,17 +253,23 @@ export class AgentLoop {
   }
 
   /**
-   * Observation masking with hysteresis: once more than 9 old tool outputs are unmasked,
-   * mask all but the most recent 4. The prefix only changes occasionally, so prompt caching keeps working.
+   * Observation masking by size, with hysteresis: once unmasked tool output passes ~60k chars,
+   * mask the oldest until ~30k remain. Counting by size (not by message) matters with parallel
+   * tool calls — a count-based rule hid reads from the previous turn and caused re-search churn.
+   * The prefix only changes occasionally, so prompt caching keeps working.
    */
   private maskOldObservations() {
-    const toolIdx = this.messages.map((m, i) => (m.role === "tool" && typeof m.content === "string" && !m.content.startsWith("[masked]") ? i : -1)).filter((i) => i >= 0)
-    if (toolIdx.length <= 9) return
-    for (const i of toolIdx.slice(0, toolIdx.length - 4)) {
+    const live = this.messages
+      .map((m, i) => (m.role === "tool" && typeof m.content === "string" && !m.content.startsWith("[masked]") && m.content.length > 300 ? i : -1))
+      .filter((i) => i >= 0)
+    const size = (i: number) => (this.messages[i] as { content: string }).content.length
+    let total = live.reduce((a, i) => a + size(i), 0)
+    if (total <= 60_000) return
+    for (const i of live) {
+      if (total <= 30_000) break
       const m = this.messages[i] as { role: "tool"; content: string; tool_call_id: string }
-      if (m.content.length > 300) {
-        m.content = `[masked] Earlier tool output (${m.content.length} chars) removed to save context. Re-run the tool if you need it again.\n${m.content.slice(0, 200)}…`
-      }
+      total -= m.content.length
+      m.content = `[masked] Earlier tool output (${m.content.length} chars) removed to save context. Re-run the tool if you need it again.\n${m.content.slice(0, 200)}…`
     }
   }
 }
@@ -263,6 +282,6 @@ function stableJson(o: Record<string, unknown>) {
 }
 function summarizeArgs(a: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(a)) out[k] = typeof v === "string" && v.length > 4000 ? v.slice(0, 4000) + `… (${v.length} chars)` : v
+  for (const [k, v] of Object.entries(a)) out[k] = typeof v === "string" && v.length > 2500 ? v.slice(0, 2500) + `… (${v.length} chars)` : v
   return out
 }

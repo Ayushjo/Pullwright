@@ -130,7 +130,61 @@ R03 at first skipped the frontend callers again (the reviewer couldn't see them)
 
 **Honest assessment:** issues touching up to about 5 files across backend and frontend land cleanly for $0.005–$0.05. Very large issues (9+ files, including big React components) end in `needs_review` with most of the work done and clearly marked gaps, never as a broken PR.
 
-## Spend total
-**$1.166** of the $2.00 allowance (Redis counter for the platform key; every call is in `backend/.spend/openai-ledger.jsonl`). Evals stopped here on purpose.
+## Day 2: ten hard issues (difficulty 7+), run through the GUI
 
-ALL DONE — later scheduled sessions should do nothing.
+H01–H05 run on the bookstore fixture through the eval harness; H06–H10 are real issues on this repo, run end to end in the browser (New Task → watch streaming → approve the plan → Changes → Review). Every run is scored against hidden acceptance checks (`scripts/pw/check.mts`).
+
+| # | Issue | First run | After fixes | Time | Calls | Cost |
+|---|---|---|---|---|---|---|
+| H01 | bookstore: JSON persistence layer | ✅ ready | | 2.8 min | 17 | $0.022 |
+| H02 | bookstore: orders + stock | ✅ ready | | 2.4 min | 15 | $0.018 |
+| H03 | bookstore: API-key middleware | acceptance ✅, reviewer ✘ (minor spec deviation) → needs_review | | 4.4 min | 25 | $0.033 |
+| H04 | bookstore: CSV import | ✅ ready | | 3.2 min | 21 | $0.028 |
+| H05 | bookstore: ETag + rate limit | ✅ ready | | 2.5 min | 12 | $0.017 |
+| H06 | #9 pagination, search, cost stats + History/Dashboard (6 files) | needs_review, hit the 24-min limit, $0.079 | ✅ ready | 10.5 min | 77 | $0.126 |
+| H07 | #11 activity timeline + large TaskView UI (9 files) | needs_review, TaskView UI skipped, $0.118 | ✅ ready | 7.4 min | 65 | $0.103 |
+| H08 | #15 export a task log as JSON/Markdown (5 files) | ✅ ready | | 4.8 min | 36 | $0.041 |
+| H09 | #16 signed webhooks with retries (6 files) | cancelled by me at $0.088: read-churn loop | ✅ ready | 8.3 min | 64 | $0.091 |
+| H10 | #17 GitHub Enterprise issue-URL parsing (3 files) | ✅ ready | | 7.5 min | 54 | $0.076 |
+
+**Result: 10/10 pass acceptance; 9/10 end `ready`** (H03 is held for review by the strict reviewer). Real-repo hard issues cost $0.04–0.13 and take 5–10 minutes.
+
+### Where it was weak, and what changed
+**Speed**
+- **Railway's public Redis proxy ran at ~3.5 KB/s** (LRANGE 47 s, ping 2.8 s). The UI took minutes to load events. Fixes: local Redis for dev; event reads now incremental (`?after=seq`); polling only when SSE drops. **The EC2 worker must use a Redis in the same region** (see DEPLOY.md).
+- **Validation took 18 of 30 minutes on #9.** The unplanned-file probe rebuilt the whole repo for every file. Now at most 2 probes, each scoped to that file's package.
+- **Still slow:** `npm ci` runs on every task (~70 s for backend + frontend). A node_modules cache keyed on the lockfile hash would remove most of it. Not built yet.
+
+**Cost and efficiency**
+- **Read churn (H09 run 1):** 79 calls with `Orchestrator/index.ts` re-read in overlapping slices.
+  - Cause: observation masking counted *messages*. With parallel tool calls, the previous turn's reads were hidden after only two turns.
+  - Fix: masking now uses a size budget (starts at 60k chars, masks down to 30k).
+  - Plus a churn note: the 4th view of the same file (or 4th identical search) without an edit tells the agent to edit or move on.
+  - Result: H09 went from cancelled to ready at about the same cost.
+- **The run phase re-read every file the planner had read.** The first run message now carries the planned files: small ones in full, big ones as an outline with line numbers.
+- **Contradictory gate feedback:**
+  - Impact analysis asked the agent to update a script that calls a changed route, then the unplanned-file rule told it to revert that script. Call sites the gate asked for are now in scope.
+  - Impact analysis also fired on routes that only gained a 400 validation. It now counts a route as changed only when its success response or `req.body`/`req.query` usage changes, and eval fixtures are ignored.
+- **gpt-5-mini is weak on strict TypeScript** (`noUncheckedIndexedAccess`). On H10 it took 4 compile attempts to handle `string | undefined` from regex groups. That cost $0.02 but it succeeded.
+
+**Quality**
+- **Large UI steps got skipped** (#9, #11 first runs). Causes and fixes:
+  - The plan was capped at 5 steps, so UI work got folded into a vague step. The cap is now 8, and the planner must list every file it plans to change in some step.
+  - A **focused repair pass** now exists: if requirements are still unmet after the reviewer round, a fresh 18-step loop sees only those requirements plus the current files. It hasn't triggered yet, because the reviewer round fixed both reruns.
+- **False grounding warnings:** files and functions the issue asks you to *create* ("a new `x.ts`", bullet lists of signatures) were reported as "not found in the repo". These are now classified as new and passed to the planner as such.
+
+**Flow / UI (all seen while watching the GUI)**
+- **Feed scrolling:**
+  - The whole page scrolled with the feed (the header slid off-screen). Now only the feed scrolls.
+  - When you scroll up, a "N new steps" pill appears.
+  - The feed jumps back to live on every phase change, e.g. after Approve.
+- **Baseline rows never resolved:** all calls were emitted before any result, so the pairing broke. They now run and stream one at a time.
+- **Gate findings showed only their first line** ("…were not modified:" with nothing after it). The files, call sites and compiler errors are now shown under each finding.
+- **Clearer failure badges:** every failure said "rejected". It now says failed / already failing / sent back / not applied.
+- **Checklist and summary:**
+  - The checklist lagged the work because the model rarely calls `update_plan`. Progress is now also derived from edits.
+  - "What the agent did" showed only the reviewer-round summary. The main summary is kept and the fix round is appended as "After review:".
+  - Long tokens in the sidebar overflowed horizontally and now wrap.
+
+## Spend total
+Day 1: **$1.166**. Day 2 (10 hard issues, 4 reruns, 1 cancelled run): **~$1.03**. **Total $2.197** of the $3.00 hard stop. Every call is in `backend/.spend/openai-ledger.jsonl`.

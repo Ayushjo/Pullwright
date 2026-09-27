@@ -8,6 +8,7 @@ import { PathError } from "../workspace.js"
 import type { Sandbox } from "../sandbox.js"
 import { truncateOutput } from "../sandbox.js"
 import { Editor, type ToolOutput } from "./editor.js"
+import { parseFailures } from "../gate.js"
 
 const execFileP = promisify(execFile)
 
@@ -158,7 +159,24 @@ function guard(cmd: string, planMode: boolean): string | null {
   return null
 }
 
-async function shell(sb: Sandbox, cmd: string, timeoutS: number | undefined, planMode: boolean): Promise<ToolOutput> {
+export type Baseline = { cmd: string; exitCode: number; failures: string[] }[]
+
+/** Tell the agent which failing tests were already failing before its change, so it doesn't chase them. */
+function annotateFailures(output: string, baseline: Baseline | undefined): string {
+  if (!baseline?.length) return ""
+  const known = new Set(baseline.flatMap((b) => b.failures))
+  if (!known.size) return ""
+  const now = parseFailures(output)
+  if (!now.length) return ""
+  const old = now.filter((f) => known.has(f))
+  const fresh = now.filter((f) => !known.has(f))
+  return (
+    `\n[platform note] ${old.length} failing test(s) were already failing before your change (not your job to fix): ${old.slice(0, 5).join("; ") || "none"}.` +
+    (fresh.length ? ` NEW failures caused by your change: ${fresh.slice(0, 8).join("; ")}.` : " No new failures.")
+  )
+}
+
+async function shell(sb: Sandbox, cmd: string, timeoutS: number | undefined, planMode: boolean, baseline?: Baseline): Promise<ToolOutput> {
   if (!cmd.trim()) return { ok: false, output: "command is empty" }
   const blocked = guard(cmd, planMode)
   if (blocked) return { ok: false, output: `Command rejected: ${blocked}` }
@@ -166,12 +184,13 @@ async function shell(sb: Sandbox, cmd: string, timeoutS: number | undefined, pla
   const r = await sb.exec(cmd, t * 1000)
   const body = truncateOutput(r.stdout.trimEnd(), 8_000)
   const status = r.timedOut ? `Command timed out after ${t}s and was killed.` : `exit code ${r.exitCode}`
-  return { ok: r.exitCode === 0, output: `${body ? body + "\n" : ""}[${status}]` }
+  const note = r.exitCode !== 0 ? annotateFailures(r.stdout, baseline) : ""
+  return { ok: r.exitCode === 0, output: `${body ? body + "\n" : ""}[${status}]${note}` }
 }
 
 // ── tool sets ────────────────────────────────────────────────────────────────
 
-export function readOnlyTools(ws: Workspace, sb: Sandbox, planMode: boolean): Tool[] {
+export function readOnlyTools(ws: Workspace, sb: Sandbox, planMode: boolean, baseline?: Baseline): Tool[] {
   const editor = new Editor(ws)
   return [
     {
@@ -205,14 +224,14 @@ export function readOnlyTools(ws: Workspace, sb: Sandbox, planMode: boolean): To
         { command: str("bash command"), timeout_s: int("Timeout in seconds (default 120, max 600)") },
         ["command"],
       ),
-      handler: async (a) => shell(sb, argStr(a, "command"), argInt(a, "timeout_s"), planMode),
+      handler: async (a) => shell(sb, argStr(a, "command"), argInt(a, "timeout_s"), planMode, baseline),
     },
   ]
 }
 
-export function planTools(ws: Workspace, sb: Sandbox): Tool[] {
+export function planTools(ws: Workspace, sb: Sandbox, baseline?: Baseline): Tool[] {
   return [
-    ...readOnlyTools(ws, sb, true),
+    ...readOnlyTools(ws, sb, true, baseline),
     {
       def: fn(
         "submit_plan",
@@ -229,7 +248,7 @@ export function planTools(ws: Workspace, sb: Sandbox): Tool[] {
           steps: {
             type: "array",
             minItems: 1,
-            maxItems: 5,
+            maxItems: 8,
             items: {
               type: "object",
               properties: { title: str("Concrete step, e.g. 'Throw RangeError in divide() when b === 0'"), files: { type: "array", items: { type: "string" } } },
@@ -250,11 +269,11 @@ export function planTools(ws: Workspace, sb: Sandbox): Tool[] {
       handler: async (a) => {
         const steps = Array.isArray(a.steps) ? (a.steps as { title?: unknown; files?: unknown }[]) : []
         const files = Array.isArray(a.files) ? (a.files as { path?: unknown; new?: unknown }[]) : []
-        if (steps.length === 0) throw new ArgError("steps must have 1-5 items")
+        if (steps.length === 0) throw new ArgError("steps must have 1-8 items")
         const plan: SubmittedPlan = {
           summary: argStr(a, "summary"),
           requirements: Array.isArray(a.requirements) ? (a.requirements as unknown[]).map(String).filter((r) => r.trim()).slice(0, 15) : [],
-          steps: steps.slice(0, 5).map((s) => ({
+          steps: steps.slice(0, 8).map((s) => ({
             title: String(s.title ?? "").trim(),
             files: Array.isArray(s.files) ? s.files.map(String) : [],
           })),
@@ -288,11 +307,11 @@ export function planTools(ws: Workspace, sb: Sandbox): Tool[] {
   ]
 }
 
-export function runTools(ws: Workspace, sb: Sandbox, onPlanUpdate: (steps: { title: string; status: string }[]) => void): Tool[] {
+export function runTools(ws: Workspace, sb: Sandbox, onPlanUpdate: (steps: { title: string; status: string }[]) => void, baseline?: Baseline): Tool[] {
   const editor = new Editor(ws)
   let asked = 0
   return [
-    ...readOnlyTools(ws, sb, false),
+    ...readOnlyTools(ws, sb, false, baseline),
     {
       def: fn(
         "str_replace",

@@ -18,7 +18,7 @@ The API never touches Docker, and the worker never accepts inbound traffic. They
 
 | Service | Root dir | Notes |
 |---|---|---|
-| Redis | plugin | The API uses the private URL. The EC2 worker needs the **public** URL (Connect → Public). |
+| Redis | plugin | The API uses the private URL. The EC2 worker needs the **public** URL (Connect → Public). ⚠️ Measured at ~3.5 KB/s from outside Railway (a 47 s LRANGE, 2.8 s ping), which is far too slow for event streams. Prefer a Redis in the worker's region (e.g. Upstash or ElastiCache in the same AWS region), and point both the API and the worker at it. |
 | API | `backend` | Dockerfile build; health check `/health`. |
 | Frontend | `frontend` | Dockerfile build; set the `VITE_API_URL=https://api.<your-domain>` build arg. |
 

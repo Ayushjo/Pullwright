@@ -44,6 +44,7 @@ export type GateResult = {
 const ARTEFACT = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|[^/]+\.tsbuildinfo|[^/]+\.log|\.env(\.[^/]*)?|\.DS_Store)$|(^|\/)(node_modules|dist|build|coverage|\.next)\//
 const TEST_FILE = /(^|\/)(__tests__|tests?)\/|\.(test|spec)\.[a-z]+$|(^|\/)test_[^/]+\.py$/
 const ASSERTION = /\b(assert\w*|expect|should)\s*[.(]|^\s*[-+]?\s*(it|test)\s*\(/
+const LEFTOVER = /\.(tmp|temp|log|db|sqlite3?|bak|swp)$|(^|\/)(tmp|temp)[^/]*\.(json|txt|csv)$|(^|\/)(__tests__|tests?|fixtures?)\/[^/]*\.(json|txt|csv|db)$/i
 const SCRATCH = /(^|\/)(scratch|tmp|temp|debug|repro|reproduce|test_repro|try)[^/]*\.(js|ts|mjs|cjs|py|sh)$/i
 
 export async function runVerify(sb: Sandbox, cmds: string[], timeoutMs = 300_000): Promise<VerifyRun[]> {
@@ -100,12 +101,20 @@ export async function runGate(input: {
       const b = input.baseline.find((x) => x.cmd === a.cmd)
       return a.exitCode !== 0 && (!b || b.exitCode === 0 || a.failures.some((f) => !b.failures.includes(f)))
     })
+  let probes = 0
   const neededForBuild = async (f: FileStat): Promise<boolean> => {
     if (!input.verifyCmds.length || f.status !== "M") return false
+    if (++probes > 2) return true // bounded cost: assume later unplanned files are plumbing
     const current = await ws.read(f.path).catch(() => null)
     const original = await git(ws.root, ["show", `${baseSha}:${f.path}`]).catch(() => null)
     if (current === null || original === null) return false
-    const fast = input.verifyCmds.filter((c) => /tsc|type-?check|build|compile|mypy|go vet/.test(c))
+    // Only the type-check for this file's own package (e.g. "cd frontend && npx tsc -b" for frontend/…).
+    const fastAll = input.verifyCmds.filter((c) => /tsc|type-?check|build|compile|mypy|go vet/.test(c))
+    const pkg = fastAll.filter((c) => {
+      const dir = /^cd (\S+) &&/.exec(c)?.[1]
+      return dir ? f.path.startsWith(dir.replace(/\/$/, "") + "/") : true
+    })
+    const fast = pkg.length ? pkg : fastAll
     try {
       await ws.write(f.path, original)
       const probe = await runVerify(input.sb, fast.length ? fast : input.verifyCmds, 180_000)
@@ -133,6 +142,10 @@ export async function runGate(input: {
   for (const s of stats) {
     if (ARTEFACT.test(s.path) && !planned.has(s.path)) {
       problems.push(`${s.path} is a lockfile/build artefact/env file and should not be in this change. Undo your edit to it.`)
+    }
+    // Test-run leftovers: data/temp files created by running code (often under test/), or odd paths like "file:/…".
+    if (s.status === "A" && !planned.has(s.path) && (LEFTOVER.test(s.path) || s.path.includes(":"))) {
+      problems.push(`${s.path} looks like a file generated while running code (temp/data/log output). Delete it and make tests write to a temporary directory (os.tmpdir()).`)
     }
     if (SCRATCH.test(s.path) && s.status === "A" && !planned.has(s.path)) {
       problems.push(`${s.path} looks like a scratch/debug file. Delete it before finishing.`)
@@ -164,7 +177,9 @@ export async function runGate(input: {
       const d = await git(ws.root, ["diff", "--cached", baseSha, "--", s.path])
       if (/^[+-]\s*"[^"]+":\s*"[\^~]?\d/m.test(d)) problems.push(`${s.path}: dependency versions changed but the plan does not include dependency changes. Revert those lines.`)
     }
-    if (!planned.has(s.path) && !/(^|\/)(__tests__|tests?)\/|\.(test|spec)\.[a-z]+$/.test(s.path) && s.status !== "D") {
+    // Call sites the impact check itself asked the agent to update are in scope, not scope creep.
+    const requestedByGate = [...(input.impactSeen ?? [])].some((h) => h.startsWith(s.path + ":"))
+    if (!planned.has(s.path) && !requestedByGate && !/(^|\/)(__tests__|tests?)\/|\.(test|spec)\.[a-z]+$/.test(s.path) && s.status !== "D") {
       // Unplanned edits are often plumbing the build needs (type unions, exhaustive maps). Test it:
       // temporarily revert the file and re-run verification — only flag it if nothing breaks.
       if (input.unplannedSeen && !input.unplannedSeen.has(s.path) && !(await verifyRed()) && !(await neededForBuild(s))) {
@@ -249,6 +264,10 @@ export function gateFeedback(g: GateResult): string {
 const CODE_FILE = /\.(ts|tsx|js|jsx|mjs|cjs|vue|svelte|py|go|rb|java|kt|swift|dart)$/
 const CALL_LIKE = /\b(fetch|axios|request|http|get|post|put|patch|delete|useQuery|useSWR|url|endpoint|api)\b|\$\{/i
 const ROUTE_RE = /\.(get|post|put|patch|delete)\(\s*["'`](\/[^"'`]+)["'`]/
+/** Lines that define what callers see: the success response or the inputs the route reads. */
+const CONTRACT = /\bres\.(json|send)\(|\bres\.status\(\s*2\d\d\s*\)|\breturn\s+\{|\breq\.(body|query)\b/
+/** New error responses (validation, 4xx/5xx) don't change the contract for existing callers. */
+const ERROR_RESPONSE = /status\(\s*[45]\d\d|\{\s*error\b|\berror:/
 
 /** Find call sites of routes whose handlers were modified, in files the diff did not touch. */
 export async function routeConsumers(ws: Workspace, baseSha: string, stats: FileStat[]): Promise<string[]> {
@@ -264,7 +283,7 @@ export async function routeConsumers(ws: Workspace, baseSha: string, stats: File
       for (const line of hunk.split("\n").slice(1)) {
         const m = line.match(ROUTE_RE)
         if (m?.[2] && m[2].length > 1 && !m[2].includes(":")) current = m[2]
-        if (/^[+-](?![+-])/.test(line) && current) routes.add(current)
+        if (/^[+-](?![+-])/.test(line) && current && CONTRACT.test(line) && !ERROR_RESPONSE.test(line)) routes.add(current)
       }
     }
   }
@@ -275,7 +294,7 @@ export async function routeConsumers(ws: Workspace, baseSha: string, stats: File
     const out = await git(ws.root, ["grep", "-n", "-I", "-E", "-e", pattern, "--", "."]).catch(() => "")
     for (const line of out.split("\n").filter(Boolean)) {
       const file = line.slice(0, line.indexOf(":"))
-      if (changed.has(file) || /(^|\/)(test|tests|__tests__)\/|\.test\.|\.spec\./.test(file)) continue
+      if (changed.has(file) || /(^|\/)(test|tests|__tests__|evals?|fixtures?)\/|\.test\.|\.spec\.|\.eval\./.test(file)) continue
       if (!CODE_FILE.test(file)) continue // docs, JSON fixtures, issue text
       const code = line.slice(line.indexOf(":", file.length + 1) + 1)
       if (ROUTE_RE.test(code)) continue // another route registration, not a consumer

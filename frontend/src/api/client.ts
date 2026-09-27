@@ -59,9 +59,9 @@ export function openTaskStream(taskId: string, afterSeq = -1): EventSource {
   return new EventSource(`${BASE}/api/task/${taskId}/stream${qs}`, { withCredentials: true })
 }
 
-export async function getTaskEvents(taskId: string): Promise<TaskEvent[]> {
+export async function getTaskEvents(taskId: string, afterSeq = -1): Promise<TaskEvent[]> {
   try {
-    return await request<TaskEvent[]>(`/api/task/${taskId}/events`)
+    return await request<TaskEvent[]>(`/api/task/${taskId}/events${afterSeq >= 0 ? `?after=${afterSeq}` : ''}`)
   } catch {
     return []
   }

@@ -145,6 +145,28 @@ async function runItem(item: LadderItem) {
     acceptOut = fails.join("\n")
   }
   const blockedOk = item.expect === "blocked" ? !patch.trim() && (s.status === "needs_input" || /^Needs clarification/.test(String(s.failureReason ?? ""))) : null
+  // Efficiency: per-phase spend and cache hits from the ledger; phase timings, bounces and review rounds from events.
+  const ledgerRows = readFileSync(path.join(backend, ".spend/openai-ledger.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((r: any) => r.taskId === taskId)
+  const byPurpose: Record<string, number> = {}
+  for (const r of ledgerRows) byPurpose[r.purpose] = +((byPurpose[r.purpose] ?? 0) + r.costUsd).toFixed(4)
+  const inTok = ledgerRows.reduce((a: number, r: any) => a + r.inputTokens, 0)
+  const cachedTok = ledgerRows.reduce((a: number, r: any) => a + r.cachedInputTokens, 0)
+  const outTok = ledgerRows.reduce((a: number, r: any) => a + r.outputTokens, 0)
+  const events = (await api("GET", `/api/task/${taskId}/events`).catch(() => [])) as any[]
+  const firstAt = (st: string) => events.find((e) => e.type === "status" && e.status === st)?.timestamp
+  const span = (a?: string, b?: string) => (a && b ? +((Date.parse(b) - Date.parse(a)) / 60000).toFixed(1) : null)
+  const endAt = events[events.length - 1]?.timestamp
+  const phases = {
+    setupMin: span(firstAt("preparing"), firstAt("planning")),
+    planMin: span(firstAt("planning"), firstAt("running")),
+    runMin: span(firstAt("running"), firstAt("validating")),
+    validateToEndMin: span(firstAt("validating"), endAt),
+  }
+  const gateBounces = events.filter((e) => e.type === "gate_result" && !e.ok).length
+  const reviewRounds = events.filter((e) => e.type === "judge_result").length
+  const toolFailures = events.filter((e) => e.type === "tool_result" && !e.success).length
+  const stuck = events.filter((e) => e.type === "notice" && /Loop detected/.test(e.message ?? "")).length
+
   const result = {
     ts: new Date().toISOString(),
     id: item.id,
@@ -163,9 +185,18 @@ async function runItem(item: LadderItem) {
     accept,
     suite,
     blockedOk,
+    costByPurpose: byPurpose,
+    tokens: { in: inTok, cachedPct: inTok ? Math.round((100 * cachedTok) / inTok) : 0, out: outTok },
+    phases,
+    gateBounces,
+    reviewRounds,
+    toolFailures,
+    stuck,
+    stopReason: /Stopped early: (.*)/.exec(String(s.summary ?? ""))?.[1] ?? null,
   }
   appendFileSync(path.join(backend, ".spend/eval-results.jsonl"), JSON.stringify(result) + "\n")
   console.log(`  ⇒ ${result.status} | accept=${accept} | suite: ${suite} | judge=${result.judge} | $${result.costUsd.toFixed(4)} | ${result.minutes}m`)
+  console.log(`    calls=${result.llmCalls} tools=${result.toolCalls} toolFail=${toolFailures} stuck=${stuck} gateBounces=${gateBounces} reviews=${reviewRounds} cached=${result.tokens.cachedPct}% cost=${JSON.stringify(byPurpose)} phases=${JSON.stringify(phases)}${result.stopReason ? " STOP=" + result.stopReason : ""}`)
   if (result.files.length) console.log(`    files: ${result.files.join(", ")}`)
   if (accept === "fail" && acceptOut) console.log(acceptOut.replace(/^/gm, "    ! "))
   if (item.expect === "blocked") console.log(`    blocked-as-expected: ${blockedOk}`)

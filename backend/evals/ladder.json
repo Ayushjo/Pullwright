@@ -286,5 +286,275 @@
         "pattern": "cancelled"
       }
     ]
+  },
+  {
+    "id": "H01-persistence",
+    "level": 17,
+    "difficulty": 7.5,
+    "fixture": "bookstore",
+    "title": "Inventory changes are lost on restart — add a file-backed store",
+    "body": "Stock changes only live in memory. Add persistence:\n\n1. New `src/store.js` exporting `class JsonStore { constructor(filePath) }` with:\n   - `load()` → the parsed array, or `null` when the file does not exist yet\n   - `save(data)` → writes JSON **atomically** (write a temp file in the same directory, then rename over the target) and creates missing parent directories. No temp files may be left behind.\n2. `Inventory`:\n   - `new Inventory(books, { store })` — optional second argument. When a store is attached, every *successful* `add`/`remove` persists the full list with `store.save(this.list())`. Failed operations (e.g. unknown id) must not write.\n   - `static fromStore(store, fallbackBooks)` — uses `store.load()` when it returns data, otherwise `fallbackBooks`; the returned inventory has the store attached. Only use the store's `load`/`save` methods.\n3. `createApp()` — when called without an inventory and `process.env.INVENTORY_FILE` is set (read at call time), use `Inventory.fromStore(new JsonStore(INVENTORY_FILE), <bundled catalogue>)`.\n4. Add tests.",
+    "acceptance": {
+      "file": "test/zz_accept_H01.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { mkdtempSync, readdirSync, writeFileSync, existsSync } from 'node:fs'\nimport { tmpdir } from 'node:os'\nimport path from 'node:path'\nimport { JsonStore } from '../src/store.js'\nimport { Inventory } from '../src/inventory.js'\n\nconst book = (id, stock = 2) => ({ id, title: `T${id}`, author: 'A', priceCents: 1000, stock, tags: [] })\n\ntest('JsonStore round-trips, creates dirs, and writes atomically', () => {\n  const dir = mkdtempSync(path.join(tmpdir(), 'h01-'))\n  const file = path.join(dir, 'nested', 'deeper', 'inv.json')\n  const store = new JsonStore(file)\n  assert.equal(store.load(), null)\n  store.save([book('a')])\n  assert.deepEqual(store.load(), [book('a')])\n  const leftovers = readdirSync(path.dirname(file)).filter((f) => f !== 'inv.json')\n  assert.deepEqual(leftovers, [], 'no temp files left behind')\n})\n\ntest('Inventory persists add/remove through the store and reloads', () => {\n  const dir = mkdtempSync(path.join(tmpdir(), 'h01-'))\n  const store = new JsonStore(path.join(dir, 'inv.json'))\n  const inv = Inventory.fromStore(store, [book('a', 2), book('b', 5)])\n  inv.add(book('a'), 3)\n  inv.remove('b', 2)\n  const reloaded = Inventory.fromStore(new JsonStore(path.join(dir, 'inv.json')), [])\n  assert.equal(reloaded.find('a').stock, 5)\n  assert.equal(reloaded.find('b').stock, 3)\n})\n\ntest('fromStore falls back when the store is empty, and failed ops do not write', () => {\n  const dir = mkdtempSync(path.join(tmpdir(), 'h01-'))\n  const file = path.join(dir, 'inv.json')\n  let saves = 0\n  const store = new JsonStore(file)\n  const spy = { load: () => store.load(), save: (d) => { saves++; store.save(d) } }\n  const inv = Inventory.fromStore(spy, [book('x', 1)])\n  assert.equal(inv.find('x').stock, 1)\n  const before = saves\n  assert.throws(() => inv.remove('missing', 1))\n  assert.equal(saves, before, 'failed remove must not persist')\n})\n\ntest('createApp uses INVENTORY_FILE when set', async () => {\n  const dir = mkdtempSync(path.join(tmpdir(), 'h01-'))\n  const file = path.join(dir, 'inv.json')\n  writeFileSync(file, JSON.stringify([book('only', 4)]))\n  process.env.INVENTORY_FILE = file\n  try {\n    const { createApp } = await import('../src/server.js?h01=' + Date.now())\n    const res = await createApp()({ method: 'GET', url: '/books' })\n    assert.deepEqual(res.body.map((b) => b.id), ['only'])\n  } finally {\n    delete process.env.INVENTORY_FILE\n  }\n  assert.ok(existsSync(file))\n})\n"
+    }
+  },
+  {
+    "id": "H02-orders",
+    "level": 18,
+    "difficulty": 8,
+    "fixture": "bookstore",
+    "title": "Add orders with all-or-nothing stock checks",
+    "body": "We need real orders, not just quotes.\n\n- `POST /orders` with body `{ items: [{ id, quantity }], discountCode? }`:\n  - validate input exactly like a quote should (items required and non-empty, known book ids, positive integer quantities, valid discount code) → `400 { error }` otherwise;\n  - check stock for **all** items first; if any item has insufficient stock → `409 { error, item: <bookId> }` and **no stock changes at all**;\n  - otherwise decrement stock for every item and create an order `{ id, items, totalCents, createdAt }` → `201` with the order. `totalCents` is computed like the cart total (discount then tax). Ids are sequential per app instance: `ord_1`, `ord_2`, …; `createdAt` is an ISO timestamp.\n- `GET /orders/:id` → the order, or `404 { error }`.\n- `GET /orders` → all orders, newest first.\n- Put the order logic in a new `src/orders.js` (e.g. an `OrderBook` class) rather than in the route handler. Add tests.",
+    "acceptance": {
+      "file": "test/zz_accept_H02.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { createApp } from '../src/server.js'\nimport { Inventory } from '../src/inventory.js'\n\ntest('orders: create, stock decrement, all-or-nothing, lookup, listing', async () => {\n  const app = createApp(Inventory.fromFile())\n  const call = (method, url, body) => app({ method, url, body })\n\n  const ok = await call('POST', '/orders', { items: [{ id: 'b6', quantity: 1 }] })\n  assert.equal(ok.status, 201)\n  assert.equal(ok.body.id, 'ord_1')\n  assert.equal(ok.body.totalCents, 3239)\n  assert.ok(!Number.isNaN(Date.parse(ok.body.createdAt)))\n  assert.equal((await call('GET', '/books/b6')).body.stock, 8)\n\n  // b8 has 1 in stock: the whole order must fail and nothing may change\n  const conflict = await call('POST', '/orders', { items: [{ id: 'b6', quantity: 1 }, { id: 'b8', quantity: 2 }] })\n  assert.equal(conflict.status, 409)\n  assert.equal(conflict.body.item, 'b8')\n  assert.equal(typeof conflict.body.error, 'string')\n  assert.equal((await call('GET', '/books/b6')).body.stock, 8)\n  assert.equal((await call('GET', '/books/b8')).body.stock, 1)\n\n  for (const body of [{}, { items: [] }, { items: [{ id: 'nope', quantity: 1 }] }, { items: [{ id: 'b1', quantity: 0 }] }]) {\n    assert.equal((await call('POST', '/orders', body)).status, 400, JSON.stringify(body))\n  }\n\n  const second = await call('POST', '/orders', { items: [{ id: 'b1', quantity: 2 }], discountCode: 'WELCOME10' })\n  assert.equal(second.status, 201)\n  assert.equal(second.body.id, 'ord_2')\n\n  assert.equal((await call('GET', '/orders/ord_1')).body.totalCents, 3239)\n  assert.equal((await call('GET', '/orders/ord_9')).status, 404)\n  assert.deepEqual((await call('GET', '/orders')).body.map((o) => o.id), ['ord_2', 'ord_1'])\n})\n"
+    }
+  },
+  {
+    "id": "H03-middleware-auth",
+    "level": 19,
+    "difficulty": 8.5,
+    "fixture": "bookstore",
+    "title": "Router middleware, error handling, request ids and API-key auth",
+    "body": "The router can't do cross-cutting concerns. Refactor `src/router.js` and wire it into the app:\n\n1. `router.use(fn)` registers middleware `async (ctx, next) => response`. Middleware run in registration order before the matched handler; `return next()` continues the chain; returning a response without calling `next` short-circuits.\n2. `router.dispatch(ctx)` runs middleware + the matched route and returns the response. `ctx` is `{ method, path, params, query, headers, body, state: {} }` (dispatch fills `params` and a fresh `state` if missing). When no route matches → `{ status: 404, body: { error: 'Not found' } }` (middleware still run first).\n3. Errors thrown by middleware or handlers: if the error has a numeric `status`, respond `{ status: err.status, body: { error: err.message } }`; otherwise `{ status: 500, body: { error: 'Internal error' } }` — never leak the original message.\n4. In `createApp`:\n   - the handler accepts `req.headers` (default `{}`) and passes them in ctx;\n   - a middleware adds a unique `x-request-id` header to **every** response (merge into `response.headers`);\n   - API-key auth: when `process.env.API_KEYS` (comma-separated, whitespace-tolerant; read on every request) is set, `POST/PUT/PATCH/DELETE` requests need a matching `x-api-key` header, else `401 { error }`. `GET` never needs a key. When `API_KEYS` is unset, auth is off.\n5. Keep all existing routes working. Add tests.",
+    "acceptance": {
+      "file": "test/zz_accept_H03.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { Router } from '../src/router.js'\nimport { createApp } from '../src/server.js'\nimport { Inventory } from '../src/inventory.js'\n\nconst hdr = (r, k) => Object.fromEntries(Object.entries(r.headers ?? {}).map(([a, b]) => [a.toLowerCase(), String(b)]))[k]\n\ntest('router middleware order, short-circuit and 404', async () => {\n  const r = new Router()\n  const seen = []\n  r.use(async (ctx, next) => { seen.push('a'); ctx.state.a = 1; return next() })\n  r.use(async (ctx, next) => { seen.push('b'); if (ctx.path === '/blocked') return { status: 403, body: { error: 'no' } }; return next() })\n  r.get('/hello/:name', (ctx) => ({ status: 200, body: { hi: ctx.params.name, a: ctx.state.a } }))\n  const ok = await r.dispatch({ method: 'GET', path: '/hello/x', query: new URLSearchParams(), headers: {}, body: {} })\n  assert.equal(ok.status, 200)\n  assert.deepEqual(ok.body, { hi: 'x', a: 1 })\n  assert.deepEqual(seen, ['a', 'b'])\n  const blocked = await r.dispatch({ method: 'GET', path: '/blocked', query: new URLSearchParams(), headers: {}, body: {} })\n  assert.equal(blocked.status, 403)\n  const missing = await r.dispatch({ method: 'GET', path: '/nope', query: new URLSearchParams(), headers: {}, body: {} })\n  assert.equal(missing.status, 404)\n})\n\ntest('errors: status-carrying errors pass through, others become a generic 500', async () => {\n  const r = new Router()\n  r.get('/teapot', () => { const e = new Error('short and stout'); e.status = 418; throw e })\n  r.get('/boom', () => { throw new Error('secret internals') })\n  const t = await r.dispatch({ method: 'GET', path: '/teapot', query: new URLSearchParams(), headers: {}, body: {} })\n  assert.deepEqual([t.status, t.body.error], [418, 'short and stout'])\n  const b = await r.dispatch({ method: 'GET', path: '/boom', query: new URLSearchParams(), headers: {}, body: {} })\n  assert.equal(b.status, 500)\n  assert.equal(b.body.error, 'Internal error')\n})\n\ntest('app: request ids on every response and API-key auth for mutating routes', async () => {\n  delete process.env.API_KEYS\n  const app = createApp(Inventory.fromFile())\n  const open = await app({ method: 'POST', url: '/cart/quote', body: { items: [{ id: 'b6', quantity: 1 }] } })\n  assert.equal(open.status, 200)\n  assert.ok(hdr(open, 'x-request-id'))\n  process.env.API_KEYS = 'k1, k2'\n  try {\n    const denied = await app({ method: 'POST', url: '/cart/quote', headers: {}, body: { items: [{ id: 'b6', quantity: 1 }] } })\n    assert.equal(denied.status, 401)\n    const allowed = await app({ method: 'POST', url: '/cart/quote', headers: { 'x-api-key': 'k2' }, body: { items: [{ id: 'b6', quantity: 1 }] } })\n    assert.equal(allowed.status, 200)\n    const get = await app({ method: 'GET', url: '/books' })\n    assert.equal(get.status, 200)\n    assert.ok(hdr(get, 'x-request-id'))\n    assert.notEqual(hdr(get, 'x-request-id'), hdr(allowed, 'x-request-id'))\n  } finally {\n    delete process.env.API_KEYS\n  }\n  const crash = await app({ method: 'POST', url: '/cart/quote', body: {} })\n  assert.equal(crash.status, 500)\n  assert.equal(crash.body.error, 'Internal error')\n})\n"
+    }
+  },
+  {
+    "id": "H04-csv-import",
+    "level": 20,
+    "difficulty": 8,
+    "fixture": "bookstore",
+    "title": "Bulk import books from CSV",
+    "body": "Support bulk catalogue updates:\n\n1. New `src/csv.js` exporting `parseCsv(text)` → array of rows (arrays of strings), RFC 4180: quoted fields, `\"\"` escapes, commas and newlines inside quotes, CRLF or LF line endings, optional trailing newline (no empty trailing row).\n2. `POST /books/import` — the request body is the raw CSV **string** (the handler receives it as `req.body`). Header row must contain `id,title,author,price,stock,tags` (any order; extra columns ignored) → otherwise `400 { error }`.\n   - `price` is dollars (e.g. `39.99`) → store `priceCents` (rounded); `tags` are `;`-separated (empty → `[]`); `stock` must be a non-negative integer; `id` and `title` are required; price must be a number ≥ 0.\n   - Existing ids are updated (title, author, price, tags, and stock set to the given value); new ids are created.\n   - Invalid rows are skipped and reported. Response `200 { created, updated, errors: [{ line, message }] }` where `line` is the 1-based line of the CSV text where that record **starts** (quoted fields can span lines).\n3. Add tests.",
+    "acceptance": {
+      "file": "test/zz_accept_H04.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { parseCsv } from '../src/csv.js'\nimport { createApp } from '../src/server.js'\nimport { Inventory } from '../src/inventory.js'\n\ntest('parseCsv handles quotes, escaped quotes, embedded commas/newlines and CRLF', () => {\n  const rows = parseCsv('a,b,c\\r\\n1,\"x, y\",\"he said \"\"hi\"\"\"\\r\\n2,\"line1\\nline2\",\\n')\n  assert.deepEqual(rows, [['a', 'b', 'c'], ['1', 'x, y', 'he said \"hi\"'], ['2', 'line1\\nline2', '']])\n  assert.deepEqual(parseCsv('h\\n'), [['h']])\n})\n\ntest('POST /books/import creates, updates and reports errors with line numbers', async () => {\n  const inv = Inventory.fromFile()\n  const app = createApp(inv)\n  const csv = [\n    'id,title,author,price,stock,tags',\n    'b1,The Pragmatic Programmer (20th),Andrew Hunt,49.99,20,craft;career',\n    'n1,\"Code, Complete\",Steve McConnell,42.50,3,craft',\n    'n2,\"Multi',\n    'line title\",Someone,10,1,',\n    'n3,,Nobody,5,1,',\n    'n4,Bad price,X,-1,1,',\n    'n5,Bad stock,X,1,1.5,',\n  ].join('\\n')\n  const res = await app({ method: 'POST', url: '/books/import', body: csv })\n  assert.equal(res.status, 200)\n  assert.equal(res.body.created, 2)\n  assert.equal(res.body.updated, 1)\n  assert.deepEqual(res.body.errors.map((e) => e.line), [6, 7, 8])\n  assert.ok(res.body.errors.every((e) => typeof e.message === 'string' && e.message.length > 0))\n  assert.equal(inv.find('b1').priceCents, 4999)\n  assert.equal(inv.find('b1').stock, 20)\n  assert.deepEqual(inv.find('b1').tags, ['craft', 'career'])\n  assert.equal(inv.find('n1').title, 'Code, Complete')\n  assert.equal(inv.find('n1').priceCents, 4250)\n  assert.equal(inv.find('n2').title, 'Multi\\nline title')\n})\n\ntest('import rejects a header without the required columns', async () => {\n  const app = createApp(Inventory.fromFile())\n  const res = await app({ method: 'POST', url: '/books/import', body: 'id,name\\nx,y\\n' })\n  assert.equal(res.status, 400)\n  assert.equal(typeof res.body.error, 'string')\n})\n"
+    }
+  },
+  {
+    "id": "H05-etag-ratelimit",
+    "level": 21,
+    "difficulty": 8.5,
+    "fixture": "bookstore",
+    "title": "ETag caching and per-client rate limiting",
+    "body": "Two production hardening features:\n\n1. **ETags**: `GET /books` and `GET /books/:id` responses get an `ETag` header — the quoted SHA-1 hex digest of the JSON body (e.g. `\"3f7a…\"`, 40 hex chars). If the request has `If-None-Match` equal to the current ETag → `304` with no body. The handler must accept `req.headers` (default `{}`; header names lower-case).\n2. **Rate limiting** (token bucket, per client): client key = `x-client-id` header, or `anonymous`. `createApp(inventory, options)` accepts `options.rateLimit = { capacity, refillPerSec }` (default `{ capacity: 60, refillPerSec: 1 }`) and `options.now` (clock in ms, default `Date.now`) so tests can control time. Each request costs one token; when empty → `429 { error }` with a `Retry-After` header in whole seconds (≥ 1). Applies to all routes.\n3. Keep the existing behaviour otherwise. Add tests.",
+    "acceptance": {
+      "file": "test/zz_accept_H05.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { createApp } from '../src/server.js'\nimport { Inventory } from '../src/inventory.js'\n\nconst hdr = (r, k) => Object.fromEntries(Object.entries(r.headers ?? {}).map(([a, b]) => [a.toLowerCase(), String(b)]))[k]\n\ntest('ETag + If-None-Match on book reads', async () => {\n  const inv = Inventory.fromFile()\n  const app = createApp(inv)\n  const first = await app({ method: 'GET', url: '/books', headers: {} })\n  const etag = hdr(first, 'etag')\n  assert.match(etag, /^\"[0-9a-f]{40}\"$/)\n  const again = await app({ method: 'GET', url: '/books', headers: { 'if-none-match': etag } })\n  assert.equal(again.status, 304)\n  assert.ok(again.body === undefined || again.body === null || again.body === '')\n  inv.add({ id: 'b1' }, 1)\n  const changed = await app({ method: 'GET', url: '/books', headers: { 'if-none-match': etag } })\n  assert.equal(changed.status, 200)\n  assert.notEqual(hdr(changed, 'etag'), etag)\n  const one = await app({ method: 'GET', url: '/books/b2', headers: {} })\n  assert.ok(hdr(one, 'etag'))\n})\n\ntest('token-bucket rate limiting per client with an injectable clock', async () => {\n  let t = 1_000_000\n  const app = createApp(Inventory.fromFile(), { rateLimit: { capacity: 2, refillPerSec: 1 }, now: () => t })\n  const hit = (client) => app({ method: 'GET', url: '/health', headers: client ? { 'x-client-id': client } : {} })\n  assert.equal((await hit('a')).status, 200)\n  assert.equal((await hit('a')).status, 200)\n  const limited = await hit('a')\n  assert.equal(limited.status, 429)\n  assert.ok(Number(hdr(limited, 'retry-after')) >= 1)\n  assert.equal((await hit('b')).status, 200, 'clients are independent')\n  assert.equal((await hit()).status, 200, 'anonymous bucket')\n  t += 1000\n  assert.equal((await hit('a')).status, 200, 'refilled after a second')\n})\n\ntest('defaults do not limit normal use', async () => {\n  const app = createApp(Inventory.fromFile())\n  for (let i = 0; i < 20; i++) assert.equal((await app({ method: 'GET', url: '/health' })).status, 200)\n})\n"
+    }
+  },
+  {
+    "fixture": "myowndevin",
+    "gitSource": "/Users/jochannnn/MyOwnDevin",
+    "gitRef": "main",
+    "acceptance": null,
+    "id": "H06-issue9-pagination-search",
+    "level": 22,
+    "difficulty": 8,
+    "title": "Add paginated task listing, search API, aggregate cost stats, and History/Dashboard wiring",
+    "body": "## Problem\nThe Dashboard and History pages load a flat list of tasks and filter client-side. As task volume\ngrows this breaks down: no pagination, no server-side search, and `GET /api/stats` scans up to 200\ntasks in the router while ignoring per-task cost metrics already stored in Redis.\n\n## Requirements\nImplement paginated task listing with optional status filter and search, aggregate cost stats, and\nwire both into the frontend. Touch backend store + API + frontend client + two pages.\n\n### 1. `TaskRegistry` — `backend/src/store/taskRegistry.ts`\n- Extend `list()` to accept `opts?: { limit?: number; offset?: number; status?: TaskRegistryEntry[\"status\"] }`.\n  - Use `zrevrange` on `tasks:index` with offset/limit (defaults: limit=20, offset=0).\n  - When `status` is set, filter entries after loading.\n- Add `count(status?)` → total tasks (optionally filtered by status).\n- Add `search(query: string, opts?: { limit?: number })`:\n  - Scan recent IDs from index (newest first), case-insensitive match on `issueTitle` or `issueUrl`.\n  - Default limit 20, max 50.\n- Add `aggregateStats()` → `{ total, queued, running, done, failed, totalCostUsd }`:\n  - Scan up to 200 recent tasks; sum `metrics.costUsd` via `getMetrics(taskId)` (missing = 0).\n\n### 2. `GET /api/tasks` — `backend/src/api/router.ts`\n- Query params: `limit` (1–100, default 20), `offset` (≥0, default 0), `status` (optional),\n  `q` (optional search).\n- If `q` is present but empty/whitespace → 400.\n- If `status` is invalid → 400.\n- When `q` is set, use `search()`; otherwise use paginated `list()`.\n- Response envelope (not a bare array):\n  ```json\n  { \"tasks\": [...], \"total\": <number>, \"limit\": <number>, \"offset\": <number> }\n  ```\n\n### 3. `GET /api/stats` — `backend/src/api/router.ts`\n- Replace inline loop with `taskRegistry.aggregateStats()`.\n- Include `totalCostUsd` in the JSON response.\n\n### 4. Frontend API — `frontend/src/api/client.ts`\n- Update `listTasks()` to parse the new paginated envelope (return `tasks` array for backward compat\n  OR add `listTasksPaginated(limit?, offset?, status?)` — update Dashboard callers accordingly).\n- Add `searchTasks(q: string, limit?: number)`.\n- Extend `StatsResponse` with `totalCostUsd?: number`.\n\n### 5. Types — `frontend/src/types/task.ts`\n- Add `PaginatedTasksResponse` type matching the API envelope.\n\n### 6. History page — `frontend/src/pages/History.tsx`\n- Debounce search input (300ms) and call `searchTasks` when the user types.\n- Add \"Load more\" or simple prev/next pagination using `offset` + `total` from the API.\n- Fall back to client-side filter if the search API fails.\n\n### 7. Dashboard — `frontend/src/pages/Dashboard.tsx`\n- Use paginated `GET /api/tasks` (first page) instead of assuming a flat array.\n- Show `totalCostUsd` from stats when present (label: \"Total cost\").\n\n## Acceptance criteria\n- `curl \"http://localhost:3500/api/tasks?limit=5&offset=0\"` → envelope with ≤5 tasks + `total`.\n- `curl \"http://localhost:3500/api/tasks?status=done\"` → only done tasks.\n- `curl \"http://localhost:3500/api/tasks?status=invalid\"` → HTTP 400.\n- `curl \"http://localhost:3500/api/tasks?q=cancel\"` → matching tasks only.\n- `curl \"http://localhost:3500/api/tasks?q=\"` → HTTP 400.\n- `curl http://localhost:3500/api/stats` → includes `totalCostUsd`.\n- `npx tsc -b` passes in both `backend/` and `frontend/`.\n- History search box hits the API; Dashboard shows total cost.\n\n## Notes\n- Do NOT add clone/npm-install steps — repo is pre-cloned in the sandbox.\n- Keep changes minimal and focused on the files above.\n- One step per file where possible.",
+    "checks": [
+      {
+        "type": "contains",
+        "file": "backend/src/store/taskRegistry.ts",
+        "pattern": "aggregateStats"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/store/taskRegistry.ts",
+        "pattern": "search("
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/store/taskRegistry.ts",
+        "pattern": "count("
+      },
+      {
+        "type": "contains",
+        "file": "frontend/src/api/client.ts",
+        "pattern": "searchTasks"
+      },
+      {
+        "type": "contains",
+        "file": "frontend/src/types/task.ts",
+        "pattern": "PaginatedTasksResponse"
+      },
+      {
+        "type": "contains",
+        "file": "frontend/src/pages/History.tsx",
+        "pattern": "searchTasks"
+      },
+      {
+        "type": "contains",
+        "file": "frontend/src/pages/Dashboard.tsx",
+        "pattern": "totalCostUsd"
+      }
+    ]
+  },
+  {
+    "fixture": "myowndevin",
+    "gitSource": "/Users/jochannnn/MyOwnDevin",
+    "gitRef": "main",
+    "acceptance": null,
+    "id": "H07-issue11-activity-timeline",
+    "level": 23,
+    "difficulty": 9,
+    "title": "[HARD] Task activity timeline, stale-run stats, and TaskView integration (orchestrator + large UI)",
+    "body": "## Problem\nAfter task cancellation (#7) and paginated search (#9), users still cannot see a unified **activity timeline**\nfor a task. Run-attempt history lives in `attempts:{taskId}`, live events are ephemeral, and there is no\npersisted per-step audit trail for the Task View. This issue is **harder than #7**: it touches the orchestrator,\na new Redis store, API aggregation, and a **large frontend file** (`TaskView.tsx`).\n\n## Stress areas (read carefully)\nThis issue intentionally exercises patterns that previously failed:\n- **Large file edit**: `frontend/src/pages/TaskView.tsx` is 300+ lines — use `view_file` in line ranges before `write_file`.\n- **Valid tool JSON**: `write_file` arguments must be properly escaped; write the **complete** file.\n- **Canonical tools only**: `search_code`, `read_file`, `view_file`, `write_file`, `run_shell`, `list_dir` — do NOT use `repo_browser.*` aliases.\n- **Orchestrator wiring**: hook into the existing step loop without breaking cancel/checkpoint behaviour from #7.\n- **Type safety**: update shared types before UI; `npx tsc -b` must pass in backend and frontend.\n\n## Requirements\n\n### 1. Activity store — NEW `backend/src/store/activityStore.ts`\n- Redis list key `activity:{taskId}` (LPUSH, max 100 entries, 7-day TTL).\n- Entry shape:\n  `{ id: string, ts: string, type: \"step_start\" | \"step_done\" | \"phase\" | \"note\", stepId?: number, phase?: string, message: string, meta?: Record<string, unknown> }`\n- Methods: `append(taskId, entry)`, `list(taskId, limit = 50)`, `clear(taskId)`.\n\n### 2. Orchestrator — `backend/src/Orchestrator/index.ts`\n- Import and use `ActivityStore`.\n- On each `phase_start` / `step_start` / `step_done`, append a matching activity entry.\n- On task failure or cancellation, append a `type: \"note\"` entry with the failure/cancel reason.\n- Do **not** remove or break existing cancel-flag checks or checkpoint saves.\n\n### 3. Activity API — `backend/src/api/router.ts`\n- `GET /api/task/:taskId/activity?limit=50` → `{ activities: ActivityEntry[] }`\n- Extend `GET /api/task/:taskId` to include `activities` (last 20) alongside existing fields.\n- If `runHistoryStore` exists from #7, merge `attempts` into the task detail response as `attempts` (do not duplicate logic — import the store).\n\n### 4. Stats — `backend/src/api/router.ts` + `taskRegistry.ts`\n- Add `runningOverMinutes(minutes: number)` to TaskRegistry — count tasks in `running` status older than N minutes (scan recent index).\n- Extend `GET /api/stats` with `staleRunning: number` (tasks running > 30 minutes).\n\n### 5. Frontend types — `frontend/src/types/task.ts`\n- Add `ActivityEntry` type matching the backend shape.\n- Extend task detail type with optional `activities` and `attempts`.\n\n### 6. Frontend API — `frontend/src/api/client.ts`\n- Add `getTaskActivity(taskId, limit?)`.\n- Extend `StatsResponse` with `staleRunning?: number`.\n\n### 7. Task View — `frontend/src/pages/TaskView.tsx` (**large file**)\n- Add an **Activity Timeline** section below the metrics panel.\n- Render `activities` chronologically (newest first or oldest first — pick one, be consistent).\n- If `attempts` are present, show a collapsible **Run History** block (attempt #, status, duration, cost).\n- Keep existing retry/cancel UI working — integrate, do not remove.\n\n### 8. Dashboard — `frontend/src/pages/Dashboard.tsx`\n- If `stats.staleRunning > 0`, show a warning chip/card: \"${n} stale running tasks\".\n\n### 9. History — `frontend/src/pages/History.tsx`\n- For each task row, show the latest activity `message` as a subtitle when available (fetch from task detail or list endpoint).\n\n### 10. Verification\n- Run `cd /workspace/backend && npx tsc -b --noEmit` and `cd /workspace/frontend && npx tsc -b --noEmit`.\n\n## Acceptance criteria\n- `curl http://localhost:3500/api/task/<id>/activity` returns JSON with `activities` array.\n- `curl http://localhost:3500/api/stats` includes `staleRunning`.\n- Task View shows Activity Timeline after a task runs at least one step.\n- Cancelled/failed tasks have a note activity entry with reason.\n- Both `tsc -b` checks pass.\n- PR contains changes across **≥8 files** (store + orchestrator + router + registry + client + types + 2 pages minimum).\n\n## Notes\n- Repo is pre-cloned at `/workspace`. Do not add clone/npm-install steps.\n- One focused step per file where possible.\n- Prefer minimal diffs; do not rewrite unrelated code.",
+    "checks": [
+      {
+        "type": "contains",
+        "file": "backend/src/store/activityStore.ts",
+        "pattern": "activity:"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/api/router.ts",
+        "pattern": "/activity"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/store/taskRegistry.ts",
+        "pattern": "runningOverMinutes"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/Orchestrator/index.ts",
+        "pattern": "ctivity"
+      },
+      {
+        "type": "contains",
+        "file": "frontend/src/api/client.ts",
+        "pattern": "getTaskActivity"
+      },
+      {
+        "type": "contains",
+        "file": "frontend/src/pages/TaskView.tsx",
+        "pattern": "Activity"
+      },
+      {
+        "type": "contains",
+        "file": "frontend/src/pages/Dashboard.tsx",
+        "pattern": "staleRunning"
+      }
+    ]
+  },
+  {
+    "fixture": "myowndevin",
+    "gitSource": "/Users/jochannnn/MyOwnDevin",
+    "gitRef": "main",
+    "acceptance": null,
+    "id": "H08-log-export",
+    "level": 24,
+    "difficulty": 7.5,
+    "title": "Export a task's full log as JSON or Markdown",
+    "body": "Users want to attach an agent run to a bug report.\n\n- `GET /api/task/:taskId/export?format=json|markdown` (default `json`, auth like other task routes):\n  - `json`: `{ task: <task detail>, metrics, events }` pretty-printed;\n  - `markdown`: a readable transcript — title with issue number/title, a metrics summary (duration, LLM calls, tool calls, cost), then events grouped by step (`## Step N — <description>`), listing tool calls as bullet points (tool name + short args) and agent thoughts as blockquotes;\n  - sets `Content-Disposition: attachment; filename=\"task-<first 8 chars of id>.<json|md>\"` and the right `Content-Type`;\n  - `404` for unknown tasks, `400 { error }` for other formats.\n- Put the formatting logic in a new `backend/src/services/taskExport.ts` (pure functions, easy to test) and add vitest tests for the markdown formatter.\n- Frontend: `exportTaskLog(taskId, format)` in `frontend/src/api/client.ts` that downloads the file (fetch → blob → object URL → temporary `<a download>`), and a **Download log** control in `TaskView.tsx` offering JSON and Markdown.\n- `npx tsc -b` must pass in backend and frontend.",
+    "checks": [
+      {
+        "type": "contains",
+        "file": "backend/src/api/router.ts",
+        "pattern": "/export"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/services/taskExport.ts",
+        "pattern": "## Step"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/api/router.ts",
+        "pattern": "Content-Disposition"
+      },
+      {
+        "type": "contains",
+        "file": "frontend/src/api/client.ts",
+        "pattern": "exportTaskLog"
+      },
+      {
+        "type": "contains",
+        "file": "frontend/src/pages/TaskView.tsx",
+        "pattern": "Download"
+      }
+    ]
+  },
+  {
+    "fixture": "myowndevin",
+    "gitSource": "/Users/jochannnn/MyOwnDevin",
+    "gitRef": "main",
+    "acceptance": null,
+    "id": "H09-webhooks",
+    "level": 25,
+    "difficulty": 9,
+    "title": "Signed webhook notifications when tasks finish",
+    "body": "Teams want Slack/CI hooks when a task completes or fails.\n\nBackend:\n1. New `backend/src/services/webhookNotifier.ts`:\n   - `signPayload(secret: string, body: string): string` → `sha256=<hex HMAC-SHA256>`;\n   - `notifyWebhook(config, payload)` POSTs JSON with headers `Content-Type: application/json`, `X-Pullwright-Event: task.completed|task.failed`, `X-Pullwright-Signature: <signPayload(...)>`; retries up to 3 times on network errors or 5xx with exponential backoff (1s, 2s, 4s); never throws — failures are logged.\n2. Webhook settings per signed-in user in Redis key `webhook:{login}` → `{ url, secret, createdAt }`:\n   - `GET /api/settings/webhook` → `{ url, createdAt }` or `{ url: null }` (never return the secret);\n   - `PUT /api/settings/webhook` with `{ url }` — must be an `https://` URL (400 otherwise); generates a random 32-byte hex secret and returns `{ url, secret }` **once**;\n   - `DELETE /api/settings/webhook` removes it.\n3. Orchestrator: when a task completes or fails, if the task owner has a webhook, send `{ event, taskId, issueUrl, status, prUrl?, reason?, metrics: { costUsd, durationMs } }` (fire-and-forget, must not delay or break the task).\n4. Vitest tests for `signPayload` and the retry/backoff logic (mock `fetch` and timers).\n\nFrontend:\n5. `getWebhook`, `saveWebhook(url)`, `deleteWebhook()` in `frontend/src/api/client.ts`.\n6. A **Webhook** card on the Dashboard: URL input + Save, shows the secret once after saving (with a copy button), and Remove.\n\n`npx tsc -b` must pass in backend and frontend.",
+    "checks": [
+      {
+        "type": "contains",
+        "file": "backend/src/services/webhookNotifier.ts",
+        "pattern": "createHmac"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/services/webhookNotifier.ts",
+        "pattern": "X-Pullwright-Signature"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/api/router.ts",
+        "pattern": "settings/webhook"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/Orchestrator/index.ts",
+        "pattern": "ebhook"
+      },
+      {
+        "type": "contains",
+        "file": "frontend/src/api/client.ts",
+        "pattern": "saveWebhook"
+      },
+      {
+        "type": "contains",
+        "file": "frontend/src/pages/Dashboard.tsx",
+        "pattern": "Webhook"
+      }
+    ]
+  },
+  {
+    "fixture": "myowndevin",
+    "gitSource": "/Users/jochannnn/MyOwnDevin",
+    "gitRef": "main",
+    "acceptance": null,
+    "id": "H10-ghe-urls",
+    "level": 26,
+    "difficulty": 7.5,
+    "title": "Robust issue-URL parsing with GitHub Enterprise support",
+    "body": "`GithubApi.parseIssueUrl` is a naive string split: it accepts garbage, breaks on trailing slashes, query strings and `#fragments`, and silently treats pull-request URLs as issues. Fix it properly:\n\n1. In `backend/src/GithubApi/index.ts`:\n   - export `class InvalidIssueUrlError extends Error`;\n   - `parseIssueUrl(url)` returns `{ host, owner, repo, issueNumber }` and accepts `https://github.com/o/r/issues/12`, with trailing slash, `?query`, `#fragment`, `www.github.com`, and any host listed in the comma-separated env `GITHUB_HOSTS` (GitHub Enterprise). It throws `InvalidIssueUrlError` for pull requests (`/pull/`), non-numeric or zero issue numbers, unknown hosts, `http://` URLs, and owner/repo names with characters GitHub doesn't allow;\n   - the Octokit client uses `baseUrl: https://<host>/api/v3` for Enterprise hosts;\n   - the clone URL in the orchestrator uses the parsed host.\n2. `POST /api/task` and `POST /api/task/:taskId/retry` validate the URL first and return `400 { error: <message> }` for `InvalidIssueUrlError`; the stored task uses the normalized URL (`https://<host>/<owner>/<repo>/issues/<n>`).\n3. Vitest tests in `backend/src/GithubApi/__tests__/parseIssueUrl.test.ts` covering at least 10 accepted/rejected cases.\n\n`npx tsc -b` and `npm test` must pass in backend.",
+    "checks": [
+      {
+        "type": "contains",
+        "file": "backend/src/GithubApi/index.ts",
+        "pattern": "InvalidIssueUrlError"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/GithubApi/index.ts",
+        "pattern": "api/v3"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/GithubApi/__tests__/parseIssueUrl.test.ts",
+        "pattern": "parseIssueUrl"
+      },
+      {
+        "type": "contains",
+        "file": "backend/src/api/router.ts",
+        "pattern": "InvalidIssueUrlError"
+      }
+    ]
   }
 ]

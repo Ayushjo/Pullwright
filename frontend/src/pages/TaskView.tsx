@@ -72,8 +72,9 @@ function TaskView({ taskId }: { taskId: string }) {
   const updatedAt = state?.updatedAt
   const editCount = events.filter((e) => e.type === 'checkpoint').length
   useEffect(() => {
-    if (fileCount > 0 || editCount > 0) void loadDiff()
-  }, [fileCount, editCount, loadDiff, updatedAt])
+    // Refresh when files change, and whenever the Changes tab is opened (the live diff may be newer).
+    if (fileCount > 0 || editCount > 0 || tab === 'changes') void loadDiff()
+  }, [fileCount, editCount, loadDiff, updatedAt, tab])
 
   const act = useCallback(
     async (key: string, fn: () => Promise<unknown>, ok?: string) => {
@@ -92,9 +93,15 @@ function TaskView({ taskId }: { taskId: string }) {
   )
 
   const checklist = useMemo(() => {
+    // The latest live plan_update event wins over the (less frequently saved) task state.
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i]!
+      if (e.type === 'plan_update' && e.steps.length) return e.steps
+      if (e.type === 'plan_ready') break
+    }
     if (state?.planChecklist?.length) return state.planChecklist
     return state?.plan?.steps.map((s) => ({ title: s.title, status: 'pending' })) ?? []
-  }, [state?.planChecklist, state?.plan])
+  }, [events, state?.planChecklist, state?.plan])
 
   if (loading && !state) {
     return (
@@ -187,7 +194,7 @@ function TaskView({ taskId }: { taskId: string }) {
         {/* Body */}
         <div className="flex flex-col md:flex-row flex-1 min-h-0">
           {/* Sidebar */}
-          <aside className="md:w-[270px] shrink-0 border-b md:border-b-0 md:border-r border-border bg-muted/30 md:overflow-y-auto">
+          <aside className="md:w-[270px] shrink-0 min-w-0 [overflow-wrap:anywhere] md:overflow-x-hidden border-b md:border-b-0 md:border-r border-border bg-muted/30 md:overflow-y-auto">
             <div className="px-4 py-3">
               <p className="text-sm font-semibold text-foreground mb-2">Checklist</p>
               {checklist.length === 0 ? (
@@ -203,7 +210,7 @@ function TaskView({ taskId }: { taskId: string }) {
                       ) : (
                         <Circle className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0 mt-0.5" />
                       )}
-                      <span className={cn(s.status === 'completed' ? 'text-muted-foreground' : 'text-foreground')}>{s.title}</span>
+                      <span className={cn('min-w-0', s.status === 'completed' ? 'text-muted-foreground' : 'text-foreground')}>{s.title}</span>
                     </li>
                   ))}
                 </ol>
@@ -217,8 +224,8 @@ function TaskView({ taskId }: { taskId: string }) {
                     const check = state.verdict?.requirements?.[i]
                     return (
                       <li key={i} className="text-[11.5px] text-muted-foreground flex gap-1.5">
-                        <span className={cn('font-mono', check ? (check.met ? 'text-success' : 'text-destructive') : 'text-primary')}>{check ? (check.met ? '✓' : '✗') : `R${i + 1}`}</span>
-                        <span>{r}</span>
+                        <span className={cn('font-mono shrink-0 whitespace-nowrap [overflow-wrap:normal]', check ? (check.met ? 'text-success' : 'text-destructive') : 'text-primary')}>{check ? (check.met ? '✓' : '✗') : `R${i + 1}`}</span>
+                        <span className="min-w-0">{r}</span>
                       </li>
                     )
                   })}
@@ -281,7 +288,7 @@ function TaskView({ taskId }: { taskId: string }) {
               )}
 
               <div className="flex-1 min-h-0 overflow-y-auto">
-                {tab === 'activity' && <ActivityFeed events={events} live={meta.active} loading={!eventsLoaded} />}
+                {tab === 'activity' && <ActivityFeed events={events} live={meta.active} loading={!eventsLoaded} followKey={state.status} />}
                 {tab === 'changes' && (
                   <div className="p-3 sm:p-5">
                     <DiffView

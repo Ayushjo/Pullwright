@@ -184,6 +184,16 @@ describe("grounding", () => {
     expect(g.missingSymbols).toEqual(["RateLimiter"])
     expect(g.foundPaths).toEqual(["src/math.js"])
   })
+  it("treats paths the issue asks to create as new, not missing", async () => {
+    const g = await groundIssue(ws, "Put the logic in a new `src/services/export.ts` and create src/lib/fmt.ts. It extends src/lib/old.ts.")
+    expect(g.newPaths?.sort()).toEqual(["src/lib/fmt.ts", "src/services/export.ts"])
+    expect(g.missingPaths).toEqual(["src/lib/old.ts"])
+  })
+  it("treats bullet-listed signatures as spec, not missing", async () => {
+    const g = await groundIssue(ws, "Add:\n- `signPayload(secret: string, body: string): string` returns the HMAC\n5. `getHook`, `saveHook(url)` in the client\nIt should reuse the existing `LegacySigner`.")
+    expect(g.newSymbols?.sort()).toEqual(["getHook", "saveHook", "signPayload"])
+    expect(g.missingSymbols).toEqual(["LegacySigner"])
+  })
 })
 
 describe("route consumer impact analysis", () => {
@@ -203,5 +213,9 @@ describe("route consumer impact analysis", () => {
     const hits = await routeConsumers(ws, base, await diffStat(dir, base))
     expect(hits.some((h) => h.startsWith("web/client.ts:1:"))).toBe(true)
     expect(hits.some((h) => h.includes("/api/stats"))).toBe(false) // unchanged route
+
+    // Only a new validation error response: callers are unaffected.
+    writeFileSync(path.join(dir, "api/router.ts"), 'router.get("/tasks", async (req, res) => {\n  if (!ok) return res.status(400).json({ error: "bad" })\n  res.json(list)\n})\nrouter.get("/stats", h)\n')
+    expect(await routeConsumers(ws, base, await diffStat(dir, base))).toEqual([])
   })
 })

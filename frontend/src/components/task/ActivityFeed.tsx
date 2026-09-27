@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowDown,
   CheckCircle2,
   ChevronRight,
   Eye,
@@ -46,7 +47,9 @@ function buildRows(events: TaskEvent[]): Row[] {
       if (pending && pending.tool === ev.tool && !pending.result) {
         pending.result = { success: ev.success, output: ev.output, durationMs: ev.durationMs }
       } else {
-        rows.push({ kind: 'tool', tool: ev.tool, args: {}, result: { success: ev.success, output: ev.output, durationMs: ev.durationMs } })
+        // Results without a preceding call (e.g. setup): recover the command from "$ cmd" on the first line.
+        const m = /^\$ (.+)/.exec(ev.output)
+        rows.push({ kind: 'tool', tool: ev.tool, args: m ? { command: m[1] } : {}, result: { success: ev.success, output: ev.output, durationMs: ev.durationMs } })
       }
       pending = null
       continue
@@ -80,7 +83,9 @@ function toolSummary(t: ToolRow): { icon: React.ReactNode; label: React.ReactNod
     case 'shell':
       return { icon: <Terminal className="w-3.5 h-3.5" />, label: <>Ran {code(str(a.command).slice(0, 120))}</> }
     case 'setup':
-      return { icon: <Package className="w-3.5 h-3.5" />, label: <>Setup</> }
+      return { icon: <Package className="w-3.5 h-3.5" />, label: <>Install {code(str(a.command).replace(/^cd (\S+) && /, '$1: ').slice(0, 90))}</> }
+    case 'baseline':
+      return { icon: <ShieldCheck className="w-3.5 h-3.5" />, label: <>Baseline {code(str(a.command).replace(/^cd (\S+) && /, '$1: ').slice(0, 90))}</> }
     case 'str_replace':
       return { icon: <FilePen className="w-3.5 h-3.5 text-primary" />, label: <>Edited {code(str(a.path))}</> }
     case 'create_file':
@@ -138,6 +143,8 @@ function ToolItem({ t }: { t: ToolRow }) {
   const { icon, label } = toolSummary(t)
   const isEdit = ['str_replace', 'apply_patch', 'create_file'].includes(t.tool)
   const failed = t.result && !t.result.success
+  const failLabel =
+    t.tool === 'shell' ? 'failed' : t.tool === 'baseline' ? 'already failing' : t.tool === 'finish' ? 'sent back' : isEdit ? 'not applied' : 'error'
   const hasBody = isEdit || Boolean(t.result?.output)
   return (
     <div className="group">
@@ -149,7 +156,7 @@ function ToolItem({ t }: { t: ToolRow }) {
         <span className={cn('shrink-0', failed ? 'text-destructive' : '')}>{icon}</span>
         <span className="min-w-0 truncate">{label}</span>
         {!t.result && <span className="ml-1 w-1.5 h-1.5 rounded-full bg-primary animate-pulse shrink-0" />}
-        {failed && <span className="text-[10px] font-medium text-destructive bg-red-50 border border-red-200 rounded px-1.5 shrink-0">rejected</span>}
+        {failed && <span className="text-[10px] font-medium text-destructive bg-red-50 border border-red-200 rounded px-1.5 shrink-0">{failLabel}</span>}
         {hasBody && <ChevronRight className={cn('w-3 h-3 ml-auto shrink-0 transition-transform', open && 'rotate-90')} />}
       </button>
       {open && (
@@ -212,7 +219,23 @@ function EventItem({ ev }: { ev: TaskEvent }) {
           )}
           {!ev.ok && (
             <ul className="mt-2 space-y-1 text-[12px] text-foreground list-disc list-inside">
-              {ev.problems.map((p, i) => <li key={i} className="whitespace-pre-wrap">{p.split('\n')[0]}</li>)}
+              {ev.problems.map((p, i) => {
+                const [head, ...rest] = p.split('\n')
+                const detail = rest.map((l) => l.trim()).filter(Boolean)
+                return (
+                  <li key={i} className="whitespace-pre-wrap">
+                    {head}
+                    {detail.length > 0 && (
+                      <div className="mt-0.5 ml-4 font-mono text-[11px] text-muted-foreground [overflow-wrap:anywhere]">
+                        {detail.slice(0, 6).map((d, j) => (
+                          <div key={j}>{d}</div>
+                        ))}
+                        {detail.length > 6 && <div>+{detail.length - 6} more</div>}
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>
@@ -272,35 +295,74 @@ function EventItem({ ev }: { ev: TaskEvent }) {
   }
 }
 
-export default function ActivityFeed({ events, live, loading = false }: { events: TaskEvent[]; live: boolean; loading?: boolean }) {
+export default function ActivityFeed({
+  events,
+  live,
+  loading = false,
+  followKey,
+}: {
+  events: TaskEvent[]
+  live: boolean
+  loading?: boolean
+  /** Changes on each phase change (e.g. plan approved) — the feed jumps back to live when it does. */
+  followKey?: string
+}) {
   const rows = useMemo(() => buildRows(events), [events])
-  const endRef = useRef<HTMLDivElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const [stick, setStick] = useState(true)
+  // Row count when the user scrolled away from the bottom; everything after it is "new".
+  const [seenCount, setSeenCount] = useState(rows.length)
+  const unseen = stick ? 0 : Math.max(0, rows.length - seenCount)
 
+  // A phase change (e.g. plan approved) jumps back to live.
+  const [lastFollowKey, setLastFollowKey] = useState(followKey)
+  if (followKey !== lastFollowKey) {
+    setLastFollowKey(followKey)
+    setStick(true)
+  }
+
+  // Scroll only the feed itself; scrollIntoView would also drag the whole page down.
+  const toBottom = () => {
+    const el = scroller.current
+    if (el) el.scrollTop = el.scrollHeight
+  }
   useEffect(() => {
-    if (stick) endRef.current?.scrollIntoView({ block: 'end' })
+    if (stick) toBottom()
   }, [rows.length, stick])
 
   return (
-    <div
-      ref={scroller}
-      onScroll={(e) => {
-        const el = e.currentTarget
-        setStick(el.scrollHeight - el.scrollTop - el.clientHeight < 80)
-      }}
-      className="h-full overflow-y-auto px-4 sm:px-5 py-3"
-    >
-      {rows.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-12">{loading ? 'Loading activity…' : live ? 'Starting…' : 'No activity recorded.'}</p>
+    <div className="relative h-full">
+      <div
+        ref={scroller}
+        onScroll={(e) => {
+          const el = e.currentTarget
+          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+          if (stick && !atBottom) setSeenCount(rows.length)
+          setStick(atBottom)
+        }}
+        className="h-full overflow-y-auto px-4 sm:px-5 py-3"
+      >
+        {rows.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-12">{loading ? 'Loading activity…' : live ? 'Starting…' : 'No activity recorded.'}</p>
+        )}
+        {rows.map((r, i) => (r.kind === 'tool' ? <ToolItem key={i} t={r} /> : <EventItem key={i} ev={r.ev} />))}
+        {live && (
+          <div className="flex items-center gap-2 py-2 text-[12px] text-muted-foreground">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" /> Working…
+          </div>
+        )}
+      </div>
+      {!stick && unseen > 0 && (
+        <button
+          onClick={() => {
+            toBottom()
+            setStick(true)
+          }}
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground shadow-md hover:bg-primary/90"
+        >
+          <ArrowDown className="w-3.5 h-3.5" /> {unseen} new {unseen === 1 ? 'step' : 'steps'}
+        </button>
       )}
-      {rows.map((r, i) => (r.kind === 'tool' ? <ToolItem key={i} t={r} /> : <EventItem key={i} ev={r.ev} />))}
-      {live && (
-        <div className="flex items-center gap-2 py-2 text-[12px] text-muted-foreground">
-          <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" /> Working…
-        </div>
-      )}
-      <div ref={endRef} />
     </div>
   )
 }

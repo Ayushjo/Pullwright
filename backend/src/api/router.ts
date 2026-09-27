@@ -80,8 +80,14 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     return s
   }
 
+  /** Accounts listed in OPERATOR_GITHUB_LOGINS can see every task (incl. eval runs) in the UI. */
+  const isOwner = (req: Request) => {
+    const owners = (process.env.OPERATOR_GITHUB_LOGINS ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean)
+    return Boolean(req.session?.login && owners.includes(req.session.login.toLowerCase()))
+  }
+
   async function canAccess(req: Request, taskId: string, ownerId?: string): Promise<boolean> {
-    if (req.isOperator) return true
+    if (req.isOperator || isOwner(req)) return true
     const uid = req.session?.userId
     if (!uid) return false
     if (ownerId) return ownerId === uid
@@ -401,6 +407,13 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
   })
 
   router.get("/tasks", async (req, res) => {
+    if (isOwner(req)) {
+      // Owners see their own tasks plus operator/eval runs, newest first.
+      const mine = req.session?.userId && isDatabaseEnabled() ? await listTasksForUser(req.session.userId, 50) : []
+      const all = await taskRegistry.list(50)
+      const seen = new Set(mine.map((t) => t.taskId))
+      return res.json([...mine, ...all.filter((t) => !seen.has(t.taskId))].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 60))
+    }
     if (req.session?.userId && isDatabaseEnabled()) return res.json(await listTasksForUser(req.session.userId, 50))
     if (req.isOperator) return res.json(await taskRegistry.list(50))
     res.json([])
