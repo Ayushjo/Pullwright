@@ -11,5 +11,6 @@ backend/benchmarks/runBenchmark.d.ts
 backend/benchmarks/runBenchmark.d.ts.map
 backend/.spend/
 backend/.tasks/
+backend/.depcache/
 references/
 *.log
