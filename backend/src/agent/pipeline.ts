@@ -294,7 +294,12 @@ export class Pipeline {
           s.planChecklist = steps
           void this.emit(taskId, { type: "plan_update", steps })
         }),
-        LIMITS.run,
+        {
+          ...LIMITS.run,
+          // Bigger plans get more steps; the per-task dollar cap remains the hard guard.
+          maxSteps: Math.min(80, Math.max(LIMITS.run.maxSteps, 25 + 8 * plannedFiles.length)),
+          maxWallMs: Math.min(30 * 60_000, LIMITS.run.maxWallMs + plannedFiles.length * 60_000),
+        },
         {
           emit: this.loopEvents(s, "run"),
           isCancelled: () => taskStore.isCancelled(taskId),

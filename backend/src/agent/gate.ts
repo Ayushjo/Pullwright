@@ -204,6 +204,8 @@ export function gateFeedback(g: GateResult): string {
   )
 }
 
+const CODE_FILE = /\.(ts|tsx|js|jsx|mjs|cjs|vue|svelte|py|go|rb|java|kt|swift|dart)$/
+const CALL_LIKE = /\b(fetch|axios|request|http|get|post|put|patch|delete|useQuery|useSWR|url|endpoint|api)\b|\$\{/i
 const ROUTE_RE = /\.(get|post|put|patch|delete)\(\s*["'`](\/[^"'`]+)["'`]/
 
 /** Find call sites of routes whose handlers were modified, in files the diff did not touch. */
@@ -231,11 +233,16 @@ export async function routeConsumers(ws: Workspace, baseSha: string, stats: File
     const out = await git(ws.root, ["grep", "-n", "-I", "-E", "-e", pattern, "--", "."]).catch(() => "")
     for (const line of out.split("\n").filter(Boolean)) {
       const file = line.slice(0, line.indexOf(":"))
-      if (changed.has(file) || /(^|\/)(test|tests|__tests__)\/|\.test\.|\.spec\.|\.md$|ladder\.json$/.test(file)) continue
-      if (ROUTE_RE.test(line)) continue // another route registration, not a consumer
+      if (changed.has(file) || /(^|\/)(test|tests|__tests__)\/|\.test\.|\.spec\./.test(file)) continue
+      if (!CODE_FILE.test(file)) continue // docs, JSON fixtures, issue text
+      const code = line.slice(line.indexOf(":", file.length + 1) + 1)
+      if (ROUTE_RE.test(code)) continue // another route registration, not a consumer
+      if (/\bcurl\s|\\`|^\s*(\/\/|\*|#)/.test(code)) continue // prose, markdown, comments
+      if (!CALL_LIKE.test(code)) continue
       hits.push(line.length > 180 ? line.slice(0, 180) + "…" : line)
-      if (hits.length >= 10) return hits
     }
   }
-  return hits
+  // Application code first (src/, frontend/, app/), scripts last.
+  const rank = (h: string) => (/(^|\/)(src|app|frontend|client|web)\//.test(h) ? 0 : /(^|\/)scripts?\//.test(h) ? 2 : 1)
+  return hits.sort((a, b) => rank(a) - rank(b)).slice(0, 10)
 }

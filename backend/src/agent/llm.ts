@@ -102,7 +102,7 @@ export async function chat(spec: ModelSpec, opts: CallOptions): Promise<LLMResul
     max_completion_tokens: opts.maxOutputTokens,
     prompt_cache_key: `pw-${opts.purpose}`,
     ...(opts.tools && opts.tools.length > 0
-      ? { tools: opts.tools, tool_choice: opts.toolChoice ?? "auto", parallel_tool_calls: false }
+      ? { tools: opts.tools, tool_choice: opts.toolChoice ?? "auto", parallel_tool_calls: true }
       : {}),
     ...(reasoning ? { reasoning_effort: spec.reasoningEffort ?? "low" } : { temperature: 0 }),
   }

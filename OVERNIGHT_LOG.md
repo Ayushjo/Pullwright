@@ -22,7 +22,7 @@ last-active: 2026-09-27 04:50 IST (clock note: earlier stamps were estimates)
 - [x] Phase 2: security + infra (token vault, masking, fail-closed auth, OAuth state, rate limits, helmet, sandbox hardening, Redis spend counters, API/worker split, EC2 deploy)
 - [x] Phase 3: Jules flow UI/API. Tested end to end in Chrome: plan approval with edited steps/requirements, notes during a run, ask_user round trip, reviewer fix round, live diff, per-file review, Publish PR → https://github.com/Ayushjo/devin-test-app/pull/4 (draft)
 - [x] Phase 4: BYOK + Dodo. `api_keys` table (AES-GCM), key validation via the provider's models endpoint (no spend), entitlements (Free = own key only, the platform key is never used; Pro = $3 included), Dodo checkout, customer portal, and Standard Webhooks verification with idempotency. Settings and Pricing pages checked in Chrome; a fake key was rejected correctly. **Needs you:** create the Pro product in Dodo and set DODO_API_KEY / DODO_PRO_PRODUCT_ID / DODO_WEBHOOK_SECRET / DODO_ENV. Webhook URL: `https://api.<domain>/api/webhooks/dodo`
-- [ ] Phase 5: demo/landing
+- [x] Phase 5: demo/landing. Landing copy matches the real flow, the showcase card uses the actual PR #4 run, the demo section auto-detects `public/demo.mp4` and otherwise links the public replay, footer links work, and `docs/DEMO.md` has the shot list.
 
 ## Test runs
 All runs are local eval tasks (fixture `backend/evals/fixtures/bookstore`, hidden acceptance tests, never published). Models: gpt-5-mini for plan and run (reasoning effort low); judge was gpt-5-nano, then gpt-5-mini from run 13.
@@ -50,6 +50,10 @@ All runs are local eval tasks (fixture `backend/evals/fixtures/bookstore`, hidde
 | 19 | R03 (rerun) | 14 | failed | – | – | 0.0138 | planner hit 14 steps; 3 were wasted on regex errors from `list(` |
 | 20 | R03 (rerun) | 14 | ready | pass | ✔ high 8/8 requirements | 0.0425 | search falls back to literal on bad regex; plan limit is now 20. DB and Redis paths plus the frontend client were updated |
 | 21 | **Real UI run** devin-test-app #3 `modulo()` via Chrome | – | published | manual ✔ | ✔ high | 0.0470 | Planner wanted to also fix divide (scope creep); **edited out in the approval UI**. Agent then deleted the failing divide test to get green; **the reviewer caught it**. I asked for changes in the UI and it restored the test. Bugs found and fixed: live counters raced status writes (lost `needs_input`), stale plan summary misled the judge, repeated ask_user, no gate rule against deleting tests, PR body showed stale risks. PR #4 opened as a draft |
+
+### Regression pass on the final code
+Full ladder rerun after all fixes: **L01–L11: 11/11** (L09 correctly blocked) for $0.12 total. **R01, R02 pass.**
+R03 at first skipped the frontend callers again (the reviewer couldn't see them). Added a deterministic **route-consumer impact analysis** to the gate. On the rerun it updated `frontend/src/api/client.ts` and passed acceptance, but was left in `needs_review` because the reviewer correctly found the DB branch ignores offset/status. That is the intended strict behavior: a human reviews it instead of a bad PR being opened.
 
 ## Spend total
 $0.2815 (platform key, from Redis counter)

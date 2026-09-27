@@ -131,9 +131,16 @@ export class AgentLoop {
         tool_calls: res.toolCalls.map((tc) => ({ id: tc.id, type: "function" as const, function: { name: tc.name, arguments: tc.rawArgs } })),
       })
 
-      for (const tc of res.toolCalls) {
+      for (let i = 0; i < res.toolCalls.length; i++) {
+        const tc = res.toolCalls[i]!
         const outcome = await this.execTool(tc.id, tc.name, tc.rawArgs)
-        if (outcome) return outcome
+        if (outcome) {
+          // Every tool call in a turn needs a response, or a resumed conversation is rejected by the API.
+          for (const rest of res.toolCalls.slice(i + 1)) {
+            this.messages.push({ role: "tool", tool_call_id: rest.id, content: "Not executed (the run paused or finished first)." })
+          }
+          return outcome
+        }
       }
 
       const stuck = this.detectStuck()
