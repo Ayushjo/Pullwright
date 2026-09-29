@@ -42,14 +42,17 @@ const Approve = z.object({
   note: z.string().max(4000).optional(),
 })
 const Message = z.object({ text: z.string().trim().min(1).max(4000) })
+const Replan = z.object({ text: z.string().trim().min(3).max(4000) })
 const Reject = z.object({ path: z.string().min(1).max(500), rejected: z.boolean() })
 const Restore = z.object({ sha: z.string().regex(/^[0-9a-f]{7,40}$/) })
 
 /** Client-safe view of a task (no transcripts, paths or secrets). */
 export function publicView(s: TaskState) {
-  const { runMessages: _m, workDir: _w, planMessage: _p, instructions: _i, baseline, ...rest } = s
+  const { runMessages: _m, workDir: _w, planMessage: _p, instructions: _i, baseline, intake, ...rest } = s
   return {
     ...rest,
+    // No server paths or (expired, but still signed) download URLs in the client view.
+    ...(intake ? { intake: { ...intake, attachments: intake.attachments.map(({ file, fetchUrl: _f, ...a }) => ({ ...a, hasImage: Boolean(file) })) } } : {}),
     baseline: baseline?.map((b) => ({ cmd: b.cmd, exitCode: b.exitCode })),
     costUsd: Math.max(s.costUsd, getSpendLedger().taskSpent(s.taskId)),
     capUsd: taskCap(s),
@@ -284,6 +287,38 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     await eventBus.emit(s.taskId, { type: "status", status: "running", detail: "Plan approved" })
     await enqueue("run", s.taskId)
     res.json({ ok: true })
+  })
+
+  // Changed decisions at plan approval: back to the planner with the user's choices (steps and
+  // requirements are rebuilt around them rather than patched).
+  router.post("/task/:taskId/replan", async (req, res) => {
+    const s = await load(req, res)
+    if (!s) return
+    const parsed = Replan.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({ error: "Say what to change" })
+    const text = parsed.data.text
+    const next = await taskStore.transition(s.taskId, ["awaiting_approval"], (cur) => {
+      const n: TaskState = { ...cur, status: "planning", statusDetail: "Re-planning with your choices", planMessage: `${cur.planMessage ?? ""}\n\n## Clarification from the user\n${text}` }
+      delete n.plan
+      return n
+    })
+    if (!next) return res.status(409).json({ error: "The plan is no longer waiting for approval" })
+    await eventBus.emit(s.taskId, { type: "user_message", text })
+    await eventBus.emit(s.taskId, { type: "status", status: "planning", detail: "Re-planning with your choices" })
+    await enqueue("plan", s.taskId)
+    res.json({ ok: true })
+  })
+
+  // Issue images Pullwright downloaded (for the plan view); only the task's owner can read them.
+  router.get("/task/:taskId/attachments/:n", async (req, res) => {
+    const s = await load(req, res)
+    if (!s) return
+    const a = s.intake?.attachments.find((x) => x.n === Number(req.params.n))
+    if (!a?.file || !a.mime || !existsSync(a.file)) return res.status(404).json({ error: "Attachment not available" })
+    res.setHeader("Content-Type", a.mime)
+    res.setHeader("Cache-Control", "private, max-age=3600")
+    res.setHeader("X-Content-Type-Options", "nosniff")
+    res.sendFile(a.file)
   })
 
   router.post("/task/:taskId/message", async (req, res) => {
