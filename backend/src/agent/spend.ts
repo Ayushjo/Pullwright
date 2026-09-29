@@ -69,7 +69,9 @@ const DEFAULT_LEDGER_DIR = path.resolve(__dirname, "../../.spend")
 export type LedgerEntry = {
   ts: string
   taskId: string
-  keyOwner: "platform" | "byok"
+  /** platform = the operator's own key (counts against the platform caps); byok = the user's key;
+   *  free_credit = a provider's free monthly credit (e.g. Vercel AI Gateway) — task cap only. */
+  keyOwner: "platform" | "byok" | "free_credit"
   provider: string
   model: string
   purpose: string
