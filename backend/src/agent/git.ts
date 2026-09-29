@@ -138,12 +138,17 @@ export async function restoreCheckpoint(cwd: string, sha: string): Promise<void>
   await git(cwd, ["clean", "-fdq"])
 }
 
-export function octokit(token?: string) {
-  return new Octokit({ auth: token ?? process.env.GITHUB_TOKEN })
+/**
+ * GitHub client. Without a token it is unauthenticated (public repos only) — it never silently uses
+ * the operator's GITHUB_TOKEN for a user's task; only operator/eval tasks opt into that.
+ */
+export function octokit(token?: string, operatorFallback = false) {
+  const auth = token ?? (operatorFallback ? process.env.GITHUB_TOKEN : undefined)
+  return new Octokit(auth ? { auth } : {})
 }
 
-export async function fetchIssue(ref: RepoRef, token?: string) {
-  const ok = octokit(token)
+export async function fetchIssue(ref: RepoRef, token?: string, operatorFallback = false) {
+  const ok = octokit(token, operatorFallback)
   const [{ data: issue }, { data: repo }, comments] = await Promise.all([
     ok.rest.issues.get({ owner: ref.owner, repo: ref.repo, issue_number: ref.issueNumber }),
     ok.rest.repos.get({ owner: ref.owner, repo: ref.repo }),
@@ -185,6 +190,7 @@ export type PublishInput = {
  */
 export async function publishPatch(p: PublishInput): Promise<{ prUrl: string; branch: string; prNumber: number }> {
   if (!p.patch.trim()) throw new Error("Refusing to publish an empty patch")
+  if (!p.token) throw new Error("No GitHub token for this task — sign in again and click Publish")
   const ok = octokit(p.token)
   const base = `${p.branchPrefix ?? "pullwright"}/issue-${p.ref.issueNumber}`
   let branch = base
