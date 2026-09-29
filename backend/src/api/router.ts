@@ -77,6 +77,11 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
       res.status(403).json({ error: "Forbidden" })
       return null
     }
+    // The stored GitHub token expires after 24 h; every action by the task's owner refreshes it,
+    // so a task approved or published days later still acts as that user (never as the operator).
+    if (req.session?.accessToken && s.userId && req.session.userId === s.userId) {
+      await taskStore.putToken(s.taskId, req.session.accessToken)
+    }
     return s
   }
 
