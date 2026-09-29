@@ -10,6 +10,7 @@ import {
   FolderTree,
   GitPullRequest,
   HelpCircle,
+  Info,
   ListChecks,
   Package,
   Scale,
@@ -276,7 +277,12 @@ function EventItem({ ev }: { ev: TaskEvent }) {
         </div>
       )
     case 'notice':
-      return (
+      // Info notices (attachments read, a clear spec check) are progress, not warnings.
+      return ev.level === 'info' ? (
+        <div className="flex items-center gap-2 py-1 text-[12px] text-muted-foreground">
+          <Info className="w-3.5 h-3.5 shrink-0" /> {ev.message}
+        </div>
+      ) : (
         <div className="flex items-center gap-2 py-1 text-[12px] text-warning">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {ev.message}
         </div>
