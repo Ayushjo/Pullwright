@@ -235,18 +235,22 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     if (s.status !== "awaiting_approval") return res.status(409).json({ error: `Task is ${s.status}, not awaiting approval` })
     const parsed = Approve.safeParse(req.body ?? {})
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid plan" })
-    if (parsed.data.steps && s.plan) {
-      s.plan.steps = parsed.data.steps
-      s.planChecklist = parsed.data.steps.map((st) => ({ title: st.title, status: "pending" }))
-      const files = new Map(s.plan.files.map((f) => [f.path, f]))
-      for (const st of parsed.data.steps) for (const f of st.files) if (!files.has(f)) files.set(f, { path: f, new: false })
-      s.plan.files = [...files.values()]
-    }
-    if (parsed.data.requirements && s.plan) s.plan.requirements = parsed.data.requirements
-    if ((parsed.data.steps || parsed.data.requirements) && s.plan) s.plan.editedByUser = true
-    if (parsed.data.note && s.plan) s.plan.userNotes = [...(s.plan.userNotes ?? []), parsed.data.note]
+    // Atomic: a double-clicked Approve must not start two runs.
+    const next = await taskStore.transition(s.taskId, ["awaiting_approval"], (cur) => {
+      if (parsed.data.steps && cur.plan) {
+        cur.plan.steps = parsed.data.steps
+        cur.planChecklist = parsed.data.steps.map((st) => ({ title: st.title, status: "pending" }))
+        const files = new Map(cur.plan.files.map((f) => [f.path, f]))
+        for (const st of parsed.data.steps) for (const f of st.files) if (!files.has(f)) files.set(f, { path: f, new: false })
+        cur.plan.files = [...files.values()]
+      }
+      if (parsed.data.requirements && cur.plan) cur.plan.requirements = parsed.data.requirements
+      if ((parsed.data.steps || parsed.data.requirements) && cur.plan) cur.plan.editedByUser = true
+      if (parsed.data.note && cur.plan) cur.plan.userNotes = [...(cur.plan.userNotes ?? []), parsed.data.note]
+      return { ...cur, status: "running", statusDetail: "Plan approved" }
+    })
+    if (!next) return res.status(409).json({ error: "This plan was already approved" })
     if (parsed.data.note) await taskStore.pushMessage(s.taskId, parsed.data.note)
-    await taskStore.put({ ...s, status: "running", statusDetail: "Plan approved" })
     await eventBus.emit(s.taskId, { type: "status", status: "running", detail: "Plan approved" })
     await enqueue("run", s.taskId)
     res.json({ ok: true })
@@ -263,22 +267,27 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
       await eventBus.emit(s.taskId, { type: "user_message", text })
       if (!s.plan || s.plan.blocked) {
         // Clarification during planning: re-plan with the answer.
-        const next: TaskState = { ...s, status: "planning", planMessage: `${s.planMessage ?? ""}\n\n## Clarification from the user\n${text}` }
-        delete next.pendingQuestion
-        await taskStore.put(next)
+        const next = await taskStore.transition(s.taskId, ["needs_input"], (cur) => {
+          const n: TaskState = { ...cur, status: "planning", planMessage: `${cur.planMessage ?? ""}\n\n## Clarification from the user\n${text}` }
+          delete n.pendingQuestion
+          return n
+        })
+        if (!next) return res.status(409).json({ error: "The task is no longer waiting for an answer" })
         await enqueue("plan", s.taskId)
       } else {
+        const next = await taskStore.transition(s.taskId, ["needs_input"], (cur) => ({ ...cur, status: "running" }))
+        if (!next) return res.status(409).json({ error: "The task is no longer waiting for an answer" })
         await taskStore.pushMessage(s.taskId, text)
-        await taskStore.put({ ...s, status: "running" })
         await enqueue("run", s.taskId)
       }
       return res.json({ ok: true, resumed: true })
     }
     if (s.status === "ready" || s.status === "needs_review") {
       // Follow-up change request on a finished run (Jules-style feedback).
+      const next = await taskStore.transition(s.taskId, ["ready", "needs_review"], (cur) => ({ ...cur, status: "running", statusDetail: "Applying your feedback" }))
+      if (!next) return res.status(409).json({ error: "The task is already working on something" })
       await eventBus.emit(s.taskId, { type: "user_message", text })
       await taskStore.pushMessage(s.taskId, text)
-      await taskStore.put({ ...s, status: "running", statusDetail: "Applying your feedback" })
       await enqueue("run", s.taskId)
       return res.json({ ok: true, resumed: true })
     }
@@ -292,8 +301,14 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     if (!s) return
     if (TERMINAL.includes(s.status)) return res.status(409).json({ error: `Task is already ${s.status}` })
     await taskStore.cancel(s.taskId)
-    if (["awaiting_approval", "needs_input", "ready", "needs_review", "queued"].includes(s.status)) {
-      await taskStore.put({ ...s, status: "cancelled", statusDetail: "Cancelled by user", finishedAt: new Date().toISOString() })
+    // Idle tasks are cancelled right here; a running stage sees the flag and stops itself.
+    const idle = await taskStore.transition(s.taskId, ["awaiting_approval", "needs_input", "ready", "needs_review", "queued"], (cur) => ({
+      ...cur,
+      status: "cancelled",
+      statusDetail: "Cancelled by user",
+      finishedAt: new Date().toISOString(),
+    }))
+    if (idle) {
       await eventBus.emit(s.taskId, { type: "status", status: "cancelled", detail: "Cancelled by user" })
       await taskStore.dropToken(s.taskId)
     }
@@ -324,11 +339,14 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     const parsed = Reject.safeParse(req.body)
     if (!parsed.success) return res.status(400).json({ error: "Invalid request" })
     if (!["ready", "needs_review"].includes(s.status)) return res.status(409).json({ error: "Files can only be reviewed before publishing" })
-    const set = new Set(s.rejectedFiles)
-    if (parsed.data.rejected) set.add(parsed.data.path)
-    else set.delete(parsed.data.path)
-    await taskStore.put({ ...s, rejectedFiles: [...set] })
-    res.json({ rejectedFiles: [...set] })
+    const next = await taskStore.transition(s.taskId, ["ready", "needs_review"], (cur) => {
+      const set = new Set(cur.rejectedFiles)
+      if (parsed.data.rejected) set.add(parsed.data.path)
+      else set.delete(parsed.data.path)
+      return { ...cur, rejectedFiles: [...set] }
+    })
+    if (!next) return res.status(409).json({ error: "Files can only be reviewed before publishing" })
+    res.json({ rejectedFiles: next.rejectedFiles })
   })
 
   router.post("/task/:taskId/restore", async (req, res) => {
@@ -347,7 +365,8 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     const s = await load(req, res)
     if (!s) return
     if (!["ready", "needs_review"].includes(s.status)) return res.status(409).json({ error: `Task is ${s.status}; nothing to publish yet` })
-    await taskStore.put({ ...s, status: "publishing", statusDetail: "Queued for publishing" })
+    const next = await taskStore.transition(s.taskId, ["ready", "needs_review"], (cur) => ({ ...cur, status: "publishing", statusDetail: "Queued for publishing" }))
+    if (!next) return res.status(409).json({ error: "Already publishing" })
     await enqueue("publish", s.taskId)
     res.json({ ok: true })
   })
@@ -362,11 +381,13 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     if (!["needs_review", "failed"].includes(s.status) || !s.runMessages?.length) {
       return res.status(409).json({ error: "Only a run that stopped early can be continued" })
     }
-    const current = taskCap(s)
-    const next: TaskState = { ...s, status: "running", statusDetail: "Continuing with more budget", options: { ...s.options, capUsd: +(current + parsed.data.addUsd).toFixed(2) } }
-    delete next.failureReason
-    delete next.finishedAt
-    await taskStore.put(next)
+    const next = await taskStore.transition(s.taskId, ["needs_review", "failed"], (cur) => {
+      const n: TaskState = { ...cur, status: "running", statusDetail: "Continuing with more budget", options: { ...cur.options, capUsd: +(taskCap(cur) + parsed.data.addUsd).toFixed(2) } }
+      delete n.failureReason
+      delete n.finishedAt
+      return n
+    })
+    if (!next) return res.status(409).json({ error: "Only a run that stopped early can be continued" })
     await taskStore.pushMessage(s.taskId, "The budget was increased. Continue where you left off: finish the remaining requirements, verify, then call finish.")
     await eventBus.emit(s.taskId, { type: "status", status: "running", detail: `Budget raised to $${next.options.capUsd}` })
     await enqueue("run", s.taskId)
@@ -393,15 +414,12 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     if (!req.isOperator && !req.session?.accessToken) return res.status(401).json({ error: "Sign in again" })
     if (req.session?.accessToken) await taskStore.putToken(s.taskId, req.session.accessToken)
     await taskStore.clearCancel(s.taskId)
-    const reset: TaskState = {
-      ...s,
-      status: "queued",
-      statusDetail: "Retrying",
-      rejectedFiles: [],
-      checkpoints: [],
-    }
-    for (const k of ["plan", "planChecklist", "runMessages", "pendingQuestion", "summary", "gate", "verdict", "stats", "failureReason", "finishedAt", "workDir", "baseline", "planMessage"] as const) delete reset[k]
-    await taskStore.put(reset)
+    const reset = await taskStore.transition(s.taskId, ["failed", "cancelled", "needs_review"], (cur) => {
+      const n: TaskState = { ...cur, status: "queued", statusDetail: "Retrying", rejectedFiles: [], checkpoints: [] }
+      for (const k of ["plan", "planChecklist", "runMessages", "pendingQuestion", "summary", "gate", "verdict", "stats", "failureReason", "finishedAt", "workDir", "baseline", "planMessage"] as const) delete n[k]
+      return n
+    })
+    if (!reset) return res.status(409).json({ error: "The task is already being retried" })
     await eventLog.clear(s.taskId)
     await enqueue("plan", s.taskId)
     res.json({ ok: true })
