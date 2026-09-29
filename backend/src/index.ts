@@ -19,6 +19,7 @@ import { disconnectPrisma, verifyDatabaseConnection } from './db/prisma.js';
 import { startPipelineWorker } from './agent/service.js';
 import { Sandbox } from './agent/sandbox.js';
 import { startJanitor } from './agent/janitor.js';
+import { startCatalogRefresh } from './llm/catalog.js';
 import { flushEventsToDb } from './repositories/eventRepository.js';
 import { flushLlmCalls } from './repositories/llmCallRepository.js';
 import { useRedisForSpend } from './agent/spend.js';
@@ -85,6 +86,7 @@ if (MODE !== "api") {
     .then(() => logger.info(`Docker connected (${resolveDockerSocket() ?? "default socket"})`))
     .catch((err) => logger.warn(`Docker not reachable — sandbox tasks will fail until it is: ${err instanceof Error ? err.message : err}`))
   startJanitor()
+  startCatalogRefresh() // live per-route model prices for budget reservations
 }
 
 const server = app.listen(PORT, () => logger.info(`Pullwright ${MODE} listening on ${PORT}`));
