@@ -24,6 +24,18 @@
       ],
       "cwd": "backend",
       "port": 3500
+    },
+    {
+      "name": "pullwright-backend-free",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "tsx",
+        "--env-file=.env",
+        "--env-file=lanes/free.env",
+        "src/index.ts"
+      ],
+      "cwd": "backend",
+      "port": 3500
     }
   ]
 }
