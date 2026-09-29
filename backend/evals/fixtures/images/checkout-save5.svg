@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800">
+<rect width="800" height="800" fill="#ffffff"/>
+<rect x="20" y="20" width="760" height="56" fill="#f3f4f6" stroke="#d1d5db"/>
+<text x="40" y="57" font-family="Helvetica" font-size="24" fill="#111827">Checkout · Order summary</text>
+<text x="40" y="130" font-family="Helvetica" font-size="20" fill="#111827">1 × Refactoring (2nd ed.)</text>
+<text x="620" y="130" font-family="Helvetica" font-size="20" fill="#111827">$100.00</text>
+<line x1="40" y1="155" x2="760" y2="155" stroke="#e5e7eb"/>
+<text x="40" y="195" font-family="Helvetica" font-size="20" fill="#374151">Subtotal</text>
+<text x="620" y="195" font-family="Helvetica" font-size="20" fill="#374151">$100.00</text>
+<text x="40" y="240" font-family="Helvetica" font-size="20" fill="#374151">Tax (8% of $100.00)</text>
+<text x="620" y="240" font-family="Helvetica" font-size="20" fill="#374151">$8.00</text>
+<text x="40" y="285" font-family="Helvetica" font-size="20" fill="#047857">Discount code SAVE5</text>
+<text x="620" y="285" font-family="Helvetica" font-size="20" fill="#047857">−$5.00</text>
+<line x1="40" y1="310" x2="760" y2="310" stroke="#9ca3af"/>
+<text x="40" y="355" font-family="Helvetica" font-weight="bold" font-size="24" fill="#111827">Total</text>
+<text x="620" y="355" font-family="Helvetica" font-weight="bold" font-size="24" fill="#111827">$103.00</text>
+<rect x="40" y="400" width="720" height="70" rx="8" fill="#fef3c7" stroke="#f59e0b"/>
+<text x="60" y="443" font-family="Helvetica" font-size="18" fill="#92400e">Our pricing page: “tax is charged after discounts”</text>
+</svg>

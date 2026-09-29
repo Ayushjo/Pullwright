@@ -19,7 +19,17 @@ const TOKEN = process.env.API_TOKEN!
 const DOCKER = process.env.DOCKER_BIN ?? "/Applications/Docker.app/Contents/Resources/bin/docker"
 const tasksDir = process.env.TASKS_DIR ?? path.join(backend, ".tasks")
 const evalRepos = process.env.EVAL_REPOS_DIR ?? path.join(tasksDir, "eval-repos")
-const ladder = JSON.parse(readFileSync(path.join(backend, "evals/ladder.json"), "utf8")) as LadderItem[]
+const baseLadder = JSON.parse(readFileSync(path.join(backend, "evals/ladder.json"), "utf8")) as LadderItem[]
+// Vague and image variants of ladder items (evals/vague.json, evals/multimodal.json): their own title and
+// body, the base item's fixture, hidden acceptance test and checks. Run them by id, e.g. `eval.mts V06 M05`.
+const derived = ["vague.json", "multimodal.json"].flatMap((f) =>
+  (JSON.parse(readFileSync(path.join(backend, "evals", f), "utf8")) as { id: string; base: string; title: string; body: string }[]).map((d) => {
+    const base = baseLadder.find((l) => l.id === d.base)
+    if (!base) throw new Error(`${f}: unknown base ${d.base}`)
+    return { ...base, id: d.id, title: d.title, body: d.body }
+  }),
+)
+const ladder = [...baseLadder, ...derived]
 
 type LadderItem = {
   id: string
@@ -218,7 +228,8 @@ const argv = process.argv.slice(2)
 const mi = argv.indexOf("--model")
 const MODEL = mi >= 0 ? argv[mi + 1] : undefined
 const wanted = argv.filter((_, i) => mi < 0 || (i !== mi && i !== mi + 1))
-const items = ladder.filter((i) => wanted.length === 0 || wanted.some((w) => i.id.startsWith(w)))
+// With no ids, only the base ladder runs (variants are opt-in).
+const items = wanted.length === 0 ? baseLadder : ladder.filter((i) => wanted.some((w) => i.id.startsWith(w)))
 const budget = await api("GET", "/api/budget")
 console.log(`Platform spend so far: $${Number(budget.platformSpentUsd).toFixed(4)} / hard stop $${budget.hardStopUsd}`)
 for (const item of items) {

@@ -1,0 +1,14 @@
+[
+  {
+    "id": "M05-checkout-save5",
+    "base": "L05-discount-before-tax",
+    "title": "Checkout total is wrong with a fixed discount code",
+    "body": "Checkout shows the wrong total when a fixed discount code is used — screenshot below.\n\n![checkout](attachment://checkout-save5.png)\n\nPercent codes look fine."
+  },
+  {
+    "id": "M05n-checkout-save5-noimage",
+    "base": "L05-discount-before-tax",
+    "title": "Checkout total is wrong with a fixed discount code",
+    "body": "Checkout shows the wrong total when a fixed discount code is used.\n\nPercent codes look fine."
+  }
+]
