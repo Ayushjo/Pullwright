@@ -38,8 +38,8 @@ for (const v of pick) {
     if (["awaiting_approval", "needs_input", "failed", "cancelled"].includes(s.status)) break
   }
   if (s.status === "awaiting_approval") await api("POST", `/api/task/${taskId}/cancel`).catch(() => {})
-  const calls = await api("GET", `/api/task/${taskId}/calls`).catch(() => ({ calls: [] }))
-  const cost = (calls.calls as { costUsd?: number }[] | undefined)?.reduce((a, c) => a + (c.costUsd ?? 0), 0) ?? 0
+  const calls = (await api("GET", `/api/task/${taskId}/calls`).catch(() => [])) as unknown
+  const cost = (Array.isArray(calls) ? (calls as { costUsd?: number }[]) : []).reduce((a, c) => a + (c.costUsd ?? 0), 0)
   const p = s.plan ?? {}
   const row = { ts: new Date().toISOString(), id: v.id, taskId, model: MODEL ?? "default", status: s.status, asked: Boolean(p.blocked), question: p.blocked ?? null, requirements: p.requirements ?? [], risks: p.risks ?? null, files: (p.files ?? []).map((f: { path: string }) => f.path), costUsd: Number(cost.toFixed(4)) }
   appendFileSync(path.join(backend, ".spend/vague-probes.jsonl"), JSON.stringify(row) + "\n")
