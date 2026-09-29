@@ -101,7 +101,19 @@ const k = {
   cancel: (id: string) => `pw:cancel:${id}`,
   lock: (id: string) => `pw:lock:${id}`,
   counters: (id: string) => `pw:counters:${id}`,
+  rev: (id: string) => `pw:rev:${id}`,
 }
+
+const IF_OWNER_PEXPIRE = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) end return 0`
+const IF_OWNER_DEL = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`
+
+/** Write the state only if nobody else wrote since we read it (revision unchanged). */
+const CAS = `
+if (redis.call('GET', KEYS[2]) or '0') ~= ARGV[1] then return 0 end
+redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
+redis.call('INCR', KEYS[2])
+redis.call('EXPIRE', KEYS[2], ARGV[3])
+return 1`
 
 export const taskStore = {
   async get(id: string): Promise<TaskState | null> {
@@ -117,8 +129,37 @@ export const taskStore = {
   },
   async put(s: TaskState): Promise<TaskState> {
     s.updatedAt = new Date().toISOString()
-    await r().set(k.state(s.taskId), JSON.stringify(s), "EX", TTL)
+    await r().multi().set(k.state(s.taskId), JSON.stringify(s), "EX", TTL).incr(k.rev(s.taskId)).expire(k.rev(s.taskId), TTL).exec()
     return s
+  },
+  /**
+   * Atomic status transition for API requests: applies `mutate` only if the task is currently in one
+   * of `from`, retrying on concurrent writes. Returns null when the status no longer allows it — e.g.
+   * the second click of a double-clicked Approve finds the task already running and does nothing.
+   */
+  async transition(id: string, from: TaskStatus[], mutate: (s: TaskState) => TaskState): Promise<TaskState | null> {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const rev = (await r().get(k.rev(id))) ?? "0"
+      const cur = await this.get(id)
+      if (!cur || !from.includes(cur.status)) return null
+      const next = mutate(cur)
+      next.updatedAt = new Date().toISOString()
+      if (Number(await r().eval(CAS, 2, k.state(id), k.rev(id), rev, JSON.stringify(next), TTL)) === 1) return next
+    }
+    throw new Error(`Task ${id} is being updated concurrently; try again`)
+  },
+  /** Per-task stage lock (one pipeline stage per task at a time, across all workers). */
+  async acquireLock(id: string, owner: string, ttlMs: number): Promise<boolean> {
+    return (await r().set(k.lock(id), owner, "PX", ttlMs, "NX")) === "OK"
+  },
+  async renewLock(id: string, owner: string, ttlMs: number): Promise<boolean> {
+    return Number(await r().eval(IF_OWNER_PEXPIRE, 1, k.lock(id), owner, ttlMs)) === 1
+  },
+  async releaseLock(id: string, owner: string): Promise<void> {
+    await r().eval(IF_OWNER_DEL, 1, k.lock(id), owner)
+  },
+  async isLocked(id: string): Promise<boolean> {
+    return (await r().exists(k.lock(id))) === 1
   },
   async patch(id: string, p: Partial<TaskState>): Promise<TaskState> {
     const cur = await this.get(id)
