@@ -18,6 +18,10 @@ describe("decide: ask only when work can't sensibly start", () => {
     expect(d).toMatchObject({ action: "ask", questions: [q("blocking")] })
   })
 
+  it("an issue rated 0-1 ('a sensible interpretation exists') never stops, even with a blocking question", () => {
+    expect(decide(spec(1, [q("blocking")]))).toMatchObject({ action: "plan", open: [q("blocking")] })
+  })
+
   it("a blocking question the code can answer is left to the planner", () => {
     expect(decide(spec(2, [q("blocking", true)]))).toMatchObject({ action: "plan" })
   })

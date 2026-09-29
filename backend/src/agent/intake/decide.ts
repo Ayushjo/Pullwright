@@ -2,8 +2,10 @@ import type { SpecCheck, SpecQuestion } from "./specCheck.js"
 
 /**
  * Ask or assume — decided in code, not by the model (docs/architecture/intake.md §13.3):
- * - stop and ask only when work cannot sensibly start: underspec 3, or a blocking question the code
- *   can't answer. That spends no planner calls on a guess.
+ * - stop and ask only when work cannot sensibly start: underspec 3, or underspec 2 with a blocking
+ *   question the code can't answer. That spends no planner calls on a guess. A 0–1 rating means "there is
+ *   a sensible interpretation" by the rubric's own words, so it never stops the task (probe-spec: one
+ *   well-specified hard issue, H04, got rated 1 yet carried a "blocking" question).
  * - everything else goes to the planner as open questions: it settles what the code can answer and
  *   records the rest as assumptions the user sees (and can change) at plan approval.
  */
@@ -11,7 +13,7 @@ export type Decision = { action: "ask"; questions: SpecQuestion[]; reason: strin
 
 export function decide(spec: SpecCheck | null): Decision {
   if (!spec) return { action: "plan", open: [] } // the check failed: plan as before
-  const blocking = spec.questions.filter((q) => q.impact === "blocking" && !q.answerableFromCode)
+  const blocking = spec.underspec >= 2 ? spec.questions.filter((q) => q.impact === "blocking" && !q.answerableFromCode) : []
   if (spec.underspec === 3 || blocking.length) {
     const questions = blocking.length ? blocking : spec.questions
     return {
