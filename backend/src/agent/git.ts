@@ -56,8 +56,19 @@ export function redact(s: string): string {
     .replace(/(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/g, "[REDACTED]")
     .replace(/x-access-token:[^@\s]+@/g, "x-access-token:[REDACTED]@")
     .replace(/(sk-(proj-|ant-|or-)?[A-Za-z0-9_-]{16,})/g, "[REDACTED]")
+    .replace(PROVIDER_KEY, "[REDACTED]")
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{16,}/g, "$1[REDACTED]")
     .replace(/AUTHORIZATION: basic [A-Za-z0-9+/=]+/gi, "AUTHORIZATION: basic [REDACTED]")
 }
+
+/**
+ * Model-provider key formats (users paste these into the wallet; providers sometimes echo them in errors):
+ * Google (AIza…, AQ.…), Groq gsk_, Vercel AI Gateway vck_, NVIDIA nvapi-, Hugging Face hf_, xAI xai-,
+ * Cerebras csk-, Perplexity pplx-, Together tgp_v1_, Fireworks fw_, Replicate r8_.
+ * Keys without a prefix (e.g. Mistral) are covered by exact-match redaction of stored credentials.
+ */
+const PROVIDER_KEY =
+  /\b(AIza[0-9A-Za-z_-]{30,}|AQ\.[A-Za-z0-9_-]{20,}|gsk_[A-Za-z0-9]{20,}|vck_[A-Za-z0-9]{20,}|nvapi-[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{20,}|xai-[A-Za-z0-9]{20,}|csk-[A-Za-z0-9]{20,}|pplx-[A-Za-z0-9]{20,}|tgp_v1_[A-Za-z0-9_-]{20,}|fw_[A-Za-z0-9]{20,}|r8_[A-Za-z0-9]{20,})/g
 
 export type RepoRef = { owner: string; repo: string; issueNumber: number }
 
