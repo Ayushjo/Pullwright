@@ -222,6 +222,28 @@ model UsageRecord {
   @@map("usage_ledger")
 }
 
+/// One row per model call (platform, BYOK or free key). Source of truth for spend; Redis holds
+/// the hot counters. taskId is not a foreign key: eval/operator tasks never exist in `tasks`.
+model LlmCall {
+  id                String   @id @default(uuid()) @db.Uuid
+  taskId            String   @map("task_id")
+  userId            String?  @map("user_id") @db.Uuid
+  keyOwner          String   @map("key_owner")
+  provider          String
+  model             String
+  purpose           String
+  inputTokens       Int      @map("input_tokens")
+  cachedInputTokens Int      @map("cached_input_tokens")
+  outputTokens      Int      @map("output_tokens")
+  costUsd           Decimal  @map("cost_usd") @db.Decimal(14, 8)
+  durationMs        Int?     @map("duration_ms")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([taskId])
+  @@index([keyOwner, createdAt])
+  @@map("llm_calls")
+}
+
 model PaymentEvent {
   id            String   @id @default(uuid()) @db.Uuid
   eventId       String   @unique @map("event_id")
