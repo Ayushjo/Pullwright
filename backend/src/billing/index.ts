@@ -71,15 +71,43 @@ export async function listKeys(userId: string) {
 }
 
 /** Cheap validity check: list models (no tokens spent). */
-export async function validateKey(provider: KeyProvider, key: string): Promise<string | null> {
-  const url = provider === "openai" ? "https://api.openai.com/v1/models" : "https://openrouter.ai/api/v1/auth/key"
+/** What the provider told us about a key at validation time (OpenRouter reports tier and limits). */
+export type KeyInfo = {
+  tier: "free" | "paid" | "unknown"
+  limitUsd?: number | null
+  limitRemainingUsd?: number | null
+  freeRequestsToday?: { used: number; limit: number; remaining: number }
+}
+
+/** Verifies a key with a free provider call. Returns an error message, or the key's tier/limits. */
+export async function validateKey(provider: KeyProvider, key: string): Promise<{ error: string } | { info: KeyInfo }> {
+  const url = provider === "openai" ? "https://api.openai.com/v1/models" : "https://openrouter.ai/api/v1/key"
   try {
     const res = await fetch(url, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10_000) })
-    if (res.status === 401 || res.status === 403) return "That key was rejected by the provider."
-    if (!res.ok) return `The provider returned ${res.status} — try again in a moment.`
-    return null
+    if (res.status === 401 || res.status === 403) return { error: "That key was rejected by the provider." }
+    if (!res.ok) return { error: `The provider returned ${res.status} — try again in a moment.` }
+    if (provider !== "openrouter") return { info: { tier: "paid" } }
+    return { info: openRouterKeyInfo(await res.json().catch(() => null)) }
   } catch {
-    return "Couldn't reach the provider to verify the key."
+    return { error: "Couldn't reach the provider to verify the key." }
+  }
+}
+
+/** Parses OpenRouter's GET /api/v1/key response (is_free_tier, limit, limit_remaining, free_model_daily_requests). */
+export function openRouterKeyInfo(body: unknown): KeyInfo {
+  const d = (body as { data?: Record<string, unknown> } | null)?.data
+  if (!d) return { tier: "unknown" }
+  const num = (v: unknown) => (typeof v === "number" ? v : v === null ? null : undefined)
+  const free = d.free_model_daily_requests as { used?: number; limit?: number; remaining?: number } | undefined
+  const limit = num(d.limit)
+  const remaining = num(d.limit_remaining)
+  return {
+    tier: d.is_free_tier === true ? "free" : d.is_free_tier === false ? "paid" : "unknown",
+    ...(limit !== undefined ? { limitUsd: limit } : {}),
+    ...(remaining !== undefined ? { limitRemainingUsd: remaining } : {}),
+    ...(free && typeof free.limit === "number"
+      ? { freeRequestsToday: { used: free.used ?? 0, limit: free.limit, remaining: free.remaining ?? free.limit - (free.used ?? 0) } }
+      : {}),
   }
 }
 
