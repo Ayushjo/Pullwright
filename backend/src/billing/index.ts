@@ -202,29 +202,58 @@ const STATUS: Record<string, "active" | "past_due" | "canceled" | "unpaid"> = {
   "subscription.expired": "canceled",
 }
 
-/** Idempotent: each webhook-id is processed once (payment_events.event_id is unique). */
+const PROCESSING = "processing"
+
+/**
+ * Idempotent and retry-safe: each webhook-id is processed once (payment_events.event_id is unique).
+ * The row is marked "processing" when claimed and cleared on success; if processing throws, the
+ * error is stored and the throw makes the route answer 5xx, so Dodo's retry is processed again
+ * instead of being dropped as a duplicate.
+ */
 export async function handleWebhook(eventId: string, ev: DodoEvent): Promise<"processed" | "duplicate" | "ignored"> {
   const db = getPrisma()
   try {
-    await db.paymentEvent.create({ data: { eventId, provider: "dodo", eventType: ev.type, payload: ev as unknown as object } })
+    await db.paymentEvent.create({ data: { eventId, provider: "dodo", eventType: ev.type, payload: ev as unknown as object, error: PROCESSING } })
   } catch {
-    return "duplicate"
+    const prev = await db.paymentEvent.findUnique({ where: { eventId } })
+    const unfinished = prev && (prev.error === PROCESSING || prev.error?.startsWith("failed:"))
+    if (!unfinished) return "duplicate"
   }
+  try {
+    const out = await applyEvent(db, ev)
+    await db.paymentEvent.update({ where: { eventId }, data: { error: out.note ?? null, processedAt: new Date() } })
+    return out.result
+  } catch (err) {
+    await db.paymentEvent.update({ where: { eventId }, data: { error: `failed: ${(err as Error).message}`.slice(0, 500) } }).catch(() => {})
+    throw err
+  }
+}
+
+/** Which plan a Dodo product buys: plans.provider_product_id, or DODO_PRO_PRODUCT_ID for Pro. */
+async function planForProduct(db: ReturnType<typeof getPrisma>, productId: string | undefined) {
+  if (!productId) return null
+  const byColumn = await db.plan.findFirst({ where: { providerProductId: productId } })
+  if (byColumn) return byColumn
+  if (productId === process.env.DODO_PRO_PRODUCT_ID) return db.plan.findUnique({ where: { tier: "pro" } })
+  return null
+}
+
+async function applyEvent(db: ReturnType<typeof getPrisma>, ev: DodoEvent): Promise<{ result: "processed" | "ignored"; note?: string }> {
   const status = STATUS[ev.type]
-  if (!status && ev.type !== "subscription.updated") return "ignored"
+  if (!status && ev.type !== "subscription.updated") return { result: "ignored" }
   const d = ev.data
   let userId = d.metadata?.user_id
-  if (!userId && d.subscription_id) {
-    userId = (await db.subscription.findUnique({ where: { providerSubscriptionId: d.subscription_id } }))?.userId
-  }
-  if (!userId) {
-    await db.paymentEvent.update({ where: { eventId }, data: { error: "no user_id in metadata" } })
-    return "ignored"
-  }
-  const pro = await db.plan.findUnique({ where: { tier: "pro" } })
-  if (!pro) throw new Error("pro plan missing")
+  const existing = d.subscription_id ? await db.subscription.findUnique({ where: { providerSubscriptionId: d.subscription_id } }) : null
+  if (!userId) userId = existing?.userId
+  if (!userId) return { result: "ignored", note: "no user_id in metadata" }
+  // The product decides the plan. An unknown product grants nothing (a credit pack must never
+  // become Pro); an event without a product keeps the plan the subscription already has.
+  const plan = await planForProduct(db, d.product_id)
+  if (d.product_id && !plan) return { result: "ignored", note: `unknown product ${d.product_id}` }
+  const planId = plan?.id ?? existing?.planId
+  if (!planId) return { result: "ignored", note: "no product and no existing subscription" }
   const fields = {
-    planId: pro.id,
+    planId,
     provider: "dodo",
     providerSubscriptionId: d.subscription_id ?? null,
     providerCustomerId: d.customer?.customer_id ?? null,
@@ -235,5 +264,5 @@ export async function handleWebhook(eventId: string, ev: DodoEvent): Promise<"pr
   }
   await db.subscription.upsert({ where: { userId }, create: { userId, ...fields }, update: fields })
   logger.info(`Billing: ${ev.type} for user ${userId}`)
-  return "processed"
+  return { result: "processed" }
 }
