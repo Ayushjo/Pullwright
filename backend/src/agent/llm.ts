@@ -20,7 +20,7 @@ export type ToolDef = ChatCompletionFunctionTool
 export type ToolCall = { id: string; name: string; rawArgs: string }
 
 export type ModelSpec = {
-  provider: "openai" | "openrouter"
+  provider: "openai" | "openrouter" | "vercel"
   model: string
   /** gpt-5 family only */
   reasoningEffort?: "minimal" | "low" | "medium" | "high"
@@ -58,7 +58,8 @@ function clientFor(spec: ModelSpec): OpenAI {
   let c = clients.get(key)
   if (!c) {
     const apiKey =
-      spec.apiKey ?? (spec.provider === "openrouter" ? process.env.OPENROUTER_API_KEY : process.env.OPENAI_API_KEY)
+      spec.apiKey ??
+      (spec.provider === "openrouter" ? process.env.OPENROUTER_API_KEY : spec.provider === "vercel" ? process.env.AI_GATEWAY_API_KEY : process.env.OPENAI_API_KEY)
     if (!apiKey) throw new Error(`No API key configured for ${spec.provider}`)
     c = new OpenAI({
       apiKey,
@@ -68,7 +69,9 @@ function clientFor(spec: ModelSpec): OpenAI {
         ? { baseURL: spec.baseURL }
         : spec.provider === "openrouter"
           ? { baseURL: "https://openrouter.ai/api/v1" }
-          : {}),
+          : spec.provider === "vercel"
+            ? { baseURL: "https://ai-gateway.vercel.sh/v1" }
+            : {}),
     })
     clients.set(key, c)
   }
@@ -100,7 +103,8 @@ export function retryDelayMs(err: unknown, attempt: number): number {
 
 export async function chat(spec: ModelSpec, opts: CallOptions): Promise<LLMResult> {
   const ledger = getSpendLedger()
-  const keyOwner: LedgerEntry["keyOwner"] = spec.apiKey ? "byok" : "platform"
+  // Who pays: the user's key (byok), Vercel's monthly free credit (free_credit), or our OpenAI key.
+  const keyOwner: LedgerEntry["keyOwner"] = spec.apiKey ? "byok" : spec.provider === "vercel" ? "free_credit" : "platform"
   const price = priceFor(spec.model)
   // Worst case assumes zero cache hits and a full-length completion.
   const worstCase =
