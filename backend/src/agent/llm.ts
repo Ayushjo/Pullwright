@@ -4,7 +4,7 @@ import type {
   ChatCompletionFunctionTool,
   ChatCompletionMessageFunctionToolCall,
 } from "openai/resources/chat/completions"
-import { costOf, getSpendLedger, priceFor, SpendLimitError, type LedgerEntry } from "./spend.js"
+import { costOf, getSpendLedger, priceFor, SpendLimitError, type Hold, type LedgerEntry } from "./spend.js"
 import logger from "../logger.js"
 
 /**
@@ -105,7 +105,17 @@ export async function chat(spec: ModelSpec, opts: CallOptions): Promise<LLMResul
   // Worst case assumes zero cache hits and a full-length completion.
   const worstCase =
     (estimateInputTokens(opts.messages, opts.tools) * price.input + opts.maxOutputTokens * price.output) / 1_000_000
-  await ledger.assertCanSpend(opts.taskId, keyOwner, worstCase, opts.taskCapUsd)
+  // Reserve the worst case atomically (calls in flight count too); released on record or failure.
+  const hold = await ledger.reserve(opts.taskId, keyOwner, worstCase, opts.taskCapUsd)
+  try {
+    return await callWithRetries(spec, opts, keyOwner, hold)
+  } finally {
+    await ledger.release(hold).catch(() => {})
+  }
+}
+
+async function callWithRetries(spec: ModelSpec, opts: CallOptions, keyOwner: LedgerEntry["keyOwner"], hold: Hold): Promise<LLMResult> {
+  const ledger = getSpendLedger()
 
   const client = clientFor(spec)
   const reasoning = isReasoningModel(spec.model)
@@ -134,17 +144,21 @@ export async function chat(spec: ModelSpec, opts: CallOptions): Promise<LLMResul
       const cachedInputTokens = res.usage?.prompt_tokens_details?.cached_tokens ?? 0
       const outputTokens = res.usage?.completion_tokens ?? 0
       const costUsd = costOf(spec.model, { inputTokens, cachedInputTokens, outputTokens })
-      await ledger.record({
-        taskId: opts.taskId,
-        keyOwner,
-        provider: spec.provider,
-        model: res.model ?? spec.model,
-        purpose: opts.purpose,
-        inputTokens,
-        cachedInputTokens,
-        outputTokens,
-        costUsd,
-      })
+      await ledger.record(
+        {
+          taskId: opts.taskId,
+          keyOwner,
+          provider: spec.provider,
+          model: res.model ?? spec.model,
+          purpose: opts.purpose,
+          inputTokens,
+          cachedInputTokens,
+          outputTokens,
+          costUsd,
+        },
+        hold,
+        { durationMs: Date.now() - started },
+      )
       const toolCalls = (choice.message.tool_calls ?? [])
         .filter((tc): tc is ChatCompletionMessageFunctionToolCall => tc.type === "function")
         .map((tc) => ({ id: tc.id, name: tc.function.name, rawArgs: tc.function.arguments ?? "" }))
