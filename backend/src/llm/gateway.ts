@@ -4,7 +4,7 @@ import logger from "../logger.js"
 import { CircuitBreaker } from "./breaker.js"
 import { classifyError, type ErrorClass } from "./errors.js"
 import { dayWindow, QuotaTracker } from "./quota.js"
-import { PROVIDERS, seedLimits, type ProviderId } from "./registry.js"
+import { PROVIDERS, seedLimits, supportsVision, type ProviderId } from "./registry.js"
 
 /**
  * The model gateway: one logical call, tried across an ordered list of lanes (credential × model)
@@ -139,8 +139,10 @@ export class Gateway {
         ...(lane.apiKey ? { apiKey: lane.apiKey } : {}),
         ...(lane.reasoningEffort ? { reasoningEffort: lane.reasoningEffort } : {}),
       }
+      // Text-only lanes get the attachment transcript instead of pixels (gpt-oss answers 400 to image parts).
+      const messages = supportsVision(lane.provider, lane.model) ? call.messages : withoutImages(call.messages)
       try {
-        const result = await this.send(spec, { ...call, maxOutputTokens: maxOut, attempts: 1, timeoutMs: lane.timeoutMs ?? call.timeoutMs ?? 90_000 })
+        const result = await this.send(spec, { ...call, messages, maxOutputTokens: maxOut, attempts: 1, timeoutMs: lane.timeoutMs ?? call.timeoutMs ?? 90_000 })
         await this.quota.reconcile(scope, est + maxOut, result.inputTokens + result.outputTokens, reset).catch(() => {})
         await this.breaker.success(pm).catch(() => {})
         attempts.push({ lane: id, outcome: "ok" })
@@ -161,6 +163,19 @@ export class Gateway {
     }
     return { result: null, waitMs, lastHardError }
   }
+}
+
+/** Replace image parts with a note; messages without images are returned as they are. */
+export function withoutImages(messages: CallOptions["messages"]): CallOptions["messages"] {
+  let changed = false
+  const out = messages.map((m) => {
+    if (!Array.isArray(m.content)) return m
+    const parts = m.content as { type: string }[]
+    if (!parts.some((p) => p.type === "image_url")) return m
+    changed = true
+    return { ...m, content: parts.map((p) => (p.type === "image_url" ? { type: "text", text: "[image omitted for this model — see the attachment transcript]" } : p)) } as typeof m
+  })
+  return changed ? out : messages
 }
 
 /**

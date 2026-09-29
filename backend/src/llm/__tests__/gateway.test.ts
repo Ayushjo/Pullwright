@@ -6,7 +6,7 @@ const REDIS_URL = process.env.TEST_REDIS_URL ?? "redis://127.0.0.1:6380/9"
 vi.mock("../../agent/spend.js", () => ({ SpendLimitError: class SpendLimitError extends Error {} }))
 vi.mock("../../agent/llm.js", () => ({ chat: vi.fn() }))
 
-const { Gateway, NoLaneAvailable, estimateTokens, IMAGE_TOKENS } = await import("../gateway.js")
+const { Gateway, NoLaneAvailable, estimateTokens, IMAGE_TOKENS, withoutImages } = await import("../gateway.js")
 const { QuotaTracker } = await import("../quota.js")
 const { CircuitBreaker } = await import("../breaker.js")
 const { SpendLimitError } = await import("../../agent/spend.js")
@@ -172,5 +172,26 @@ describe("estimateTokens", () => {
     const withImage = estimateTokens({ messages: [{ role: "user", content: [{ type: "text", text: "what is wrong?" }, { type: "image_url", image_url: { url: `data:image/png;base64,${b64}` } }] }] })
     expect(withImage).toBeGreaterThanOrEqual(IMAGE_TOKENS)
     expect(withImage).toBeLessThan(IMAGE_TOKENS + 100)
+  })
+})
+
+describe("images on text-only lanes", () => {
+  it("gpt-oss gets a note instead of the image; vision lanes get the pixels", async (ctx) => {
+    if (!available) ctx.skip()
+    const sent: { model: string; hasImage: boolean }[] = []
+    const g = gw(async (spec, opts) => {
+      const msgs = (opts as unknown as { messages: { content: unknown }[] }).messages
+      sent.push({ model: spec.model, hasImage: JSON.stringify(msgs).includes("image_url") })
+      if (spec.model === "openai/gpt-oss-120b") throw apiErr(503, "overloaded")
+      return ok
+    })
+    const img = { role: "user" as const, content: [{ type: "text" as const, text: "see" }, { type: "image_url" as const, image_url: { url: "data:image/png;base64,AAAA" } }] }
+    await g.complete([lane("groq", "openai/gpt-oss-120b", "free"), lane("groq", "qwen/qwen3.8-27b", "free")], { ...call(), messages: [img] })
+    expect(sent).toEqual([{ model: "openai/gpt-oss-120b", hasImage: false }, { model: "qwen/qwen3.8-27b", hasImage: true }])
+  })
+
+  it("withoutImages leaves text-only conversations untouched (same array)", () => {
+    const msgs = [{ role: "user" as const, content: "hi" }]
+    expect(withoutImages(msgs)).toBe(msgs)
   })
 })
