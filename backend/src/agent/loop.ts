@@ -1,6 +1,8 @@
 import { createHash } from "crypto"
 import type { ChatCompletionMessageToolCall } from "openai/resources/chat/completions"
 import { chat, type ModelSpec, type Msg, type LLMResult } from "./llm.js"
+import { NoLaneAvailable } from "../llm/gateway.js"
+import type { ChatFn } from "../llm/lanes.js"
 import { SpendLimitError } from "./spend.js"
 import { ArgError, type Control, type Tool, type ToolResult } from "./tools/index.js"
 import type { ToolOutput } from "./tools/editor.js"
@@ -52,7 +54,8 @@ export class AgentLoop {
   constructor(
     private taskId: string,
     private purpose: string,
-    private spec: ModelSpec,
+    /** A fixed model, or a gateway call function that routes across lanes. */
+    private spec: ModelSpec | ChatFn,
     system: string,
     firstUser: string,
     private tools: Tool[],
@@ -88,7 +91,8 @@ export class AgentLoop {
       this.maskOldObservations()
       let res: LLMResult
       try {
-        res = await chat(this.spec, {
+        const call = typeof this.spec === "function" ? this.spec : (o: Parameters<typeof chat>[1]) => chat(this.spec as ModelSpec, o)
+        res = await call({
           taskId: this.taskId,
           purpose: this.purpose,
           messages: this.messages,
@@ -111,6 +115,10 @@ export class AgentLoop {
         })
       } catch (err) {
         if (err instanceof SpendLimitError) return { status: "failed", reason: `Budget cap reached: ${err.message}` }
+        if (err instanceof NoLaneAvailable) {
+          const when = err.retryAt ? ` (next available ${new Date(err.retryAt).toISOString()})` : " — add a key or credits"
+          return { status: "failed", reason: `No model available right now${when}` }
+        }
         return { status: "failed", reason: `LLM error: ${redact((err as Error).message)}` }
       }
       this.steps++
