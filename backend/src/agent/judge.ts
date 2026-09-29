@@ -1,4 +1,5 @@
 import { chat, type ModelSpec } from "./llm.js"
+import type { ChatFn } from "../llm/lanes.js"
 import { JUDGE_SYSTEM } from "./prompts.js"
 
 export type Verdict = {
@@ -11,7 +12,7 @@ export type Verdict = {
 
 /** OpenHands-resolver-style success check: issue + patch + agent summary → verdict. One cheap call. */
 export async function judgePatch(
-  spec: ModelSpec,
+  spec: ModelSpec | ChatFn,
   taskId: string,
   input: { title: string; body: string; plan: string; requirements: string[]; summary: string; patch: string; verify: string; capUsd?: number },
   onUsage?: (u: { costUsd: number; model: string; provider: string; inputTokens: number; cachedInputTokens: number; outputTokens: number; durationMs: number }) => void,
@@ -26,7 +27,7 @@ export async function judgePatch(
     `\n# Verification results\n${input.verify || "(none detected)"}`,
     `\n# Patch\n\`\`\`diff\n${patch}\n\`\`\``,
   ].join("\n")
-  const res = await chat(spec, {
+  const res = await (typeof spec === "function" ? spec : (o: Parameters<typeof chat>[1]) => chat(spec, o))({
     taskId,
     purpose: "judge",
     ...(input.capUsd !== undefined ? { taskCapUsd: input.capUsd } : {}),
