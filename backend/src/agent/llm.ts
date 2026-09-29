@@ -114,6 +114,36 @@ export function retryDelayMs(err: unknown, attempt: number): number {
   return 1500 * attempt * attempt
 }
 
+/** The request body for one call, with only the parameters this provider accepts. */
+export function buildRequestBody(spec: ModelSpec, opts: CallOptions): OpenAI.Chat.ChatCompletionCreateParamsNonStreaming {
+  const params = PROVIDERS[spec.provider].params
+  // Gemini thinking models take reasoning_effort; Gemma on the same API has no thinking and rejects it (400).
+  const reasoning = isReasoningModel(spec.model) || (spec.provider === "gemini" && /^gemini-/.test(spec.model) && spec.reasoningEffort !== undefined)
+  const target = { provider: spec.provider, model: spec.model }
+  // Only send what this provider accepts (unknown parameters are rejected by some, ignored by others).
+  return {
+    model: spec.model,
+    messages: renderMessages(opts.messages, target),
+    [params.maxTokensField]: opts.maxOutputTokens,
+    // Per-task cache key: one key shared by every task overflows OpenAI's cache routing at scale.
+    ...(params.promptCacheKey && spec.provider === "openai" ? { prompt_cache_key: `pw-${opts.purpose}-${opts.taskId}` } : {}),
+    ...(opts.tools && opts.tools.length > 0
+      ? {
+          tools: opts.tools,
+          tool_choice: opts.toolChoice === "required" && !params.toolChoiceRequired ? "auto" : (opts.toolChoice ?? "auto"),
+          ...(params.parallelToolCalls ? { parallel_tool_calls: true } : {}),
+        }
+      : {}),
+    // temperature 0 only where it was tested (OpenAI non-reasoning); other providers keep their default.
+    ...(reasoning && params.reasoningEffort ? { reasoning_effort: spec.reasoningEffort ?? "low" } : !reasoning && spec.provider === "openai" ? { temperature: 0 } : {}),
+    ...(opts.jsonMode && params.jsonMode ? { response_format: { type: "json_object" as const } } : {}),
+    // OpenRouter: keep one upstream per task so the prompt cache keeps hitting (sticky routing is keyed
+    // by session_id; provider.order would disable it), and only route to upstreams that support every
+    // parameter we send (tools). Model fallbacks stay ours — no `models` array — so only measured models run.
+    ...(spec.provider === "openrouter" ? { session_id: `pw-${opts.taskId}`, provider: { require_parameters: true } } : {}),
+  } as unknown as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming
+}
+
 export async function chat(spec: ModelSpec, opts: CallOptions): Promise<LLMResult> {
   const ledger = getSpendLedger()
   // Who pays: the user's key (byok), Vercel's monthly free credit (free_credit), or our OpenAI key.
@@ -136,32 +166,8 @@ async function callWithRetries(spec: ModelSpec, opts: CallOptions, keyOwner: Led
   const ledger = getSpendLedger()
 
   const client = clientFor(spec)
-  const params = PROVIDERS[spec.provider].params
-  // Gemini thinking models take reasoning_effort; Gemma on the same API has no thinking and rejects it (400).
-  const reasoning = isReasoningModel(spec.model) || (spec.provider === "gemini" && /^gemini-/.test(spec.model) && spec.reasoningEffort !== undefined)
   const target = { provider: spec.provider, model: spec.model }
-  // Only send what this provider accepts (unknown parameters are rejected by some, ignored by others).
-  const body = {
-    model: spec.model,
-    messages: renderMessages(opts.messages, target),
-    [params.maxTokensField]: opts.maxOutputTokens,
-    // Per-task cache key: one key shared by every task overflows OpenAI's cache routing at scale.
-    ...(params.promptCacheKey && spec.provider === "openai" ? { prompt_cache_key: `pw-${opts.purpose}-${opts.taskId}` } : {}),
-    ...(opts.tools && opts.tools.length > 0
-      ? {
-          tools: opts.tools,
-          tool_choice: opts.toolChoice === "required" && !params.toolChoiceRequired ? "auto" : (opts.toolChoice ?? "auto"),
-          ...(params.parallelToolCalls ? { parallel_tool_calls: true } : {}),
-        }
-      : {}),
-    // temperature 0 only where it was tested (OpenAI non-reasoning); other providers keep their default.
-    ...(reasoning && params.reasoningEffort ? { reasoning_effort: spec.reasoningEffort ?? "low" } : !reasoning && spec.provider === "openai" ? { temperature: 0 } : {}),
-    ...(opts.jsonMode && params.jsonMode ? { response_format: { type: "json_object" as const } } : {}),
-    // OpenRouter: keep one upstream per task so the prompt cache keeps hitting (sticky routing is keyed
-    // by session_id; provider.order would disable it), and only route to upstreams that support every
-    // parameter we send (tools). Model fallbacks stay ours — no `models` array — so only measured models run.
-    ...(spec.provider === "openrouter" ? { session_id: `pw-${opts.taskId}`, provider: { require_parameters: true } } : {}),
-  } as unknown as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming
+  const body = buildRequestBody(spec, opts)
 
   const attempts = opts.attempts ?? 3
   let lastErr: unknown
