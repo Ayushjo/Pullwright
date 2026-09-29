@@ -151,6 +151,20 @@ describe("misc", () => {
   })
   it("redacts tokens", () => {
     expect(redact("x ghp_abcdefghijklmnopqrstuvwxyz0123456789 y")).toBe("x [REDACTED] y")
+    for (const key of [
+      "AIzaSyD4-abcdefghijklmnopqrstuvwxyz01234",
+      "AQ.Ab8RN6Llcxso-PMYZdLEMIes7wb_a3bAtne6vuDyCdl",
+      "gsk_abcdefghijklmnopqrstuvwxyz0123",
+      "vck_abcdefghijklmnopqrstuvwxyz0123",
+      "nvapi-abcdefghijklmnopqrstuvwxyz0123",
+      "hf_abcdefghijklmnopqrstuvwxyz0123",
+      "sk-or-v1-abcdefghijklmnopqrstuvwxyz",
+      "sk-ant-api03-abcdefghijklmnopqrstuvwxyz",
+    ]) {
+      expect(redact(`key=${key} end`)).toBe("key=[REDACTED] end")
+    }
+    expect(redact("Authorization: Bearer abcdefghijklmnop.qrstuvwx")).toBe("Authorization: Bearer [REDACTED]")
+    expect(redact("AQ.short and gsk_x stay")).toBe("AQ.short and gsk_x stay") // too short to be keys
     expect(redact("https://x-access-token:abc123@github.com")).toContain("[REDACTED]")
     expect(redact("key sk-proj-abcdefghijklmnopqrstuv")).toBe("key [REDACTED]")
   })
