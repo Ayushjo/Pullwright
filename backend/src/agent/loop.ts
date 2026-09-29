@@ -1,6 +1,6 @@
 import { createHash } from "crypto"
 import type { ChatCompletionMessageToolCall } from "openai/resources/chat/completions"
-import { chat, type ModelSpec, type Msg, type LLMResult } from "./llm.js"
+import { chat, type ModelSpec, type Msg, type LLMResult, type UserContent } from "./llm.js"
 import { NoLaneAvailable } from "../llm/gateway.js"
 import type { ChatFn } from "../llm/lanes.js"
 import { SpendLimitError } from "./spend.js"
@@ -57,7 +57,7 @@ export class AgentLoop {
     /** A fixed model, or a gateway call function that routes across lanes. */
     private spec: ModelSpec | ChatFn,
     system: string,
-    firstUser: string,
+    firstUser: UserContent,
     private tools: Tool[],
     private limits: LoopLimits,
     private hooks: LoopHooks,

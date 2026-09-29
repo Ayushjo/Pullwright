@@ -1,5 +1,6 @@
 import OpenAI from "openai"
 import type {
+  ChatCompletionContentPart,
   ChatCompletionMessageParam,
   ChatCompletionFunctionTool,
   ChatCompletionMessageFunctionToolCall,
@@ -20,6 +21,8 @@ import { assertSafeUrl, safeFetch } from "../llm/safeEndpoint.js"
  */
 
 export type Msg = ChatCompletionMessageParam
+/** A user message's content: plain text, or text and image parts. */
+export type UserContent = string | ChatCompletionContentPart[]
 export type ToolDef = ChatCompletionFunctionTool
 /** extra: the provider's sidecar fields (Gemini thought signature); origin: which provider/model wrote it. */
 export type ToolCall = { id: string; name: string; rawArgs: string; extra?: unknown; origin?: string }
