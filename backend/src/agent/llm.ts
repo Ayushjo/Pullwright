@@ -119,7 +119,7 @@ export async function chat(spec: ModelSpec, opts: CallOptions): Promise<LLMResul
   // Who pays: the user's key (byok), Vercel's monthly free credit (free_credit), or our OpenAI key.
   const keyOwner = spendClassOf(spec)
   // Free-tier lanes cost nothing; everything else is priced (unknown models pessimistically).
-  const price = keyOwner === "free" ? { input: 0, cachedInput: 0, output: 0 } : priceFor(spec.model)
+  const price = keyOwner === "free" ? { input: 0, cachedInput: 0, output: 0 } : priceFor(spec.model, spec.provider)
   // Worst case assumes zero cache hits and a full-length completion.
   const worstCase =
     (estimateInputTokens(opts.messages, opts.tools) * price.input + opts.maxOutputTokens * price.output) / 1_000_000
@@ -177,7 +177,7 @@ async function callWithRetries(spec: ModelSpec, opts: CallOptions, keyOwner: Led
       // Gateways (OpenRouter, Vercel) report what they actually charged; prefer that over our estimate.
       const reported = Number((res.usage as { cost?: number } | undefined)?.cost)
       const costUsd =
-        keyOwner === "free" ? 0 : PROVIDERS[spec.provider].reportsCost && Number.isFinite(reported) ? reported : costOf(spec.model, { inputTokens, cachedInputTokens, outputTokens })
+        keyOwner === "free" ? 0 : PROVIDERS[spec.provider].reportsCost && Number.isFinite(reported) ? reported : costOf(spec.model, { inputTokens, cachedInputTokens, outputTokens }, spec.provider)
       await ledger.record(
         {
           taskId: opts.taskId,
