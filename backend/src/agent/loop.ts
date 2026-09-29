@@ -1,4 +1,5 @@
 import { createHash } from "crypto"
+import type { ChatCompletionMessageToolCall } from "openai/resources/chat/completions"
 import { chat, type ModelSpec, type Msg, type LLMResult } from "./llm.js"
 import { SpendLimitError } from "./spend.js"
 import { ArgError, type Control, type Tool, type ToolResult } from "./tools/index.js"
@@ -131,7 +132,15 @@ export class AgentLoop {
       this.messages.push({
         role: "assistant",
         content: res.text || null,
-        tool_calls: res.toolCalls.map((tc) => ({ id: tc.id, type: "function" as const, function: { name: tc.name, arguments: tc.rawArgs } })),
+        // Keep provider sidecars (Gemini thought signatures) and which model wrote each call: the
+        // renderer needs them to send a valid history to whichever model handles the next turn.
+        tool_calls: res.toolCalls.map((tc) => ({
+          id: tc.id,
+          type: "function" as const,
+          function: { name: tc.name, arguments: tc.rawArgs },
+          ...(tc.extra !== undefined ? { extra_content: tc.extra } : {}),
+          ...(tc.origin ? { _origin: tc.origin } : {}),
+        })) as ChatCompletionMessageToolCall[],
       })
 
       for (let i = 0; i < res.toolCalls.length; i++) {
