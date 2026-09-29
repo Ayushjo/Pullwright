@@ -49,7 +49,7 @@ export type CallOptions = {
   toolChoice?: "auto" | "required" | "none"
   /** Force a syntactically valid JSON object response. */
   jsonMode?: boolean
-  onUsage?: (r: LLMResult & { model: string; purpose: string }) => void
+  onUsage?: (r: LLMResult & { model: string; provider: string; purpose: string }) => void
 }
 
 const clients = new Map<string, OpenAI>()
@@ -87,6 +87,17 @@ function isReasoningModel(model: string) {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+/** Honour the provider's Retry-After (capped at 30 s); otherwise back off 1.5 s × attempt². */
+export function retryDelayMs(err: unknown, attempt: number): number {
+  const h = (err as { headers?: Headers | Record<string, string> }).headers
+  const get = (k: string) => (h instanceof Headers ? h.get(k) : h?.[k]) ?? null
+  const ms = Number(get("retry-after-ms"))
+  if (Number.isFinite(ms) && ms > 0) return Math.min(ms, 30_000)
+  const sec = Number(get("retry-after"))
+  if (Number.isFinite(sec) && sec > 0) return Math.min(sec * 1000, 30_000)
+  return 1500 * attempt * attempt
+}
+
 export async function chat(spec: ModelSpec, opts: CallOptions): Promise<LLMResult> {
   const ledger = getSpendLedger()
   const keyOwner: LedgerEntry["keyOwner"] = spec.apiKey ? "byok" : "platform"
@@ -102,11 +113,13 @@ export async function chat(spec: ModelSpec, opts: CallOptions): Promise<LLMResul
     model: spec.model,
     messages: opts.messages,
     max_completion_tokens: opts.maxOutputTokens,
-    prompt_cache_key: `pw-${opts.purpose}`,
+    // Per-task cache key: one key shared by every task overflows OpenAI's cache routing at scale.
+    ...(spec.provider === "openai" && !spec.baseURL ? { prompt_cache_key: `pw-${opts.purpose}-${opts.taskId}` } : {}),
     ...(opts.tools && opts.tools.length > 0
       ? { tools: opts.tools, tool_choice: opts.toolChoice ?? "auto", parallel_tool_calls: true }
       : {}),
-    ...(reasoning ? { reasoning_effort: spec.reasoningEffort ?? "low" } : { temperature: 0 }),
+    // temperature 0 only where it was tested (OpenAI non-reasoning); other providers keep their default.
+    ...(reasoning ? { reasoning_effort: spec.reasoningEffort ?? "low" } : spec.provider === "openai" ? { temperature: 0 } : {}),
     ...(opts.jsonMode ? { response_format: { type: "json_object" as const } } : {}),
   }
 
@@ -145,7 +158,7 @@ export async function chat(spec: ModelSpec, opts: CallOptions): Promise<LLMResul
         outputTokens,
         durationMs: Date.now() - started,
       }
-      opts.onUsage?.({ ...result, model: spec.model, purpose: opts.purpose })
+      opts.onUsage?.({ ...result, model: spec.model, provider: spec.provider, purpose: opts.purpose })
       return result
     } catch (err) {
       if (err instanceof SpendLimitError) throw err
@@ -158,7 +171,7 @@ export async function chat(spec: ModelSpec, opts: CallOptions): Promise<LLMResul
         throw err
       }
       logger.warn(`LLM call failed (attempt ${attempt}/3): ${(err as Error).message}`)
-      await sleep(1500 * attempt * attempt)
+      if (attempt < 3) await sleep(retryDelayMs(err, attempt))
     }
   }
   throw lastErr
