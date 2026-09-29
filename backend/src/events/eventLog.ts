@@ -1,12 +1,33 @@
 import { Redis } from "ioredis"
 import type { TaskEvent } from "./types.js"
 import { createRedisClient } from "../config/redis.js"
-import { appendEventToDb, clearEventsInDb, listEventsFromDb } from "../repositories/eventRepository.js"
+import { clearEventsInDb, dropPendingEvents, listEventsFromDb, maxEventSeqInDb, queueEventForDb } from "../repositories/eventRepository.js"
 import { isDatabaseEnabled } from "../db/prisma.js"
 
+const LIST_TTL = 60 * 60 * 24 // live copy: 24 h
+const SEQ_TTL = 60 * 60 * 24 * 30 // sequence counter outlives the list so seq never restarts
+
+/**
+ * Assign the next sequence number and append the event in one step, so sequences have no gaps.
+ * KEYS: seq counter, event list, list base (seq of the list's first element).
+ * ARGV: event json, list ttl, seq ttl. Returns the event's sequence number.
+ */
+const APPEND = `
+local seq = redis.call('INCR', KEYS[1])
+redis.call('EXPIRE', KEYS[1], ARGV[3])
+local len = redis.call('RPUSH', KEYS[2], ARGV[1])
+if len == 1 then redis.call('SET', KEYS[3], seq, 'EX', ARGV[2]) else redis.call('EXPIRE', KEYS[3], ARGV[2]) end
+redis.call('EXPIRE', KEYS[2], ARGV[2])
+return seq`
+
+/**
+ * Per-task event log. Redis holds the live list (24 h); Postgres is the durable copy, written in
+ * batches. Sequence numbers come from a separate counter that is re-seeded from Postgres if it ever
+ * expires, so a task that waits days (approval, parked) keeps a monotonic sequence and SSE clients
+ * resuming from Last-Event-ID don't drop new events.
+ */
 export class EventLog {
   private redis: Redis
-  private TTL = 60 * 60 * 24 // 24 hours
 
   constructor() {
     this.redis = createRedisClient()
@@ -15,46 +36,49 @@ export class EventLog {
   private key(taskId: string) {
     return `events:${taskId}`
   }
+  private seqKey(taskId: string) {
+    return `pw:evseq:${taskId}`
+  }
+  private baseKey(taskId: string) {
+    return `pw:evbase:${taskId}`
+  }
 
   async append(taskId: string, event: TaskEvent): Promise<number> {
-    const len = await this.redis.rpush(this.key(taskId), JSON.stringify(event))
-    await this.redis.expire(this.key(taskId), this.TTL)
-    const sequence = len - 1 // 0-indexed position
-
-    if (isDatabaseEnabled()) {
-      void appendEventToDb(taskId, sequence, event)
+    if (!(await this.redis.exists(this.seqKey(taskId)))) {
+      // First event, or the counter expired: continue after the highest sequence already stored.
+      const last = isDatabaseEnabled() ? await maxEventSeqInDb(taskId) : -1
+      await this.redis.set(this.seqKey(taskId), String(last), "EX", SEQ_TTL, "NX")
     }
-
-    return sequence
+    const seq = Number(
+      await this.redis.eval(APPEND, 3, this.seqKey(taskId), this.key(taskId), this.baseKey(taskId), JSON.stringify(event), LIST_TTL, SEQ_TTL),
+    )
+    queueEventForDb(taskId, seq, event)
+    return seq
   }
 
+  /** Events with sequence ≥ from, contiguous and in order (callers number them from + i). */
   async range(taskId: string, from = 0): Promise<TaskEvent[]> {
-    // Fast path: the live log in Redis (24h). Postgres is the durable fallback for older tasks.
-    const items = await this.redis.lrange(this.key(taskId), from, -1)
-    if (items.length > 0) {
-      return items.map((item) => JSON.parse(item) as TaskEvent)
+    const baseRaw = await this.redis.get(this.baseKey(taskId))
+    if (baseRaw !== null) {
+      const base = Number(baseRaw)
+      const live = (await this.redis.lrange(this.key(taskId), Math.max(0, from - base), -1)).map((i) => JSON.parse(i) as TaskEvent)
+      if (from >= base || !isDatabaseEnabled()) return live
+      // The live list starts later than requested (it expired once): older part from Postgres.
+      return [...(await listEventsFromDb(taskId, from, base)), ...live]
     }
-
-    if (isDatabaseEnabled()) {
-      const pgEvents = await listEventsFromDb(taskId)
-      return from > 0 ? pgEvents.slice(from) : pgEvents
-    }
-
-    return []
+    return isDatabaseEnabled() ? listEventsFromDb(taskId, from) : []
   }
 
+  /** Number of events so far (= next sequence number). */
   async length(taskId: string): Promise<number> {
-    const redisLen = await this.redis.llen(this.key(taskId))
-    if (redisLen > 0) return redisLen
-    if (isDatabaseEnabled()) {
-      const pgEvents = await listEventsFromDb(taskId)
-      return pgEvents.length
-    }
-    return 0
+    const last = await this.redis.get(this.seqKey(taskId))
+    if (last !== null) return Number(last) + 1
+    return isDatabaseEnabled() ? (await maxEventSeqInDb(taskId)) + 1 : 0
   }
 
   async clear(taskId: string): Promise<void> {
-    await this.redis.del(this.key(taskId))
+    dropPendingEvents(taskId)
+    await this.redis.del(this.key(taskId), this.seqKey(taskId), this.baseKey(taskId))
     if (isDatabaseEnabled()) {
       await clearEventsInDb(taskId)
     }
