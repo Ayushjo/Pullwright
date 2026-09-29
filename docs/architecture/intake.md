@@ -232,3 +232,19 @@ Real issues arrive in three shapes the ladder never tested: short and vague ("X 
   - spec check ≈ 1 call ($0.001 or 1 free T1 request);
   - transcription ≈ 1 call per ≤3 images (free on Groq/Gemini, ≤$0.0015 per image on gpt-5-mini);
   - no extra calls for well-specified, image-free issues beyond the spec check.
+
+### 13.6 Implementation status (P1.5, 2026-09-29)
+
+| Piece | Where | Notes |
+|---|---|---|
+| Attachment extraction, signed-URL pairing, allowlisted download | `backend/src/agent/intake/attachments.ts` | tested live on vercel/next.js#95199 (paired with the signed URL, 49,942 bytes) |
+| `body_html` fetch | `git.ts` `fetchIssue` (`mediaType.format: "full"`) | issue + comments |
+| Transcription | `intake/describe.ts` | lanes: `PW_LANES_VISION` (default Groq qwen3.8-27b → Gemini 3.5 Flash-Lite → Vercel gpt-5-mini); private repos drop lanes that train; transcripts redacted |
+| Vision capability | `llm/registry.ts` `supportsVision` | measured models only; the gateway swaps images for a note on text-only lanes |
+| Image token estimate | `llm/gateway.ts` `IMAGE_TOKENS = 3000` | so base64 length never trips Groq's 8K cap |
+| Spec check + decision | `intake/specCheck.ts`, `intake/decide.ts` | `PW_SPEC_CHECK=off` disables it; a failed check plans as before |
+| Structured decisions | `submit_plan.assumptions`; run message lists them as approved decisions; the reviewer checks the patch against them | `risks` is optional now |
+| Re-plan on changed decisions | `POST /task/:id/replan` | the plan view's "Re-plan with my choices" |
+| Attachments in the UI | `GET /task/:id/attachments/:n` (owner only); `Attachments.tsx` | thumbnails + what the vision model read |
+| Tiers | `agent/tier.ts` | **Change from the plan:** call caps stay with the run loop's measured file-scaled formula (40 → 80 steps). Per-tier caps (25/45/80) would have *lowered* the cap for 5-file tasks (65 today). Tiers choose lanes (`PW_LANES_RUN_S/M/L`), show a size chip, and feed forecasts |
+| Probes | `scripts/pw/probe-spec.mts`, `probe-vague.mts`, `probe-vision.mts` | gates below |
