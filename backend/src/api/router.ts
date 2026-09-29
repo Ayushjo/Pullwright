@@ -314,12 +314,16 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     const s = await load(req, res)
     if (!s) return
     const a = s.intake?.attachments.find((x) => x.n === Number(req.params.n))
-    if (!a?.file || !a.mime || !existsSync(a.file)) return res.status(404).json({ error: "Attachment not available" })
+    // Failures must never be cached (a browser kept a 404 after the file became available).
+    const missing = () => res.setHeader("Cache-Control", "no-store").status(404).json({ error: "Attachment not available" })
+    if (!a?.file || !a.mime || !existsSync(a.file)) return missing()
     res.setHeader("Content-Type", a.mime)
     res.setHeader("Cache-Control", "private, max-age=3600")
     res.setHeader("X-Content-Type-Options", "nosniff")
     // The task dir lives under .tasks/; the path comes from our own state, never from the request.
-    res.sendFile(a.file, { dotfiles: "allow" })
+    res.sendFile(a.file, { dotfiles: "allow" }, (err) => {
+      if (err && !res.headersSent) missing()
+    })
   })
 
   router.post("/task/:taskId/message", async (req, res) => {
