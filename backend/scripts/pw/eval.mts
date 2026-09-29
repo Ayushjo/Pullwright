@@ -145,10 +145,18 @@ async function runItem(item: LadderItem) {
     acceptOut = fails.join("\n")
   }
   const blockedOk = item.expect === "blocked" ? !patch.trim() && (s.status === "needs_input" || /^Needs clarification/.test(String(s.failureReason ?? ""))) : null
-  // Efficiency: per-phase spend and cache hits from the ledger; phase timings, bounces and review rounds from events.
-  const ledgerRows = readFileSync(path.join(backend, ".spend/openai-ledger.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((r: any) => r.taskId === taskId)
+  // Efficiency: per-purpose spend, cache hits and which model/provider ran each purpose — from the
+  // API (llm_calls), so the harness works from any machine. Rows are written in batches: give a
+  // separate worker's last batch a moment to land.
+  await new Promise((r) => setTimeout(r, 4000))
+  const ledgerRows = (await api("GET", `/api/task/${taskId}/calls`).catch(() => [])) as any[]
   const byPurpose: Record<string, number> = {}
-  for (const r of ledgerRows) byPurpose[r.purpose] = +((byPurpose[r.purpose] ?? 0) + r.costUsd).toFixed(4)
+  const lanes: Record<string, string[]> = {}
+  for (const r of ledgerRows) {
+    byPurpose[r.purpose] = +((byPurpose[r.purpose] ?? 0) + r.costUsd).toFixed(4)
+    const lane = `${r.provider}/${r.model}`
+    lanes[r.purpose] = [...new Set([...(lanes[r.purpose] ?? []), lane])]
+  }
   const inTok = ledgerRows.reduce((a: number, r: any) => a + r.inputTokens, 0)
   const cachedTok = ledgerRows.reduce((a: number, r: any) => a + r.cachedInputTokens, 0)
   const outTok = ledgerRows.reduce((a: number, r: any) => a + r.outputTokens, 0)
@@ -186,6 +194,7 @@ async function runItem(item: LadderItem) {
     suite,
     blockedOk,
     costByPurpose: byPurpose,
+    lanes,
     tokens: { in: inTok, cachedPct: inTok ? Math.round((100 * cachedTok) / inTok) : 0, out: outTok },
     phases,
     gateBounces,
@@ -196,7 +205,7 @@ async function runItem(item: LadderItem) {
   }
   appendFileSync(path.join(backend, ".spend/eval-results.jsonl"), JSON.stringify(result) + "\n")
   console.log(`  ⇒ ${result.status} | accept=${accept} | suite: ${suite} | judge=${result.judge} | $${result.costUsd.toFixed(4)} | ${result.minutes}m`)
-  console.log(`    calls=${result.llmCalls} tools=${result.toolCalls} toolFail=${toolFailures} stuck=${stuck} gateBounces=${gateBounces} reviews=${reviewRounds} cached=${result.tokens.cachedPct}% cost=${JSON.stringify(byPurpose)} phases=${JSON.stringify(phases)}${result.stopReason ? " STOP=" + result.stopReason : ""}`)
+  console.log(`    calls=${result.llmCalls} tools=${result.toolCalls} toolFail=${toolFailures} stuck=${stuck} gateBounces=${gateBounces} reviews=${reviewRounds} cached=${result.tokens.cachedPct}% cost=${JSON.stringify(byPurpose)} lanes=${JSON.stringify(lanes)} phases=${JSON.stringify(phases)}${result.stopReason ? " STOP=" + result.stopReason : ""}`)
   if (result.files.length) console.log(`    files: ${result.files.join(", ")}`)
   if (accept === "fail" && acceptOut) console.log(acceptOut.replace(/^/gm, "    ! "))
   if (item.expect === "blocked") console.log(`    blocked-as-expected: ${blockedOk}`)
