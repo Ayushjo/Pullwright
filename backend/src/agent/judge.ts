@@ -38,25 +38,48 @@ export async function judgePatch(
     jsonMode: true,
     ...(onUsage ? { onUsage: (u) => onUsage({ ...u }) } : {}),
   })
-  const m = res.text.match(/\{[\s\S]*\}/)
+  return parseVerdict(res.text, input.requirements)
+}
+
+/**
+ * Turn the reviewer's JSON into a verdict. Requirement ids are mapped back to the checklist; ids that
+ * are not in the checklist are dropped (seen live: every one of 10 requirements met, plus invented
+ * "R11–R14" with no text marked unmet — the task was held and a fix round + repair pass chased
+ * requirements that didn't exist). If the only unmet entries were such phantoms and the reviewer
+ * raised no other concern, the verdict passes.
+ */
+export function parseVerdict(text: string, requirements: string[]): Verdict {
+  const m = text.match(/\{[\s\S]*\}/)
   try {
-    const j = JSON.parse(m ? m[0] : res.text) as Partial<Verdict>
-    // The reviewer answers with requirement ids (R1…); map them back to the checklist text.
-    const reqs = Array.isArray(j.requirements)
-      ? (j.requirements as { id?: string; item?: string; met?: boolean; evidence?: string }[]).map((r, i) => {
-          const n = Number(String(r.id ?? "").replace(/\D/g, "")) || i + 1
-          return { item: r.item ?? `R${n}. ${input.requirements[n - 1] ?? ""}`, met: Boolean(r.met), evidence: String(r.evidence ?? "") }
-        })
-      : []
+    const j = JSON.parse(m ? m[0] : text) as Partial<Verdict>
+    const seen = new Set<number>()
+    let phantoms = 0
+    const reqs: NonNullable<Verdict["requirements"]> = []
+    if (Array.isArray(j.requirements)) {
+      ;(j.requirements as { id?: string; item?: string; met?: boolean; evidence?: string }[]).forEach((r, i) => {
+        const n = Number(String(r.id ?? "").replace(/\D/g, "")) || i + 1
+        const known = requirements.length === 0 || (n >= 1 && n <= requirements.length)
+        if (!known) {
+          if (!r.met) phantoms++
+          return
+        }
+        if (seen.has(n)) return
+        seen.add(n)
+        reqs.push({ item: r.item ?? `R${n}. ${requirements[n - 1] ?? ""}`, met: Boolean(r.met), evidence: String(r.evidence ?? "") })
+      })
+    }
     const unmet = reqs.filter((r) => !r.met)
+    const concerns = Array.isArray(j.concerns) ? j.concerns.map(String).filter((c) => c.trim()) : []
+    const allRealMet = unmet.length === 0 && (requirements.length === 0 || seen.size > 0)
+    const onlyPhantoms = !j.success && phantoms > 0 && allRealMet && concerns.length === 0
     return {
       requirements: reqs,
-      success: Boolean(j.success) && unmet.length === 0,
+      success: (Boolean(j.success) || onlyPhantoms) && unmet.length === 0,
       confidence: j.confidence === "high" || j.confidence === "medium" ? j.confidence : "low",
       explanation: String(j.explanation ?? "").slice(0, 1200),
-      concerns: [...unmet.map((r) => `Unmet: ${r.item}`), ...(Array.isArray(j.concerns) ? j.concerns.map(String) : [])].slice(0, 8),
+      concerns: [...unmet.map((r) => `Unmet: ${r.item}`), ...concerns].slice(0, 8),
     }
   } catch {
-    return { success: false, confidence: "low", explanation: "Reviewer output could not be parsed.", concerns: [res.text.slice(0, 300)] }
+    return { success: false, confidence: "low", explanation: "Reviewer output could not be parsed.", concerns: [text.slice(0, 300)] }
   }
 }
