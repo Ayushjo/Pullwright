@@ -248,3 +248,16 @@ Real issues arrive in three shapes the ladder never tested: short and vague ("X 
 | Attachments in the UI | `GET /task/:id/attachments/:n` (owner only); `Attachments.tsx` | thumbnails + what the vision model read |
 | Tiers | `agent/tier.ts` | **Change from the plan:** call caps stay with the run loop's measured file-scaled formula (40 → 80 steps). Per-tier caps (25/45/80) would have *lowered* the cap for 5-file tasks (65 today). Tiers choose lanes (`PW_LANES_RUN_S/M/L`), show a size chip, and feed forecasts |
 | Probes | `scripts/pw/probe-spec.mts`, `probe-vague.mts`, `probe-vision.mts` | gates below |
+
+### 13.7 P1.5 gate results (2026-09-29)
+
+| Gate | Result |
+|---|---|
+| No unnecessary asks on the 26 original ladder issues (`probe-spec`) | ✅ **0**. Only L09 (the deliberate false-premise item) stops. Note: one prompt revision made H04 ask while rated 1; fixed by rule: ratings 0–1 never stop (`7ebf8dc`) |
+| Vague set: ask, or offer the right reading as a choice (`probe-vague`, full intake, plan stage) | ✅ 5/5. V02 and V07 planned correctly (V02 from existing tests); V06, V10 and VH01 show the right reading one click away ("named filter params", "add pagination", "a different file" / "any mutating op"). Before intake: 0/5 asked, 4 silent wrong guesses. V10 asked in one run and not in another, so asking is not deterministic |
+| Vague issue end to end in the GUI | ✅ V06 ("users want to filter the book list"): one changed decision → re-plan → approve → **ready, L06's hidden acceptance test passes**, $0.017 / 18 calls |
+| Transcripts read the key fact on free vision lanes | ✅ `cart-nan.png` and `checkout-save5.png` read exactly by Groq qwen3.8-27b (0.9 s, $0) and Gemini 3.5 Flash-Lite (5 s, $0); the checkout transcript even derived the expected $102.60 |
+| Image item resolves | ✅ M05 ready + accept pass ($0.013). ⚠️ **The no-image control M05n also passes** ($0.012): `cart.js` documents the intended order in a comment, so this item doesn't measure what the image adds. P2 needs items whose fact is only in the image (e.g. a UI mock with required labels) |
+| Attachments visible in the plan view | ✅ after two fixes: `sendFile` refused the `.tasks/` dot-directory (`73b3bf6`); the browser cached the resulting 404 (`323037a`, `ce72c61`) |
+| Private-repo attachment download | ⏳ needs a private test repo from the owner |
+| Cost of intake | Spec check ≈ $0.0016 per task on gpt-5-mini (≈13% of an easy task); transcription $0 on Groq |
