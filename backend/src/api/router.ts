@@ -318,7 +318,8 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     res.setHeader("Content-Type", a.mime)
     res.setHeader("Cache-Control", "private, max-age=3600")
     res.setHeader("X-Content-Type-Options", "nosniff")
-    res.sendFile(a.file)
+    // The task dir lives under .tasks/; the path comes from our own state, never from the request.
+    res.sendFile(a.file, { dotfiles: "allow" })
   })
 
   router.post("/task/:taskId/message", async (req, res) => {
