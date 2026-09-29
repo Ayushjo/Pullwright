@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from "vitest"
 import { Redis } from "ioredis"
 
-/** Real Redis (db 15): the CAS and lock scripts are exercised for real. Skipped without Redis. */
-const REDIS_URL = process.env.TEST_REDIS_URL ?? "redis://127.0.0.1:6380/15"
+/** Real Redis (db 14): the CAS and lock scripts are exercised for real. Skipped without Redis. */
+const REDIS_URL = process.env.TEST_REDIS_URL ?? "redis://127.0.0.1:6380/14"
 vi.mock("../../config/redis.js", () => ({ createRedisClient: () => new Redis(REDIS_URL, { maxRetriesPerRequest: 1 }) }))
 
 const { taskStore } = await import("../store.js")
