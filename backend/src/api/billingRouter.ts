@@ -77,10 +77,11 @@ export function createBillingRouter() {
     if (!userId) return
     const parsed = SaveKey.safeParse(req.body)
     if (!parsed.success) return res.status(400).json({ error: "Paste a valid API key" })
-    const problem = await validateKey(parsed.data.provider, parsed.data.key)
-    if (problem) return res.status(400).json({ error: problem })
+    const checked = await validateKey(parsed.data.provider, parsed.data.key)
+    if ("error" in checked) return res.status(400).json({ error: checked.error })
     await saveKey(userId, parsed.data.provider, parsed.data.key, parsed.data.model)
-    res.json({ keys: await listKeys(userId) })
+    // Tier and limits (e.g. OpenRouter free tier: free requests left today) for the wallet UI.
+    res.json({ keys: await listKeys(userId), keyInfo: checked.info })
   })
 
   router.delete("/keys/:provider", async (req, res) => {
