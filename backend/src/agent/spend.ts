@@ -2,17 +2,20 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 import type { Redis } from "ioredis"
+import { randomUUID } from "crypto"
+import { queueLlmCall, sumPlatformSpend } from "../repositories/llmCallRepository.js"
 
 /**
  * Exact spend metering for every paid LLM call.
  *
- * Every call is priced from real usage and checked against two hard caps *before* it is made:
- *   - per task   (TASK_BUDGET_USD, default $0.15)
- *   - global key (SPEND_HARD_STOP_USD, default $1.80) — protects the operator's own API key.
- * BYOK calls are metered too but only count against the task cap.
+ * Every call is priced from real usage and checked against the caps *before* it is made:
+ *   - per task   (TASK_BUDGET_USD, default $0.15, scaled per task)
+ *   - operator key, lifetime (SPEND_HARD_STOP_USD) and per month (PLATFORM_MONTHLY_BUDGET_USD)
+ * BYOK calls are metered too but only count against the task cap. The check reserves the call's
+ * worst case atomically (Lua), so calls already in flight count too.
  *
- * Counters live in Redis so the API and any number of workers share one truth; a local JSONL
- * ledger keeps an audit trail of every call (model, tokens, cost).
+ * Counters live in Redis so the API and any number of workers share one truth. Every call is also
+ * a row in llm_calls (the durable record), and a local JSONL keeps a per-process audit trail.
  */
 
 export type Price = { input: number; cachedInput: number; output: number } // USD per 1M tokens
@@ -77,8 +80,46 @@ export type LedgerEntry = {
 }
 
 const K_PLATFORM = "pw:spend:platform"
+const kMonth = (d = new Date()) => `pw:spend:platform:${d.toISOString().slice(0, 7)}`
 const kTask = (id: string) => `pw:spend:task:${id}`
 const kCalls = (id: string) => `pw:spend:calls:${id}`
+const kHoldZ = (scope: string) => `pw:hold:${scope}` // zset holdId → expiresAt
+const kHoldH = (scope: string) => `pw:holdamt:${scope}` // hash holdId → amount
+const TASK_TTL = 60 * 60 * 24 * 30
+const HOLD_TTL_MS = 10 * 60_000 // a call never runs this long; a crashed worker's holds lapse
+
+/**
+ * Check caps and reserve the worst case atomically, counting calls already in flight.
+ * KEYS: taskSpent, taskHoldZ, taskHoldH, lifetime, month, platHoldZ, platHoldH
+ * ARGV: holdId, amount, taskCap, lifetimeCap(-1 = none), monthCap(-1 = none), nowMs, ttlMs, isPlatform(0/1)
+ * Returns {1} or {0, scope, alreadyCommitted}.
+ */
+const RESERVE = `
+local function held(z, h, now)
+  local gone = redis.call('ZRANGEBYSCORE', z, '-inf', now)
+  for _, id in ipairs(gone) do redis.call('HDEL', h, id) end
+  redis.call('ZREMRANGEBYSCORE', z, '-inf', now)
+  local sum = 0
+  for _, v in ipairs(redis.call('HVALS', h)) do sum = sum + tonumber(v) end
+  return sum
+end
+local amount, now, exp = tonumber(ARGV[2]), tonumber(ARGV[6]), tonumber(ARGV[6]) + tonumber(ARGV[7])
+local t = tonumber(redis.call('GET', KEYS[1]) or '0') + held(KEYS[2], KEYS[3], now)
+if t + amount > tonumber(ARGV[3]) then return {0, 'task', tostring(t)} end
+if ARGV[8] == '1' then
+  local ph = held(KEYS[6], KEYS[7], now)
+  local life = tonumber(redis.call('GET', KEYS[4]) or '0') + ph
+  if tonumber(ARGV[4]) >= 0 and life + amount > tonumber(ARGV[4]) then return {0, 'global', tostring(life)} end
+  local month = tonumber(redis.call('GET', KEYS[5]) or '0') + ph
+  if tonumber(ARGV[5]) >= 0 and month + amount > tonumber(ARGV[5]) then return {0, 'month', tostring(month)} end
+  redis.call('ZADD', KEYS[6], exp, ARGV[1]); redis.call('HSET', KEYS[7], ARGV[1], amount)
+  redis.call('PEXPIRE', KEYS[6], ARGV[7]); redis.call('PEXPIRE', KEYS[7], ARGV[7])
+end
+redis.call('ZADD', KEYS[2], exp, ARGV[1]); redis.call('HSET', KEYS[3], ARGV[1], amount)
+redis.call('PEXPIRE', KEYS[2], ARGV[7]); redis.call('PEXPIRE', KEYS[3], ARGV[7])
+return {1}`
+
+export type Hold = { id: string; taskId: string; keyOwner: LedgerEntry["keyOwner"]; amount: number }
 
 export class SpendLedger {
   readonly file: string
@@ -86,12 +127,17 @@ export class SpendLedger {
   // Local mirrors so synchronous readers (UI snapshots) get a recent value without awaiting Redis.
   private platformCache = 0
   private taskCache = new Map<string, number>()
+  // Without Redis (single process, tests): in-flight holds live here.
+  private localHolds = new Map<string, Hold>()
 
   constructor(
     private redis: Redis | null,
     dir = process.env.SPEND_LEDGER_DIR ?? DEFAULT_LEDGER_DIR,
+    /** Lifetime stop for the operator's own key (owner's budget rule). */
     readonly hardStopUsd = Number(process.env.SPEND_HARD_STOP_USD ?? 1.8),
     readonly taskCapUsd = Number(process.env.TASK_BUDGET_USD ?? 0.15),
+    /** Platform-key budget per calendar month (UTC); unset = no monthly limit. */
+    readonly monthlyBudgetUsd = process.env.PLATFORM_MONTHLY_BUDGET_USD ? Number(process.env.PLATFORM_MONTHLY_BUDGET_USD) : Infinity,
   ) {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     this.file = path.join(dir, "openai-ledger.jsonl")
@@ -101,13 +147,22 @@ export class SpendLedger {
     }
   }
 
-  /** First use: make sure Redis knows at least what the local audit ledger already recorded. */
+  /**
+   * First use: Redis must know at least what the durable record says. The llm_calls table is the
+   * source of truth (shared by every worker); the local JSONL only matters when there is no database.
+   * Counters are only ever raised here, never lowered.
+   */
   private seed(): Promise<void> {
     this.seeded ??= (async () => {
       if (!this.redis) return
+      const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1))
+      const [dbLife, dbMonth] = await Promise.all([sumPlatformSpend().catch(() => 0), sumPlatformSpend(monthStart).catch(() => 0)])
+      const life = Math.max(dbLife, this.platformCache)
       const cur = Number((await this.redis.get(K_PLATFORM)) ?? 0)
-      if (cur < this.platformCache) await this.redis.set(K_PLATFORM, String(this.platformCache))
-      this.platformCache = Math.max(cur, this.platformCache)
+      if (cur < life) await this.redis.set(K_PLATFORM, String(life))
+      const curMonth = Number((await this.redis.get(kMonth())) ?? 0)
+      if (curMonth < dbMonth) await this.redis.set(kMonth(), String(dbMonth), "EX", 40 * 24 * 3600)
+      this.platformCache = Math.max(cur, life)
     })()
     return this.seeded
   }
@@ -127,6 +182,12 @@ export class SpendLedger {
     return this.platformCache
   }
 
+  async platformSpentThisMonth(): Promise<number> {
+    await this.seed()
+    if (!this.redis) return this.platformCache
+    return Number((await this.redis.get(kMonth())) ?? 0)
+  }
+
   async taskSpentAsync(taskId: string): Promise<number> {
     if (!this.redis) return this.taskCache.get(taskId) ?? 0
     const v = Number((await this.redis.get(kTask(taskId))) ?? this.taskCache.get(taskId) ?? 0)
@@ -144,25 +205,62 @@ export class SpendLedger {
     return Number((await this.redis.get(kCalls(taskId))) ?? 0)
   }
 
-  /** Throws before a call that could push past either cap. */
-  async assertCanSpend(taskId: string, keyOwner: LedgerEntry["keyOwner"], worstCaseUsd: number, taskCapUsd = this.taskCapUsd) {
+  /**
+   * Reserve the worst-case cost of the next call, or throw. The check counts calls already in
+   * flight (their holds), so parallel calls can't jointly overshoot a cap. Release or record after.
+   */
+  async reserve(taskId: string, keyOwner: LedgerEntry["keyOwner"], amountUsd: number, taskCapUsd = this.taskCapUsd): Promise<Hold> {
     await this.seed()
-    if (keyOwner === "platform") {
-      const spent = await this.platformSpent()
-      if (spent + worstCaseUsd > this.hardStopUsd) {
-        throw new SpendLimitError(
-          "global",
-          `Platform key spend $${spent.toFixed(4)} + next call (≤$${worstCaseUsd.toFixed(4)}) would exceed hard stop $${this.hardStopUsd}`,
-        )
+    const hold: Hold = { id: randomUUID(), taskId, keyOwner, amount: amountUsd }
+    const platform = keyOwner === "platform"
+    if (!this.redis) {
+      const inFlight = (pred: (h: Hold) => boolean) => [...this.localHolds.values()].filter(pred).reduce((a, h) => a + h.amount, 0)
+      const t = this.taskSpent(taskId) + inFlight((h) => h.taskId === taskId)
+      if (t + amountUsd > taskCapUsd) throw this.limitError("task", t, amountUsd, taskCapUsd)
+      if (platform) {
+        const p = this.platformCache + inFlight((h) => h.keyOwner === "platform")
+        if (p + amountUsd > this.hardStopUsd) throw this.limitError("global", p, amountUsd, this.hardStopUsd)
       }
+      this.localHolds.set(hold.id, hold)
+      return hold
     }
-    const t = await this.taskSpentAsync(taskId)
-    if (t + worstCaseUsd > taskCapUsd) {
-      throw new SpendLimitError("task", `Task spend $${t.toFixed(4)} + next call (≤$${worstCaseUsd.toFixed(4)}) would exceed task cap $${taskCapUsd}`)
+    const cap = (n: number) => (Number.isFinite(n) ? String(n) : "-1")
+    const res = (await this.redis.eval(
+      RESERVE, 7,
+      kTask(taskId), kHoldZ(`task:${taskId}`), kHoldH(`task:${taskId}`), K_PLATFORM, kMonth(), kHoldZ("platform"), kHoldH("platform"),
+      hold.id, amountUsd, taskCapUsd, cap(this.hardStopUsd), cap(this.monthlyBudgetUsd), Date.now(), HOLD_TTL_MS, platform ? "1" : "0",
+    )) as [number, string?, string?]
+    if (Number(res[0]) !== 1) {
+      const scope = res[1] as "task" | "global" | "month"
+      const limit = scope === "task" ? taskCapUsd : scope === "global" ? this.hardStopUsd : this.monthlyBudgetUsd
+      throw this.limitError(scope, Number(res[2]), amountUsd, limit)
     }
+    return hold
   }
 
-  async record(entry: Omit<LedgerEntry, "ts">): Promise<LedgerEntry> {
+  async release(hold: Hold): Promise<void> {
+    if (!this.redis) {
+      this.localHolds.delete(hold.id)
+      return
+    }
+    const m = this.redis.multi().zrem(kHoldZ(`task:${hold.taskId}`), hold.id).hdel(kHoldH(`task:${hold.taskId}`), hold.id)
+    if (hold.keyOwner === "platform") m.zrem(kHoldZ("platform"), hold.id).hdel(kHoldH("platform"), hold.id)
+    await m.exec()
+  }
+
+  private limitError(scope: "task" | "global" | "month", committed: number, next: number, limit: number) {
+    const what = scope === "task" ? "Task spend" : scope === "global" ? "Platform key spend" : "Platform spend this month"
+    const cap = scope === "task" ? "task cap" : scope === "global" ? "hard stop" : "monthly budget"
+    return new SpendLimitError(scope === "task" ? "task" : "global", `${what} $${committed.toFixed(4)} + next call (≤$${next.toFixed(4)}) would exceed ${cap} $${limit}`)
+  }
+
+  /** Throws if the next call could push past a cap (check only; nothing is reserved). */
+  async assertCanSpend(taskId: string, keyOwner: LedgerEntry["keyOwner"], worstCaseUsd: number, taskCapUsd = this.taskCapUsd) {
+    await this.release(await this.reserve(taskId, keyOwner, worstCaseUsd, taskCapUsd))
+  }
+
+  /** Record a finished call: counters, audit file, durable row — and drop its hold. */
+  async record(entry: Omit<LedgerEntry, "ts">, hold?: Hold, extra?: { userId?: string; durationMs?: number }): Promise<LedgerEntry> {
     const full: LedgerEntry = { ts: new Date().toISOString(), ...entry }
     appendFileSync(this.file, JSON.stringify(full) + "\n")
     this.taskCache.set(entry.taskId, this.taskSpent(entry.taskId) + entry.costUsd)
@@ -170,11 +268,13 @@ export class SpendLedger {
     if (this.redis) {
       await this.seed()
       const m = this.redis.multi()
-      if (entry.keyOwner === "platform") m.incrbyfloat(K_PLATFORM, entry.costUsd)
-      m.incrbyfloat(kTask(entry.taskId), entry.costUsd).expire(kTask(entry.taskId), 60 * 60 * 24 * 30)
-      m.incr(kCalls(entry.taskId)).expire(kCalls(entry.taskId), 60 * 60 * 24 * 30)
+      if (entry.keyOwner === "platform") m.incrbyfloat(K_PLATFORM, entry.costUsd).incrbyfloat(kMonth(), entry.costUsd).expire(kMonth(), 40 * 24 * 3600)
+      m.incrbyfloat(kTask(entry.taskId), entry.costUsd).expire(kTask(entry.taskId), TASK_TTL)
+      m.incr(kCalls(entry.taskId)).expire(kCalls(entry.taskId), TASK_TTL)
       await m.exec()
     }
+    if (hold) await this.release(hold)
+    queueLlmCall({ ...entry, createdAt: new Date(full.ts), ...(extra?.userId ? { userId: extra.userId } : {}), ...(extra?.durationMs !== undefined ? { durationMs: extra.durationMs } : {}) })
     return full
   }
 }
