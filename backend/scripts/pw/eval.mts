@@ -69,7 +69,7 @@ const STOP = new Set(["ready", "needs_review", "failed", "cancelled", "needs_inp
 async function runItem(item: LadderItem) {
   const repo = materialise(item.fixture, item.gitSource, item.gitRef)
   const t0 = Date.now()
-  const { taskId } = await api("POST", "/api/eval/task", { localRepo: repo, title: item.title, body: item.body, autoApprove: true })
+  const { taskId } = await api("POST", "/api/eval/task", { localRepo: repo, title: item.title, body: item.body, autoApprove: true, ...(MODEL ? { model: MODEL } : {}) })
   process.stdout.write(`\n▶ ${item.id} task=${taskId}\n`)
   let s: Record<string, any> = {}
   let last = ""
@@ -179,6 +179,7 @@ async function runItem(item: LadderItem) {
     ts: new Date().toISOString(),
     id: item.id,
     level: item.level,
+    model: MODEL ?? "default",
     taskId,
     status: s.status,
     reason: s.failureReason ?? s.statusDetail,
@@ -204,7 +205,7 @@ async function runItem(item: LadderItem) {
     stopReason: /Stopped early: (.*)/.exec(String(s.summary ?? ""))?.[1] ?? null,
   }
   appendFileSync(path.join(backend, ".spend/eval-results.jsonl"), JSON.stringify(result) + "\n")
-  console.log(`  ⇒ ${result.status} | accept=${accept} | suite: ${suite} | judge=${result.judge} | $${result.costUsd.toFixed(4)} | ${result.minutes}m`)
+  console.log(`  ⇒ [${result.model}] ${result.status} | accept=${accept} | suite: ${suite} | judge=${result.judge} | $${result.costUsd.toFixed(4)} | ${result.minutes}m`)
   console.log(`    calls=${result.llmCalls} tools=${result.toolCalls} toolFail=${toolFailures} stuck=${stuck} gateBounces=${gateBounces} reviews=${reviewRounds} cached=${result.tokens.cachedPct}% cost=${JSON.stringify(byPurpose)} lanes=${JSON.stringify(lanes)} phases=${JSON.stringify(phases)}${result.stopReason ? " STOP=" + result.stopReason : ""}`)
   if (result.files.length) console.log(`    files: ${result.files.join(", ")}`)
   if (accept === "fail" && acceptOut) console.log(acceptOut.replace(/^/gm, "    ! "))
@@ -212,7 +213,11 @@ async function runItem(item: LadderItem) {
   return result
 }
 
-const wanted = process.argv.slice(2)
+// --model <id> pins the plan/run model for a comparison run (e.g. gpt-5-nano, deepseek/deepseek-v4-flash-0731).
+const argv = process.argv.slice(2)
+const mi = argv.indexOf("--model")
+const MODEL = mi >= 0 ? argv[mi + 1] : undefined
+const wanted = argv.filter((_, i) => mi < 0 || (i !== mi && i !== mi + 1))
 const items = ladder.filter((i) => wanted.length === 0 || wanted.some((w) => i.id.startsWith(w)))
 const budget = await api("GET", "/api/budget")
 console.log(`Platform spend so far: $${Number(budget.platformSpentUsd).toFixed(4)} / hard stop $${budget.hardStopUsd}`)
