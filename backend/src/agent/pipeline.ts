@@ -93,7 +93,7 @@ export class Pipeline {
           type: "llm_call",
           agent: phase === "plan" ? "planner" : "executor",
           model: e.model,
-          provider: "openai",
+          provider: e.provider,
           tokens: { in: e.inputTokens, out: e.outputTokens, cached: e.cachedInputTokens },
           costUsd: e.costUsd,
           durationMs: e.durationMs,
@@ -414,7 +414,8 @@ export class Pipeline {
               s.verdict = v
               // In-context fix rounds after a rejection; anything still unmet goes to the fresh-context repair pass.
               if (v.success || judgeRounds >= Number(process.env.PW_JUDGE_ROUNDS ?? 1)) return null
-              const remaining = getSpendLedger().taskCapUsd - getSpendLedger().taskSpent(taskId)
+              // The task's own cap (scaled by plan size, raised by Continue), not the global default.
+              const remaining = taskCap(s) - getSpendLedger().taskSpent(taskId)
               if (remaining < 0.03) return null
               judgeRounds++
               await this.setStatus(s, "running", "Addressing reviewer findings")
@@ -448,7 +449,7 @@ export class Pipeline {
       // Focused repair pass: after a long run the model tends to skip the last big step even when the
       // reviewer points at it. A fresh, short loop that sees only the unmet requirements does much better.
       const unmet = s.verdict?.requirements?.filter((r) => !r.met) ?? []
-      const left = getSpendLedger().taskCapUsd - getSpendLedger().taskSpent(taskId)
+      const left = taskCap(s) - getSpendLedger().taskSpent(taskId)
       if (out.status === "finished" && !forcedReview && s.gate?.ok && s.verdict && !s.verdict.success && unmet.length && left >= 0.04) {
         await this.setStatus(s, "running", "Completing unmet requirements")
         await this.emit(taskId, { type: "notice", level: "info", message: `Focused repair pass for ${unmet.length} unmet requirement(s)` })

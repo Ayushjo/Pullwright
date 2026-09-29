@@ -14,7 +14,7 @@ export async function judgePatch(
   spec: ModelSpec,
   taskId: string,
   input: { title: string; body: string; plan: string; requirements: string[]; summary: string; patch: string; verify: string; capUsd?: number },
-  onUsage?: (u: { costUsd: number; model: string; inputTokens: number; cachedInputTokens: number; outputTokens: number; durationMs: number }) => void,
+  onUsage?: (u: { costUsd: number; model: string; provider: string; inputTokens: number; cachedInputTokens: number; outputTokens: number; durationMs: number }) => void,
 ): Promise<Verdict> {
   const patch = input.patch.length > 24_000 ? input.patch.slice(0, 24_000) + "\n… (patch truncated)" : input.patch
   const user = [

@@ -12,7 +12,7 @@ import { redact } from "./git.js"
  */
 
 export type LoopEvent =
-  | { type: "llm_call"; model: string; purpose: string; costUsd: number; inputTokens: number; cachedInputTokens: number; outputTokens: number; durationMs: number }
+  | { type: "llm_call"; model: string; provider: string; purpose: string; costUsd: number; inputTokens: number; cachedInputTokens: number; outputTokens: number; durationMs: number }
   | { type: "agent_thought"; text: string }
   | { type: "tool_call"; tool: string; args: Record<string, unknown> }
   | { type: "tool_result"; tool: string; success: boolean; output: string; durationMs: number }
@@ -99,6 +99,7 @@ export class AgentLoop {
             this.hooks.emit({
               type: "llm_call",
               model: u.model,
+              provider: u.provider,
               purpose: u.purpose,
               costUsd: u.costUsd,
               inputTokens: u.inputTokens,
