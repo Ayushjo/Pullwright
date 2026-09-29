@@ -150,3 +150,24 @@ export function seedLimits(provider: ProviderId, model: string): Limits {
   }
   return out
 }
+
+/**
+ * Image input per (provider, model), from probe-vision on our keys (2026-09-29) — only what was measured
+ * counts, everything else is treated as text-only (issue images then reach it as text transcripts).
+ * tokens: measured prompt cost of one 800×800 screenshot.
+ */
+const VISION: { provider: ProviderId | "*"; model: RegExp; tokens: number; ok: boolean; note?: string }[] = [
+  { provider: "*", model: /^(openai\/)?gpt-5(\.\d+)?-mini/, tokens: 751, ok: true },
+  { provider: "*", model: /^(openai\/)?gpt-5(\.\d+)?-nano/, tokens: 938, ok: true },
+  { provider: "*", model: /^(openai\/)?gpt-4o-mini/, tokens: 25_501, ok: false, note: "reads images but bills ~25.5K tokens each" },
+  { provider: "gemini", model: /^gemini-3\.\d+-flash-lite/, tokens: 1_089, ok: true },
+  { provider: "gemini", model: /^gemma-/, tokens: 258, ok: false, note: "reads images but leaks <thought> text into answers" },
+  { provider: "groq", model: /^qwen\/qwen3\.8-27b$/, tokens: 1_282, ok: true },
+  { provider: "groq", model: /^openai\/gpt-oss/, tokens: 0, ok: false, note: "text only (400: content must be a string)" },
+]
+
+/** Whether a lane may be sent issue images (measured to read them at a sane token cost). */
+export function supportsVision(provider: ProviderId, model: string): boolean {
+  const hit = VISION.find((v) => (v.provider === "*" || v.provider === provider) && v.model.test(model))
+  return Boolean(hit?.ok)
+}
