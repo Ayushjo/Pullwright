@@ -74,8 +74,9 @@ export type LedgerEntry = {
   ts: string
   taskId: string
   /** platform = the operator's own key (counts against the platform caps); byok = the user's key;
-   *  free_credit = a provider's free monthly credit (e.g. Vercel AI Gateway) — task cap only. */
-  keyOwner: "platform" | "byok" | "free_credit"
+   *  free_credit = a provider's free monthly credit (e.g. Vercel AI Gateway) — task cap only;
+   *  free = a free-tier key (Gemini, Groq, OpenRouter :free) — costs nothing, still recorded. */
+  keyOwner: "platform" | "byok" | "free_credit" | "free"
   provider: string
   model: string
   purpose: string
