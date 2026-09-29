@@ -150,6 +150,10 @@ async function callWithRetries(spec: ModelSpec, opts: CallOptions, keyOwner: Led
     // temperature 0 only where it was tested (OpenAI non-reasoning); other providers keep their default.
     ...(reasoning && params.reasoningEffort ? { reasoning_effort: spec.reasoningEffort ?? "low" } : !reasoning && spec.provider === "openai" ? { temperature: 0 } : {}),
     ...(opts.jsonMode && params.jsonMode ? { response_format: { type: "json_object" as const } } : {}),
+    // OpenRouter: keep one upstream per task so the prompt cache keeps hitting (sticky routing is keyed
+    // by session_id; provider.order would disable it), and only route to upstreams that support every
+    // parameter we send (tools). Model fallbacks stay ours — no `models` array — so only measured models run.
+    ...(spec.provider === "openrouter" ? { session_id: `pw-${opts.taskId}`, provider: { require_parameters: true } } : {}),
   } as unknown as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming
 
   const attempts = opts.attempts ?? 3
