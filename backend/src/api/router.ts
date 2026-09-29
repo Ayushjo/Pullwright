@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto"
 import { Router, type Request, type Response } from "express"
 import { z } from "zod"
 import path from "path"
@@ -10,6 +11,7 @@ import type { EventLog } from "../events/eventLog.js"
 import { requireAuth } from "./auth.js"
 import { getPrisma, isDatabaseEnabled } from "../db/prisma.js"
 import { countActiveTasksForUser, getStatsForUser, listTasksForUser, userOwnsTask, getMetricsFromDb, getTaskDetailFromDb } from "../repositories/taskRepository.js"
+import { RedisRateStore } from "./redisRateStore.js"
 import { createTask, enqueue } from "../agent/service.js"
 import { taskStore, TERMINAL, type TaskState } from "../agent/store.js"
 import { getSpendLedger } from "../agent/spend.js"
@@ -64,6 +66,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     legacyHeaders: false,
     keyGenerator: (req) => req.session?.userId ?? req.session?.login ?? "operator",
     message: { error: "Task limit reached for this hour — try again later." },
+    store: new RedisRateStore("tasks"), // shared by every API replica
   })
 
   async function load(req: Request, res: Response): Promise<TaskState | null> {
@@ -135,29 +138,40 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
         if (!ent.key) return res.status(402).json({ error: ent.reason ?? "Add an API key or upgrade to run tasks.", code: "needs_key_or_plan" })
         keyChoice = ent.key.kind === "byok" ? { keyKind: "byok", keyProvider: ent.key.provider } : { keyKind: "platform" }
       }
-      if (!req.isOperator && req.session?.userId) {
-        const active = await countActiveTasksForUser(req.session.userId)
-        if (active >= Number(process.env.MAX_ACTIVE_TASKS_PER_USER ?? 1)) {
-          return res.status(429).json({ error: "You already have a task running. Wait for it to finish or cancel it." })
-        }
+      // Count-then-create must not interleave for one user (two quick submits would both pass the
+      // active-task check), so admission is serialized per user with a short owner-checked lock.
+      const admitKey = req.session?.userId ? `admit:${req.session.userId}` : null
+      const admitOwner = randomUUID()
+      if (admitKey && !(await taskStore.acquireLock(admitKey, admitOwner, 15_000))) {
+        return res.status(429).json({ error: "Another task is being created — try again in a moment." })
       }
-      const s = await createTask(
-        {
-          issueUrl: parsed.data.issueUrl,
-          ...(req.session?.userId ? { userId: req.session.userId } : {}),
-          ...(req.session?.login ? { githubLogin: req.session.login } : {}),
-          ...(req.session?.accessToken ? { githubToken: req.session.accessToken } : {}),
-          options: {
-            ...(parsed.data.autoApprove !== undefined ? { autoApprove: parsed.data.autoApprove } : {}),
-            ...(parsed.data.autoPublish !== undefined ? { autoPublish: parsed.data.autoPublish } : {}),
-            ...(parsed.data.draft !== undefined ? { draft: parsed.data.draft } : {}),
-            ...keyChoice,
+      try {
+        if (!req.isOperator && req.session?.userId) {
+          const active = await countActiveTasksForUser(req.session.userId)
+          if (active >= Number(process.env.MAX_ACTIVE_TASKS_PER_USER ?? 1)) {
+            return res.status(429).json({ error: "You already have a task running. Wait for it to finish or cancel it." })
+          }
+        }
+        const s = await createTask(
+          {
+            issueUrl: parsed.data.issueUrl,
+            ...(req.session?.userId ? { userId: req.session.userId } : {}),
+            ...(req.session?.login ? { githubLogin: req.session.login } : {}),
+            ...(req.session?.accessToken ? { githubToken: req.session.accessToken } : {}),
+            options: {
+              ...(parsed.data.autoApprove !== undefined ? { autoApprove: parsed.data.autoApprove } : {}),
+              ...(parsed.data.autoPublish !== undefined ? { autoPublish: parsed.data.autoPublish } : {}),
+              ...(parsed.data.draft !== undefined ? { draft: parsed.data.draft } : {}),
+              ...keyChoice,
+            },
           },
-        },
-        taskRegistry,
-      )
-      logger.info(`Task created ${s.taskId} for ${s.owner}/${s.repo}#${s.issueNumber}${req.session?.login ? ` by ${req.session.login}` : ""}`)
-      res.status(201).json({ taskId: s.taskId, status: s.status, issueUrl: s.issueUrl, issueNumber: s.issueNumber, createdAt: s.createdAt })
+          taskRegistry,
+        )
+        logger.info(`Task created ${s.taskId} for ${s.owner}/${s.repo}#${s.issueNumber}${req.session?.login ? ` by ${req.session.login}` : ""}`)
+        res.status(201).json({ taskId: s.taskId, status: s.status, issueUrl: s.issueUrl, issueNumber: s.issueNumber, createdAt: s.createdAt })
+      } finally {
+        if (admitKey) await taskStore.releaseLock(admitKey, admitOwner)
+      }
     } catch (err) {
       logger.error(`create task failed: ${(err as Error).message}`)
       res.status(400).json({ error: (err as Error).message })
