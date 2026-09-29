@@ -92,6 +92,19 @@ export async function getTaskMetrics(taskId: string) {
 export const approvePlan = (taskId: string, body: { steps?: { title: string; files: string[] }[]; requirements?: string[]; note?: string } = {}) =>
   post<{ ok: true }>(`/api/task/${taskId}/approve`, body)
 export const sendMessage = (taskId: string, text: string) => post<{ ok: true; resumed?: boolean }>(`/api/task/${taskId}/message`, { text })
+/** Send changed plan decisions back to the planner (the plan is rebuilt around them). */
+export const replanTask = (taskId: string, text: string) => post<{ ok: true }>(`/api/task/${taskId}/replan`, { text })
+
+/** An issue image Pullwright downloaded, as an object URL (fetched with the session cookie). */
+export async function attachmentObjectUrl(taskId: string, n: number): Promise<string | null> {
+  try {
+    const res = await fetch(`${BASE}/api/task/${taskId}/attachments/${n}`, { credentials: CREDENTIALS })
+    if (!res.ok) return null
+    return URL.createObjectURL(await res.blob())
+  } catch {
+    return null
+  }
+}
 export const cancelTask = (taskId: string) => post<{ ok: true }>(`/api/task/${taskId}/cancel`)
 export const publishTask = (taskId: string) => post<{ ok: true }>(`/api/task/${taskId}/publish`)
 export const retryTask = (taskId: string) => post<{ ok: true }>(`/api/task/${taskId}/retry`)

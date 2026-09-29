@@ -1,35 +1,120 @@
 import { useState } from 'react'
 import { AlertTriangle, FileCode2, Plus, Trash2 } from 'lucide-react'
-import type { Plan } from '../../types/task'
+import type { Intake, Plan } from '../../types/task'
 import { Button } from '../ui'
+import Attachments from './Attachments'
+
+const TIER = { S: { label: 'Small', calls: 11 }, M: { label: 'Medium', calls: 20 }, L: { label: 'Large', calls: 28 } } as const
+const CLARITY = ['Clear issue', 'Mostly clear issue', 'Vague issue', 'Unclear issue'] as const
+const OTHER = '__other__'
 
 /** Jules-style plan approval: the run starts only after the user approves (optionally editing steps). */
 export default function PlanCard({
+  taskId,
   plan,
+  intake,
   onApprove,
+  onReplan,
   onCancel,
   busy,
 }: {
+  taskId: string
   plan: Plan
+  intake?: Intake | undefined
   onApprove: (edited: { steps?: { title: string; files: string[] }[]; requirements?: string[]; note?: string }) => void
+  onReplan: (text: string) => void
   onCancel: () => void
   busy: boolean
 }) {
   const [steps, setSteps] = useState(plan.steps.map((s) => ({ ...s })))
   const [reqs, setReqs] = useState(plan.requirements ?? [])
   const [note, setNote] = useState('')
+  const decisions = plan.assumptions ?? []
+  const [picked, setPicked] = useState<string[]>(decisions.map((a) => a.chosen))
+  const [other, setOther] = useState<string[]>(decisions.map(() => ''))
   const stepsEdited = JSON.stringify(steps) !== JSON.stringify(plan.steps)
   const reqsEdited = JSON.stringify(reqs) !== JSON.stringify(plan.requirements ?? [])
   const edited = stepsEdited || reqsEdited
+  const choice = (i: number) => (picked[i] === OTHER ? other[i]!.trim() : picked[i]!)
+  const changed = decisions.map((a, i) => choice(i) && choice(i) !== a.chosen)
+  const replan = changed.some(Boolean)
+  const tier = plan.tier ? TIER[plan.tier] : null
+  const clarity = intake?.spec ? CLARITY[intake.spec.underspec] : null
+
+  const replanText = () =>
+    [
+      'Decisions for this plan (final — plan around these):',
+      ...decisions.map((a, i) => `- ${a.question} → ${choice(i) || a.chosen}`),
+      note.trim() ? `\n${note.trim()}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n')
 
   return (
     <div className="rounded-xl border border-primary/25 bg-card shadow-sm overflow-hidden">
       <div className="px-4 py-3 border-b border-border bg-primary/5">
-        <p className="text-xs font-semibold text-primary uppercase tracking-wide">Proposed plan — review before anything runs</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-xs font-semibold text-primary uppercase tracking-wide">Proposed plan — review before anything runs</p>
+          {tier && (
+            <span className="text-[10.5px] font-medium rounded-full bg-muted text-muted-foreground px-2 py-0.5" title={plan.tierReason}>
+              {tier.label} · ~{tier.calls} model calls
+            </span>
+          )}
+          {clarity && (
+            <span className={`text-[10.5px] font-medium rounded-full px-2 py-0.5 ${intake!.spec!.underspec >= 2 ? 'bg-amber-100 text-amber-800' : 'bg-muted text-muted-foreground'}`}>{clarity}</span>
+          )}
+        </div>
         <p className="text-[13.5px] text-foreground mt-1 leading-relaxed">{plan.summary}</p>
       </div>
 
       <div className="p-4 space-y-4">
+        {decisions.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-foreground">Decisions where the issue left room</p>
+            <p className="text-[11.5px] text-muted-foreground mb-2">Pick another option and Pullwright re-plans around it before anything runs.</p>
+            <ul className="space-y-2.5">
+              {decisions.map((a, i) => {
+                const options = [a.chosen, ...a.alternatives.filter((x) => x !== a.chosen)]
+                return (
+                  <li key={i} className={`rounded-lg border p-2.5 ${changed[i] ? 'border-primary/40 bg-primary/5' : 'border-border'}`}>
+                    <p className="text-[12.5px] font-medium text-foreground">{a.question}</p>
+                    <div className="mt-1.5 space-y-1">
+                      {[...options, OTHER].map((o) => (
+                        <label key={o} className="flex items-start gap-2 text-[12.5px] text-foreground cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`decision-${i}`}
+                            className="mt-0.5 accent-[var(--primary)]"
+                            checked={picked[i] === o}
+                            onChange={() => setPicked((p) => p.map((x, j) => (j === i ? o : x)))}
+                          />
+                          {o === OTHER ? (
+                            <input
+                              value={other[i]}
+                              onFocus={() => setPicked((p) => p.map((x, j) => (j === i ? OTHER : x)))}
+                              onChange={(e) => setOther((p) => p.map((x, j) => (j === i ? e.target.value : x)))}
+                              placeholder="Something else…"
+                              className="flex-1 min-w-0 text-[12.5px] bg-transparent border-b border-border focus:border-primary/40 focus:outline-none"
+                            />
+                          ) : (
+                            <span>
+                              {o}
+                              {o === a.chosen && <span className="text-muted-foreground"> — planned</span>}
+                            </span>
+                          )}
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-1.5">Why: {a.evidence}</p>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )}
+
+        <Attachments taskId={taskId} intake={intake} />
+
         {reqs.length > 0 && (
           <div>
             <p className="text-xs font-semibold text-foreground mb-1.5">Requirements it will be checked against</p>
@@ -106,19 +191,25 @@ export default function PlanCard({
           <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
             Cancel task
           </Button>
-          <Button
-            size="sm"
-            loading={busy}
-            onClick={() =>
-              onApprove({
-                ...(stepsEdited ? { steps: steps.filter((s) => s.title.trim().length >= 3) } : {}),
-                ...(reqsEdited ? { requirements: reqs } : {}),
-                ...(note.trim() ? { note: note.trim() } : {}),
-              })
-            }
-          >
-            {edited ? 'Approve edited plan' : 'Approve & start'}
-          </Button>
+          {replan ? (
+            <Button size="sm" loading={busy} onClick={() => onReplan(replanText())}>
+              Re-plan with my choices
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              loading={busy}
+              onClick={() =>
+                onApprove({
+                  ...(stepsEdited ? { steps: steps.filter((s) => s.title.trim().length >= 3) } : {}),
+                  ...(reqsEdited ? { requirements: reqs } : {}),
+                  ...(note.trim() ? { note: note.trim() } : {}),
+                })
+              }
+            >
+              {edited ? 'Approve edited plan' : 'Approve & start'}
+            </Button>
+          )}
         </div>
       </div>
     </div>

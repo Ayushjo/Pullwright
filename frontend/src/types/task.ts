@@ -70,13 +70,42 @@ export type TaskEvent =
   | { type: 'cost'; costUsd: number; llmCalls: number; capUsd: number; timestamp?: string }
   | { type: 'pr_opened'; prUrl: string; timestamp?: string }
 
+export type Assumption = {
+  question: string
+  chosen: string
+  alternatives: string[]
+  evidence: string
+  impact: 'blocking' | 'behavior' | 'cosmetic'
+}
+
 export type Plan = {
   summary: string
   requirements?: string[]
   steps: { title: string; files: string[] }[]
   files: { path: string; new: boolean }[]
+  assumptions?: Assumption[]
+  tier?: 'S' | 'M' | 'L'
+  tierReason?: string
   risks?: string
   blocked?: string
+}
+
+export type IntakeAttachment = {
+  n: number
+  where: string
+  kind: 'image' | 'video' | 'file' | 'unknown'
+  alt: string
+  context: string
+  hasImage: boolean
+  skipped?: string
+  description?: string
+  vision?: { kind: string; visibleText: string; whatLooksWrong: string; confidence: string }
+}
+
+export type Intake = {
+  attachments: IntakeAttachment[]
+  spec: { underspec: 0 | 1 | 2 | 3; kind: string; questions: { id: string; question: string; options: string[]; default: string; impact: string }[] } | null
+  decision: 'ask' | 'plan'
 }
 
 export type ChecklistItem = { title: string; status: 'pending' | 'in_progress' | 'completed' | string }
@@ -101,6 +130,7 @@ export type TaskState = {
   plan?: Plan
   planChecklist?: ChecklistItem[]
   pendingQuestion?: string
+  intake?: Intake
   summary?: string
   gate?: { ok: boolean; problems: string[]; warnings: string[]; verify: { cmd: string; before: number | null; after: number; output: string; newFailures: string[]; fixed: string[] }[] }
   verdict?: { success: boolean; confidence: string; explanation: string; concerns: string[]; requirements?: RequirementCheck[] }

@@ -5,6 +5,7 @@ import AppShell from '../components/AppShell'
 import ActivityFeed from '../components/task/ActivityFeed'
 import DiffView from '../components/task/DiffView'
 import PlanCard from '../components/task/PlanCard'
+import Attachments from '../components/task/Attachments'
 import ReviewPanel from '../components/task/ReviewPanel'
 import Composer from '../components/task/Composer'
 import { Badge, Button, Tabs, useToast } from '../components/ui'
@@ -15,6 +16,7 @@ import {
   extendBudget,
   getDiff,
   publishTask,
+  replanTask,
   restoreCheckpoint,
   retryTask,
   sendMessage,
@@ -272,9 +274,13 @@ function TaskView({ taskId }: { taskId: string }) {
               {status === 'awaiting_approval' && state.plan && (
                 <div className="shrink-0 p-3 sm:p-4 border-b border-border max-h-[70%] overflow-y-auto">
                   <PlanCard
+                    key={JSON.stringify(state.plan.steps)}
+                    taskId={taskId}
                     plan={state.plan}
-                    busy={busy === 'approve'}
+                    intake={state.intake}
+                    busy={busy === 'approve' || busy === 'replan'}
                     onApprove={(edited) => void act('approve', () => approvePlan(taskId, edited), 'Plan approved — the agent is starting')}
+                    onReplan={(text) => void act('replan', () => replanTask(taskId, text), 'Re-planning with your choices')}
                     onCancel={() => void act('cancel', () => cancelTask(taskId), 'Task cancelled')}
                   />
                 </div>
@@ -283,6 +289,11 @@ function TaskView({ taskId }: { taskId: string }) {
                 <div className="shrink-0 p-3 sm:p-4 border-b border-border bg-primary/5">
                   <p className="text-xs font-semibold text-primary mb-1">The agent needs your input</p>
                   <p className="text-[13px] text-foreground mb-2 whitespace-pre-wrap">{state.pendingQuestion}</p>
+                  {state.intake?.attachments.length ? (
+                    <div className="mb-2">
+                      <Attachments taskId={taskId} intake={state.intake} />
+                    </div>
+                  ) : null}
                   <Composer autoFocus placeholder="Your answer…" onSend={(t) => act('answer', () => sendMessage(taskId, t), 'Answer sent — resuming')} />
                 </div>
               )}
