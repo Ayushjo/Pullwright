@@ -4,6 +4,7 @@ import { fileURLToPath } from "url"
 import type { Redis } from "ioredis"
 import { randomUUID } from "crypto"
 import { queueLlmCall, sumPlatformSpend } from "../repositories/llmCallRepository.js"
+import { routePrice } from "../llm/catalog.js"
 
 /**
  * Exact spend metering for every paid LLM call.
@@ -42,7 +43,10 @@ export const PRICES: Record<string, Price> = {
 /** Unknown models are priced pessimistically so the caps still hold. */
 const FALLBACK_PRICE: Price = { input: 3.0, cachedInput: 3.0, output: 15.0 }
 
-export function priceFor(model: string): Price {
+/** Price per 1M tokens: the route's live catalog price when known (prices differ per gateway), else the table. */
+export function priceFor(model: string, provider?: string): Price {
+  const live = provider ? routePrice(provider, model) : undefined
+  if (live) return live
   model = model.replace(/^[a-z0-9-]+\//, "") // gateway ids are vendor/model, e.g. openai/gpt-5-mini, deepseek/…
   const exact = PRICES[model]
   if (exact) return exact
@@ -54,8 +58,8 @@ export function priceFor(model: string): Price {
 
 export type TokenUsage = { inputTokens: number; cachedInputTokens: number; outputTokens: number }
 
-export function costOf(model: string, u: TokenUsage): number {
-  const p = priceFor(model)
+export function costOf(model: string, u: TokenUsage, provider?: string): number {
+  const p = priceFor(model, provider)
   const uncached = Math.max(0, u.inputTokens - u.cachedInputTokens)
   return (uncached * p.input + u.cachedInputTokens * p.cachedInput + u.outputTokens * p.output) / 1_000_000
 }
