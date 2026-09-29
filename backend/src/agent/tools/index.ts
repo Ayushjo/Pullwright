@@ -18,11 +18,25 @@ export type Control =
   | { control: "submit_plan"; plan: SubmittedPlan }
   | { control: "ask_user"; question: string }
 
+export type Assumption = {
+  question: string
+  chosen: string
+  alternatives: string[]
+  /** file:line, "issue text", or "no evidence — default". */
+  evidence: string
+  impact: "blocking" | "behavior" | "cosmetic"
+}
+
 export type SubmittedPlan = {
   summary: string
   requirements: string[]
   steps: { title: string; files: string[] }[]
   files: { path: string; new: boolean }[]
+  /** Choices the planner made where the issue left room (docs/architecture/intake.md §13.3). */
+  assumptions?: Assumption[]
+  /** Size from classifyTier (tier.ts). */
+  tier?: "S" | "M" | "L"
+  tierReason?: string
   risks?: string
   blocked?: string
   /** Set when the user edited steps/requirements at approval time — they override the summary. */
@@ -64,6 +78,26 @@ export class ArgError extends Error {}
  * `blocked` stops the task for a human, so only a real question counts. Small models sometimes fill it
  * with a non-answer ("No blocking issues identified…; however …"); that text moves to `risks` instead.
  */
+export function parseAssumptions(raw: unknown): { assumptions?: Assumption[] } {
+  if (!Array.isArray(raw)) return {}
+  const out: Assumption[] = []
+  for (const x of raw.slice(0, 8)) {
+    if (!x || typeof x !== "object") continue
+    const o = x as Record<string, unknown>
+    const question = String(o.question ?? "").trim()
+    const chosen = String(o.chosen ?? "").trim()
+    if (!question || !chosen) continue
+    out.push({
+      question: question.slice(0, 300),
+      chosen: chosen.slice(0, 300),
+      alternatives: (Array.isArray(o.alternatives) ? o.alternatives : []).map((v) => String(v).trim()).filter(Boolean).slice(0, 3).map((v) => v.slice(0, 200)),
+      evidence: String(o.evidence ?? "").trim().slice(0, 200) || "no evidence — default",
+      impact: o.impact === "cosmetic" ? "cosmetic" : "behavior",
+    })
+  }
+  return out.length ? { assumptions: out } : {}
+}
+
 export function splitBlocked(risks: unknown, blocked: unknown): { risks?: string; blocked?: string } {
   const r = typeof risks === "string" ? risks.trim() : ""
   const b = typeof blocked === "string" ? blocked.trim() : ""
@@ -276,10 +310,27 @@ export function planTools(ws: Workspace, sb: Sandbox, baseline?: Baseline): Tool
             description: "Every file the change will touch",
             items: { type: "object", properties: { path: str("repo-relative path"), new: { type: "boolean" } }, required: ["path", "new"], additionalProperties: false },
           },
-          risks: str("Ambiguities, assumptions, or mismatches between the issue and the code (empty if none)"),
+          assumptions: {
+            type: "array",
+            maxItems: 8,
+            description: "Every choice you made where the issue left room and the options behave differently (names, shapes, status codes, sync/async, scope). Empty only if the issue settles everything.",
+            items: {
+              type: "object",
+              properties: {
+                question: str("The open point, e.g. 'Which query parameters filter GET /books?'"),
+                chosen: str("What the plan does"),
+                alternatives: { type: "array", items: { type: "string" }, description: "Other reasonable readings (1-3)" },
+                evidence: str("file:line that settles it, 'issue text', or 'no evidence — default'"),
+                impact: { type: "string", enum: ["behavior", "cosmetic"] },
+              },
+              required: ["question", "chosen", "alternatives", "evidence", "impact"],
+              additionalProperties: false,
+            },
+          },
+          risks: str("Other notes worth a reviewer's attention (optional, empty if none)"),
           blocked: str("Only if the issue cannot be implemented without clarification: the question to ask. Otherwise empty."),
         },
-        ["summary", "requirements", "steps", "files", "risks", "blocked"],
+        ["summary", "requirements", "steps", "files", "assumptions", "blocked"],
       ),
       handler: async (a) => {
         const steps = Array.isArray(a.steps) ? (a.steps as { title?: unknown; files?: unknown }[]) : []
@@ -293,6 +344,7 @@ export function planTools(ws: Workspace, sb: Sandbox, baseline?: Baseline): Tool
             files: Array.isArray(s.files) ? s.files.map(String) : [],
           })),
           files: files.map((f) => ({ path: String(f.path ?? ""), new: Boolean(f.new) })).filter((f) => f.path),
+          ...parseAssumptions(a.assumptions),
           ...splitBlocked(a.risks, a.blocked),
         }
         // Grounding: every existing-file reference must exist; bad steps are rejected with suggestions.

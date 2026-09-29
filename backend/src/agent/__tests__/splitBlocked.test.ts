@@ -19,3 +19,18 @@ describe("splitBlocked: only a real question stops the task", () => {
     expect(splitBlocked(undefined, undefined)).toEqual({})
   })
 })
+
+import { parseAssumptions } from "../tools/index.js"
+
+describe("parseAssumptions", () => {
+  it("keeps concrete choices, defaults the evidence, drops empty items", () => {
+    const out = parseAssumptions([
+      { question: "Which filters?", chosen: "?author= and ?tag=", alternatives: ["?q= search", ""], evidence: "", impact: "behavior" },
+      { question: "", chosen: "x" },
+      "junk",
+    ])
+    expect(out).toEqual({ assumptions: [{ question: "Which filters?", chosen: "?author= and ?tag=", alternatives: ["?q= search"], evidence: "no evidence — default", impact: "behavior" }] })
+    expect(parseAssumptions(undefined)).toEqual({})
+    expect(parseAssumptions([])).toEqual({})
+  })
+})

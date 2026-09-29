@@ -12,7 +12,9 @@ How to work:
 - Start from the repo map in the task message. Read only what you need: use search to find symbols, view with line ranges for big files.
 - Ground every claim in files you actually saw. Never plan changes to files that do not exist unless the step creates them (mark them "new").
 - If the issue asks you to change or use code it describes as already existing (files, classes, functions, routes, config) and that code is NOT in this repository, do not invent it: set "blocked" with a concrete question explaining what is missing. The task message includes an automated grounding check listing such items.
-- Only plan new files when the issue asks for new functionality; mark them "new". Minor wording mismatches (e.g. a slightly different file name that clearly refers to an existing file) are fine — note them in "risks".
+- Only plan new files when the issue asks for new functionality; mark them "new". Minor wording mismatches (e.g. a slightly different file name that clearly refers to an existing file) are fine — note them in "assumptions".
+- Settle open choices from the code before guessing. When the issue leaves something open (parameter or field names, response and error shapes, status codes, sync vs async, where the change goes, what "done" means), find what the repository already does — existing tests, callers, types, similar code — and follow it (a synchronous class stays synchronous; existing clients keep the response shape they rely on).
+- Record every choice that changes observable behaviour in "assumptions": what you chose, the alternatives, and the evidence (file:line, "issue text", or "no evidence — default"). The user reviews these before approving, so be concrete. Include every open question listed in the task message.
 - List every explicit requirement / acceptance criterion from the issue in "requirements" — the implementation and the reviewer will be checked against this list.
 - When a function signature, exported type or API response shape changes, search for ALL callers/consumers (other modules, the frontend, scripts, tests) and include the necessary updates in the plan.
 - Plan the smallest change that fully resolves the issue. No refactors, no dependency upgrades, no formatting-only changes, no unrelated files.
@@ -57,12 +59,18 @@ export function planTaskMessage(input: {
   repoMap: string
   instructions: string
   verifyCommands: string[]
+  /** Attachment transcripts (intake/describe.ts). */
+  attachments?: string
+  /** Open questions from the specification check (intake/decide.ts). */
+  openQuestions?: string
 }): string {
   return [
     `# Repository: ${input.repo}`,
     `# Issue #${input.issueNumber}: ${input.title}`,
     input.body.trim() ? input.body.trim().slice(0, 6000) : "(no description)",
     input.comments.length ? `\n## Issue comments\n${input.comments.join("\n\n").slice(0, 3000)}` : "",
+    input.attachments ? `\n${input.attachments.slice(0, 8000)}` : "",
+    input.openQuestions ? `\n${input.openQuestions}` : "",
     input.instructions ? `\n${input.instructions.startsWith("## ") ? "" : "## Repository instructions (AGENTS.md etc.)\n"}${input.instructions}` : "",
     input.verifyCommands.length
       ? `\n## Detected verification commands\n${input.verifyCommands.map((c) => `- ${c}`).join("\n")}\n(Pre-existing failures are not part of this task unless the issue asks for them.)`
@@ -73,13 +81,18 @@ export function planTaskMessage(input: {
     .join("\n")
 }
 
-export function runTaskMessage(planMessage: string, plan: { summary: string; requirements?: string[]; steps: { title: string; files: string[] }[]; risks?: string; editedByUser?: boolean }, userNotes?: string): string {
+export function runTaskMessage(
+  planMessage: string,
+  plan: { summary: string; requirements?: string[]; steps: { title: string; files: string[] }[]; risks?: string; assumptions?: { question: string; chosen: string }[]; editedByUser?: boolean },
+  userNotes?: string,
+): string {
   return [
     planMessage,
     `\n## Approved plan`,
     plan.editedByUser ? `(The user edited this plan — follow the steps and requirements below; the original summary was: "${plan.summary}")` : plan.summary,
     plan.requirements?.length ? `\nRequirements (all must be satisfied):\n${plan.requirements.map((r, i) => `R${i + 1}. ${r}`).join("\n")}\n\nSteps:` : "",
     ...plan.steps.map((s, i) => `${i + 1}. ${s.title}${s.files.length ? `  [files: ${s.files.join(", ")}]` : ""}`),
+    plan.assumptions?.length ? `\nDecisions approved with the plan (implement exactly these):\n${plan.assumptions.map((a) => `- ${a.question} → ${a.chosen}`).join("\n")}` : "",
     plan.risks ? `\nRisks noted during planning: ${plan.risks}` : "",
     userNotes ? `\n## Notes from the user\n${userNotes}` : "",
     `\nImplement the plan now.`,
