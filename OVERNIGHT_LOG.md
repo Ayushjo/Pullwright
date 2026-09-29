@@ -188,3 +188,30 @@ H01–H05 run on the bookstore fixture through the eval harness; H06–H10 are r
 
 ## Spend total
 Day 1: **$1.166**. Day 2 (10 hard issues, 4 reruns, 1 cancelled run): **~$1.03**. **Total $2.197** of the $3.00 hard stop. Every call is in `backend/.spend/openai-ledger.jsonl`.
+## Phase 0 (SaaS plan): fixes and instrumentation, 2026-09-29
+
+**Fixed (each with a commit, tests where it made sense):**
+
+| Area | What changed |
+|---|---|
+| Spend | Atomic worst-case reservations (parallel calls can't overshoot a cap); monthly platform budget; new `llm_calls` table as the durable record; budget decisions use the task's own cap; `free_credit` spend class |
+| Events | Durable sequence counter (no restart after the 24 h list expiry) + atomic append; batched Postgres writes |
+| Duplicate runs | Atomic API transitions (409 on the second click); per-task stage lock + status guard in the worker; deterministic job ids, enqueue dedupe |
+| Security | Redaction for Google/Groq/Vercel/NVIDIA/HF/… keys; user tasks never fall back to the operator's `GITHUB_TOKEN`; token refreshed on every owner action |
+| Billing | Dodo product → plan mapping (a pack can't grant Pro); failed webhooks are retried, not dropped |
+| Limits | Per-user admission lock; Redis-backed hourly limit shared by replicas; a worker reaps only its own containers (+ janitor for crashed workers) |
+| LLM calls | Per-task prompt cache key; `Retry-After`; real provider in events; OpenRouter key tier/limits kept; Vercel AI Gateway route |
+| Reviewer | Requirement ids not in the checklist are ignored (H07 was held for invented "R11–R14") |
+| Evals | Calls read from `GET /api/task/:id/calls`; each row records the model/provider per purpose |
+
+**Exit gates**
+- Event sequence stays monotonic after a simulated expiry: ✅ (real-Redis tests)
+- Double-click creates no duplicate runs: ✅ (GUI: two simultaneous approves → 200 + 409, one run)
+- Regression ladder on gpt-5-mini (via Vercel's free credit to stay inside the $3 OpenAI cap):
+  - L01–L11: 11/11 (L09 correctly blocked).
+  - H02–H10: all pass acceptance; after the reviewer fix, H07 and H10 end `ready` (2nd seed).
+  - **H01 fails 3/3** (2× Vercel, 1× direct OpenAI): the agent makes `JsonStore.load/save` async while the hidden test uses them synchronously. The issue text never says "synchronous", so the gate and the reviewer can't catch it. Not caused by phase 0 (no prompt/agent changes; route ruled out). Carried into P2 as a quality item (follow the existing code's sync/async style when the spec is silent).
+  - Cost (seed 1) +28% vs the previous run, almost all from H01's failing loop and H07's phantom-requirement rounds; the rest is within +7%.
+- Cost check: `llm_calls` total for a GUI task ($0.0440) matched Vercel's own `total_used` ($0.0447).
+
+**Spend:** OpenAI ledger $2.42 of $3 (one direct H01 check). Vercel free credit used $1.15 of $5.
