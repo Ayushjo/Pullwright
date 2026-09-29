@@ -9,6 +9,7 @@ import logger from "../logger.js"
 import { createHash } from "crypto"
 import { PROVIDERS, type ProviderId } from "../llm/registry.js"
 import { originOf, renderMessages } from "../llm/render.js"
+import { assertSafeUrl, safeFetch } from "../llm/safeEndpoint.js"
 
 /**
  * Thin, metered OpenAI-compatible chat client.
@@ -71,7 +72,12 @@ function clientFor(spec: ModelSpec): OpenAI {
   if (!c) {
     const apiKey = spec.apiKey ?? (desc.platformKeyEnv ? process.env[desc.platformKeyEnv] : undefined)
     if (!apiKey) throw new Error(`No API key configured for ${spec.provider}`)
-    c = new OpenAI({ apiKey, maxRetries: 0, timeout: 120_000, ...(baseURL ? { baseURL } : {}) })
+    // User-supplied endpoints go through the SSRF guard (private addresses refused at connect time).
+    if (spec.provider === "custom") {
+      if (!baseURL) throw new Error("A custom endpoint needs a base URL")
+      assertSafeUrl(baseURL)
+    }
+    c = new OpenAI({ apiKey, maxRetries: 0, timeout: 120_000, ...(baseURL ? { baseURL } : {}), ...(spec.provider === "custom" ? { fetch: safeFetch } : {}) })
     if (clients.size > 500) clients.delete(clients.keys().next().value!) // bounded: user keys come and go
     clients.set(key, c)
   }
