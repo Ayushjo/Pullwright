@@ -29,7 +29,11 @@ function spec(role: "plan" | "run" | "judge", override?: string): ModelSpec {
   const env = { plan: process.env.PW_PLAN_MODEL, run: process.env.PW_RUN_MODEL, judge: process.env.PW_JUDGE_MODEL }[role]
   const model = override && role !== "judge" ? override : (env ?? "gpt-5-mini")
   const effort = (process.env[`PW_${role.toUpperCase()}_EFFORT`] as ModelSpec["reasoningEffort"]) ?? "low"
-  return { provider: "openai", model, reasoningEffort: effort }
+  // PW_LLM_PROVIDER=vercel routes platform calls through Vercel AI Gateway (same OpenAI models,
+  // paid from its free monthly credit); models are then addressed as vendor/model.
+  const provider = (process.env.PW_LLM_PROVIDER as ModelSpec["provider"] | undefined) ?? "openai"
+  const routed = provider === "vercel" && !model.includes("/") ? `openai/${model}` : model
+  return { provider, model: routed, reasoningEffort: effort }
 }
 
 /** The model spec for a task, paid with the user's own key (BYOK) when the task was created that way. */
