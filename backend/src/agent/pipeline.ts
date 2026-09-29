@@ -10,6 +10,7 @@ import { getSpendLedger, SpendLimitError } from "./spend.js"
 import { Workspace } from "./workspace.js"
 import { Sandbox } from "./sandbox.js"
 import { buildRepoMap, outline } from "./repoMap.js"
+import { chatVia, laneFromSpec, parseLanes, type ChatFn } from "../llm/lanes.js"
 import { detectRepoConfig } from "./repoConfig.js"
 import { cacheableInstall, depKey, restoreDeps, saveDeps } from "./depCache.js"
 import { planTools, runTools } from "./tools/index.js"
@@ -49,6 +50,21 @@ async function modelSpec(s: TaskState, role: "plan" | "run" | "judge"): Promise<
     apiKey: k.key,
     model: s.options.keyProvider === "openrouter" && !model.includes("/") ? `openai/${model}` : model,
   }
+}
+
+/**
+ * The model calls for a role, routed through the gateway:
+ * - the user's own key (BYOK) → only that key;
+ * - an eval run pinned to a model (options.model) → only that model for plan/run (review stays default);
+ * - otherwise the PW_LANES_<ROLE> list (e.g. "vercel:openai/gpt-5-mini,gemini:gemini-3.5-flash-lite"),
+ *   or today's single configured model when no list is set.
+ */
+async function llmFor(s: TaskState, role: "plan" | "run" | "judge"): Promise<ChatFn> {
+  const base = await modelSpec(s, role)
+  if (base.apiKey) return chatVia([laneFromSpec(base, s.userId ?? null)])
+  if (s.options.model && role !== "judge") return chatVia([laneFromSpec(base)])
+  const configured = parseLanes(process.env[`PW_LANES_${role.toUpperCase()}`], base.reasoningEffort)
+  return chatVia(configured.length ? configured : [laneFromSpec(base)])
 }
 
 export function taskCap(s: TaskState): number {
@@ -212,7 +228,7 @@ export class Pipeline {
       const ws = new Workspace(s.workDir!)
 
       sb = await Sandbox.create(taskId, ws.root, { network: false, readOnlyWorkspace: true })
-      const loop = new AgentLoop(taskId, "plan", await modelSpec(s, "plan"), PLAN_SYSTEM, s.planMessage!, planTools(ws, sb, s.baseline), { ...LIMITS.plan, taskCapUsd: taskCap(s) }, {
+      const loop = new AgentLoop(taskId, "plan", await llmFor(s, "plan"), PLAN_SYSTEM, s.planMessage!, planTools(ws, sb, s.baseline), { ...LIMITS.plan, taskCapUsd: taskCap(s) }, {
         emit: this.loopEvents(s, "plan"),
         isCancelled: () => taskStore.isCancelled(taskId),
       })
@@ -312,7 +328,7 @@ export class Pipeline {
           const verifyText = (s.gate?.verify ?? [])
             .map((v) => `${v.cmd}: exit before=${v.before ?? "n/a"} after=${v.after}` + (v.newFailures.length ? `; NEW failures: ${v.newFailures.join("; ")}` : "; no new test failures") + (v.fixed.length ? `; now passing: ${v.fixed.join("; ")}` : ""))
             .join("\n") + (s.gate?.impact?.length ? `\nOther code that calls the changed routes (not in the patch):\n${s.gate.impact.join("\n")}` : "")
-          const v = await judgePatch(await modelSpec(s, "judge"), taskId, {
+          const v = await judgePatch(await llmFor(s, "judge"), taskId, {
             title: s.title,
             body: s.body,
             plan: planText,
@@ -369,7 +385,7 @@ export class Pipeline {
       const loop = new AgentLoop(
         taskId,
         "run",
-        await modelSpec(s, "run"),
+        await llmFor(s, "run"),
         RUN_SYSTEM,
         runTaskMessage(s.planMessage, s.plan) + (s.runMessages ? "" : await plannedFilesContext(ws, plannedFiles)),
         runTools(ws, sandbox, (steps) => {
@@ -462,7 +478,7 @@ export class Pipeline {
         const repair = new AgentLoop(
           taskId,
           "repair",
-          await modelSpec(s, "run"),
+          await llmFor(s, "run"),
           RUN_SYSTEM,
           repairMessage(s, unmet, changed) + (await plannedFilesContext(ws, changed)),
           runTools(ws, sandbox, () => {}, s.baseline),
