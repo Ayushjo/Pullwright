@@ -78,7 +78,8 @@ export class Gateway {
 
   async complete(lanes: Lane[], call: CallOptions): Promise<GatewayResult> {
     const rounds = this.opts.rounds ?? 3
-    const inlineWait = this.opts.inlineWaitMs ?? 30_000
+    // Per-minute limits answer with Retry-After up to 60 s (Vercel free tier: 5 RPM per model, "Retry after 60s").
+    const inlineWait = this.opts.inlineWaitMs ?? 65_000
     const sleep = this.opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)))
     const attempts: Attempt[] = []
     for (let round = 1; ; round++) {
@@ -110,8 +111,8 @@ export class Gateway {
         wait(br.retryInMs)
         continue
       }
-      // Seed limits describe free tiers; paid lanes rely on learned limits and 429s.
-      const seed = lane.spendClass === "free" ? seedLimits(lane.provider, lane.model) : {}
+      // Seed limits describe free tiers (incl. free-credit grants); paid lanes rely on learned limits and 429s.
+      const seed = lane.spendClass === "free" || lane.spendClass === "free_credit" ? seedLimits(lane.provider, lane.model) : {}
       // Per-request caps (Groq free: prompt + max output ≤ 8K): shrink the output budget to fit or skip.
       let maxOut = call.maxOutputTokens
       if (seed.maxRequestTokens) {

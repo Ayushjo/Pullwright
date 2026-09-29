@@ -27,6 +27,12 @@ describe("classifyError — real bodies captured on the owner's keys (2026-09-27
     expect(c.retryAfterMs).toBe(86_400)
   })
 
+  it("Vercel free tier: the per-minute limit's retry hint is only in the message text", () => {
+    const c = classifyError(apiErr(429, { message: "Rate limit exceeded for openai/gpt-5-mini for provider openai: this team's limit of 5 requests per minute (across all regions) was reached. Retry after 60s." }))
+    expect(c.cls).toBe("rate_limited")
+    expect(c.retryAfterMs).toBe(60_000)
+  })
+
   it("Gemini: missing thought signature, high demand, model no longer available", () => {
     expect(classifyError(apiErr(400, { message: "Function call is missing a thought_signature in functionCall parts. This is required for tools to work correctly" })).cls).toBe("signature")
     expect(classifyError(apiErr(503, { message: "This model is currently experiencing high demand. Spikes in demand are usually temporary.", status: "UNAVAILABLE" })).cls).toBe("overloaded")

@@ -51,11 +51,11 @@ function retryAfter(err: ErrLike, body: string): number | undefined {
     const date = Date.parse(ra)
     if (Number.isFinite(date)) return Math.max(0, date - Date.now())
   }
-  // Gemini: "retryDelay": "34s" in RetryInfo; Groq: "Please try again in 1m26.4s"
+  // Gemini: "retryDelay": "34s" in RetryInfo; Groq: "Please try again in 1m26.4s"; Vercel: "Retry after 60s."
   const gem = body.match(/"retryDelay"\s*:\s*"([^"]+)"/)
   if (gem) return parseDuration(gem[1]!)
-  const groq = body.match(/try again in ([0-9hms.]+)/i)
-  if (groq) return parseDuration(groq[1]!)
+  const text = body.match(/(?:try again|retry) (?:in|after) ([0-9hms.]+?)\.?(?:\s|$|")/i)
+  if (text) return parseDuration(text[1]!)
   return undefined
 }
 

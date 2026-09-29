@@ -93,8 +93,10 @@ export const PROVIDERS: Record<ProviderId, ProviderDescriptor> = {
     platformKeyEnv: "AI_GATEWAY_API_KEY", keyPattern: /^vck_[A-Za-z0-9]{20,}$/, params: OPENAI_PARAMS,
     // Model list exposes no_training / zdr per model; free-tier credit covers OpenAI models only (probed 2026-09-29).
     dataPolicy: { free: "no_train", paid: "no_train" },
+    // Free tier: 429 "this team's limit of 5 requests per minute (across all regions)" per model (seen 2026-09-29).
+    freeLimits: { "*": { rpm: 5 } },
     dailyReset: "rolling", reportsCost: true,
-    notes: "Free tier: monthly $5 credit; DeepSeek, GLM and Gemini Flash-Lite return 403 'Free tier users do not have access' (probed).",
+    notes: "Free tier: monthly $5 credit, 5 RPM per model; DeepSeek, GLM and Gemini Flash-Lite return 403 'Free tier users do not have access' (probed).",
   },
   deepseek: {
     id: "deepseek", label: "DeepSeek", kind: "direct", baseURL: "https://api.deepseek.com/v1", keyPattern: /^sk-[a-f0-9]{32}$/,

@@ -61,6 +61,29 @@ describe("Gateway", () => {
     expect(n).toBe(2)
   })
 
+  it("waits out a 60 s Retry-After (Vercel free tier, 5 RPM) instead of failing the task", async (ctx) => {
+    if (!available) ctx.skip()
+    let n = 0
+    const slept: number[] = []
+    const g = gw(async () => {
+      if (n++ === 0) throw apiErr(429, "this team's limit of 5 requests per minute (across all regions) was reached. Retry after 60s.", { "retry-after": "60" })
+      return ok
+    }, { sleep: async (ms: number) => { slept.push(ms); await redis.flushdb() } })
+    const r = await g.complete([lane("vercel", "openai/gpt-5-mini", "free_credit")], call())
+    expect(r.text).toBe("done")
+    expect(slept[0]).toBeGreaterThanOrEqual(59_000)
+  })
+
+  it("paces a free-credit lane at its seeded 5 requests per minute without hitting a 429", async (ctx) => {
+    if (!available) ctx.skip()
+    let sent = 0
+    const slept: number[] = []
+    const g = gw(async () => (sent++, ok), { sleep: async (ms: number) => { slept.push(ms); await redis.flushdb() } })
+    for (let i = 0; i < 6; i++) await g.complete([lane("vercel", "openai/gpt-5-nano", "free_credit")], call())
+    expect(sent).toBe(6)
+    expect(slept.length).toBe(1) // the 6th call waited for the next minute
+  })
+
   it("Groq's 8K request cap: skips a lane the prompt can't fit, shrinks the output budget otherwise", async (ctx) => {
     if (!available) ctx.skip()
     const outs: Record<string, number> = {}
