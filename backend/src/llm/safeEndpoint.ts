@@ -81,3 +81,12 @@ export const safeFetch = ((input: string | URL, init?: RequestInit) => {
   assertSafeUrl(typeof input === "string" ? input : input.toString())
   return undiciFetch(input as string, { ...(init as object), dispatcher: agent, redirect: "error" } as never)
 }) as unknown as typeof fetch
+
+/**
+ * Same guard, but a 3xx comes back to the caller (redirect: "manual") so it can check every hop itself,
+ * e.g. against a host allowlist. Never follows a redirect on its own.
+ */
+export const safeFetchManual = ((input: string | URL, init?: RequestInit) => {
+  assertSafeUrl(typeof input === "string" ? input : input.toString())
+  return undiciFetch(input as string, { ...(init as object), dispatcher: agent, redirect: "manual" } as never)
+}) as unknown as typeof fetch
