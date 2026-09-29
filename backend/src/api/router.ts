@@ -12,6 +12,7 @@ import { requireAuth } from "./auth.js"
 import { getPrisma, isDatabaseEnabled } from "../db/prisma.js"
 import { countActiveTasksForUser, getStatsForUser, listTasksForUser, userOwnsTask, getMetricsFromDb, getTaskDetailFromDb } from "../repositories/taskRepository.js"
 import { RedisRateStore } from "./redisRateStore.js"
+import { flushLlmCalls, listCallsForTask } from "../repositories/llmCallRepository.js"
 import { createTask, enqueue } from "../agent/service.js"
 import { taskStore, TERMINAL, type TaskState } from "../agent/store.js"
 import { getSpendLedger } from "../agent/spend.js"
@@ -198,6 +199,14 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     const after = Number(req.query.after ?? -1)
     const events = await eventLog.range(taskId, Number.isFinite(after) && after >= 0 ? after + 1 : 0)
     res.json(events)
+  })
+
+  // Every model call of a task (from llm_calls): cost, tokens, model and provider per call.
+  router.get("/task/:taskId/calls", async (req, res) => {
+    const s = await load(req, res)
+    if (!s) return
+    await flushLlmCalls().catch(() => 0) // include this process's not-yet-written rows
+    res.json(await listCallsForTask(s.taskId))
   })
 
   router.get("/task/:taskId/stream", async (req, res) => {
