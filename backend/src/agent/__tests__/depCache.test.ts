@@ -4,6 +4,8 @@ import path from "path"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const states = new Map<string, { status: string; updatedAt: string }>()
+const reapStale = vi.fn(async () => 0)
+vi.mock("../sandbox.js", () => ({ SANDBOX_IMAGE: "test-image", Sandbox: { reapStale } }))
 vi.mock("../store.js", () => ({
   TERMINAL: ["published", "failed", "cancelled"],
   taskStore: { get: async (id: string) => states.get(id) ?? null },
@@ -87,5 +89,6 @@ describe("workspace janitor", () => {
     expect(existsSync(path.join(root, "idle", "repo", "web", "package.json"))).toBe(true)
     expect(existsSync(path.join(root, "idle", "repo", "web", "node_modules"))).toBe(false)
     expect(existsSync(path.join(root, "live", "repo", "web", "node_modules"))).toBe(true)
+    expect(reapStale).toHaveBeenCalledWith(3 * 3_600_000)
   })
 })
