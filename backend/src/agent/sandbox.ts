@@ -1,3 +1,4 @@
+import os from "os"
 import path from "path"
 import { existsSync } from "fs"
 import { fileURLToPath } from "url"
@@ -72,7 +73,7 @@ export class Sandbox {
       WorkingDir: "/workspace",
       User: process.env.SANDBOX_USER ?? "1000:1000",
       Env: ["HOME=/tmp", "CI=1", "GIT_OPTIONAL_LOCKS=0", "PAGER=cat", "npm_config_cache=/tmp/.npm", "NO_COLOR=1"],
-      Labels: { "pullwright.task": taskId },
+      Labels: { "pullwright.task": taskId, "pullwright.worker": WORKER_ID },
       HostConfig: {
         Binds: binds,
         ReadonlyRootfs: true,
@@ -128,16 +129,35 @@ export class Sandbox {
     await this.container.remove({ force: true }).catch(() => {})
   }
 
+  /**
+   * Remove this worker's containers (all of them, or one task's). Scoped by the worker label so a
+   * restarting worker never kills sandboxes that belong to another worker on the same Docker host.
+   */
   static async reapAll(taskId?: string) {
     const docker = createDockerClient()
     const list = await docker.listContainers({
       all: true,
-      filters: { label: [taskId ? `pullwright.task=${taskId}` : "pullwright.task"] },
+      filters: { label: taskId ? [`pullwright.task=${taskId}`] : [`pullwright.worker=${WORKER_ID}`] },
     })
     await Promise.all(list.map((c) => docker.getContainer(c.Id).remove({ force: true }).catch(() => {})))
     return list.length
   }
+
+  /** Safety net for crashed workers: remove any Pullwright container older than `maxAgeMs`. */
+  static async reapStale(maxAgeMs: number, now = Date.now()) {
+    const docker = createDockerClient()
+    const list = await docker.listContainers({ all: true, filters: { label: ["pullwright.task"] } })
+    const stale = list.filter((c) => now - c.Created * 1000 > maxAgeMs)
+    await Promise.all(stale.map((c) => docker.getContainer(c.Id).remove({ force: true }).catch(() => {})))
+    return stale.length
+  }
 }
+
+/**
+ * Stable identity of this worker process: set WORKER_ID per worker (e.g. the systemd instance name)
+ * when several workers share one Docker host; defaults to hostname + WORKER_SLOT.
+ */
+export const WORKER_ID = process.env.WORKER_ID ?? `${os.hostname()}-${process.env.WORKER_SLOT ?? "0"}`
 
 /** Head + tail truncation (mini-swe-agent / cline style). */
 export function truncateOutput(s: string, max = 8_000): string {
