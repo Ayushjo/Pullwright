@@ -1,6 +1,7 @@
-import { Queue, Worker, type Job } from "bullmq"
+import { DelayedError, Queue, Worker, type Job } from "bullmq"
+import type { Redis } from "ioredis"
 import { v4 as uuidv4 } from "uuid"
-import { getRedisOptions } from "../config/redis.js"
+import { createRedisClient, getRedisOptions } from "../config/redis.js"
 import type { EventBus } from "../events/eventBus.js"
 import type { TaskRegistry } from "../store/taskRegistry.js"
 import { createTaskInDb, saveMetricsToDb, syncTaskStateToDb } from "../repositories/taskRepository.js"
@@ -8,9 +9,9 @@ import { recordTaskUsage } from "../repositories/usageRepository.js"
 import logger from "../logger.js"
 import { Pipeline, metricsOf, type StageName } from "./pipeline.js"
 import { parseIssueUrl } from "./git.js"
-import { taskStore, TERMINAL, type TaskOptions, type TaskState } from "./store.js"
+import { taskStore, TERMINAL, type TaskOptions, type TaskState, type TaskStatus } from "./store.js"
 import { getSpendLedger } from "./spend.js"
-import { Sandbox } from "./sandbox.js"
+import { Sandbox, WORKER_ID } from "./sandbox.js"
 
 /**
  * Task service: creates tasks, runs the three pipeline stages on a BullMQ queue,
@@ -22,14 +23,32 @@ const QUEUE = "pullwright"
 const connection = getRedisOptions() as Record<string, unknown>
 export const pwQueue = new Queue(QUEUE, { connection })
 
+let genRedis: Redis | null = null
+
+/**
+ * Jobs carry a per-task generation number (monotonic, also a fencing token for later park/resume),
+ * and enqueueing the same stage of the same task twice within 3 s is deduplicated.
+ */
 export async function enqueue(stage: StageName, taskId: string) {
-  await pwQueue.add(stage, { stage, taskId }, {
-    jobId: `${taskId}:${stage}:${Date.now()}`,
+  genRedis ??= createRedisClient()
+  const gen = await genRedis.incr(`pw:gen:${taskId}`)
+  await genRedis.expire(`pw:gen:${taskId}`, 30 * 24 * 3600)
+  await pwQueue.add(stage, { stage, taskId, gen }, {
+    jobId: `${taskId}:${stage}:${gen}`,
+    deduplication: { id: `${taskId}:${stage}`, ttl: 3000 },
     removeOnComplete: { age: 3600, count: 200 },
     removeOnFail: { age: 24 * 3600, count: 500 },
     attempts: 1,
   })
 }
+
+/** Statuses in which a stage may (still) run. A duplicate job that finds the task elsewhere is skipped. */
+const STAGE_FROM: Record<StageName, TaskStatus[]> = {
+  plan: ["queued", "preparing", "planning"],
+  run: ["running", "validating"],
+  publish: ["publishing"],
+}
+const LOCK_MS = 90_000
 
 export function makeStatusSink(registry: TaskRegistry) {
   return async (s: TaskState) => {
@@ -134,12 +153,32 @@ export function startPipelineWorker(bus: EventBus, registry: TaskRegistry) {
   const concurrency = Number(process.env.WORKER_CONCURRENCY ?? 1)
   const worker = new Worker(
     QUEUE,
-    async (job: Job<{ stage: StageName; taskId: string }>) => {
+    async (job: Job<{ stage: StageName; taskId: string; gen?: number }>, token?: string) => {
       const { stage, taskId } = job.data
-      logger.info(`▶ ${stage} ${taskId}`)
-      if (stage === "plan") await pipeline.plan(taskId)
-      else if (stage === "run") await pipeline.run(taskId)
-      else if (stage === "publish") await pipeline.publish(taskId)
+      // One stage per task at a time, across all workers.
+      const owner = `${WORKER_ID}:${job.id}`
+      if (!(await taskStore.acquireLock(taskId, owner, LOCK_MS))) {
+        logger.info(`⏸ ${stage} ${taskId}: another stage holds the task, retrying in 3 s`)
+        await job.moveToDelayed(Date.now() + 3_000, token)
+        throw new DelayedError()
+      }
+      const renew = setInterval(() => {
+        void taskStore.renewLock(taskId, owner, LOCK_MS).then((ok) => ok || logger.warn(`Lost the stage lock for ${taskId}`))
+      }, LOCK_MS / 3)
+      try {
+        const s = await taskStore.get(taskId)
+        if (!s || !STAGE_FROM[stage].includes(s.status)) {
+          logger.info(`↷ skip ${stage} ${taskId}: task is ${s?.status ?? "gone"}`)
+          return
+        }
+        logger.info(`▶ ${stage} ${taskId}`)
+        if (stage === "plan") await pipeline.plan(taskId)
+        else if (stage === "run") await pipeline.run(taskId)
+        else if (stage === "publish") await pipeline.publish(taskId)
+      } finally {
+        clearInterval(renew)
+        await taskStore.releaseLock(taskId, owner)
+      }
     },
     { connection, concurrency, lockDuration: 60_000 },
   )
