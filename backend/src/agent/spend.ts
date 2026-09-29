@@ -33,13 +33,17 @@ export const PRICES: Record<string, Price> = {
   // Anthropic (BYOK) — cached reads are 10% of input.
   "claude-haiku-4-5": { input: 1.0, cachedInput: 0.1, output: 5.0 },
   "claude-sonnet-5": { input: 2.0, cachedInput: 0.2, output: 10.0 },
+  // Cheap candidates via Vercel AI Gateway (ai-gateway.vercel.sh/v1/models, fetched 2026-09-29).
+  // Temporary until the phase-1 catalog syncs prices per route.
+  "deepseek-v4-flash-0731": { input: 0.076, cachedInput: 0.014, output: 0.153 },
+  "glm-5.3-flash": { input: 0.15, cachedInput: 0.03, output: 0.5 },
 }
 
 /** Unknown models are priced pessimistically so the caps still hold. */
 const FALLBACK_PRICE: Price = { input: 3.0, cachedInput: 3.0, output: 15.0 }
 
 export function priceFor(model: string): Price {
-  model = model.replace(/^(openai|anthropic)\//, "") // OpenRouter ids, e.g. openai/gpt-5-mini
+  model = model.replace(/^[a-z0-9-]+\//, "") // gateway ids are vendor/model, e.g. openai/gpt-5-mini, deepseek/…
   const exact = PRICES[model]
   if (exact) return exact
   const base = Object.keys(PRICES)
