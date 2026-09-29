@@ -60,6 +60,18 @@ function argInt(a: Record<string, unknown>, k: string): number | undefined {
 }
 export class ArgError extends Error {}
 
+/**
+ * `blocked` stops the task for a human, so only a real question counts. Small models sometimes fill it
+ * with a non-answer ("No blocking issues identified…; however …"); that text moves to `risks` instead.
+ */
+export function splitBlocked(risks: unknown, blocked: unknown): { risks?: string; blocked?: string } {
+  const r = typeof risks === "string" ? risks.trim() : ""
+  const b = typeof blocked === "string" ? blocked.trim() : ""
+  const notABlock = /^(none|n\/?a|no\b|nothing|not blocked|empty)/i.test(b)
+  const outRisks = notABlock ? [r, b].filter(Boolean).join("\n") : r
+  return { ...(outRisks ? { risks: outRisks } : {}), ...(b && !notABlock ? { blocked: b } : {}) }
+}
+
 // ── read-only tools ──────────────────────────────────────────────────────────
 
 const SKIP_LIST = new Set([".git", "node_modules", "dist", "build", ".next", "coverage", "__pycache__", ".venv", "target"])
@@ -281,8 +293,7 @@ export function planTools(ws: Workspace, sb: Sandbox, baseline?: Baseline): Tool
             files: Array.isArray(s.files) ? s.files.map(String) : [],
           })),
           files: files.map((f) => ({ path: String(f.path ?? ""), new: Boolean(f.new) })).filter((f) => f.path),
-          ...(typeof a.risks === "string" && a.risks.trim() ? { risks: a.risks.trim() } : {}),
-          ...(typeof a.blocked === "string" && a.blocked.trim() ? { blocked: a.blocked.trim() } : {}),
+          ...splitBlocked(a.risks, a.blocked),
         }
         // Grounding: every existing-file reference must exist; bad steps are rejected with suggestions.
         const problems: string[] = []
