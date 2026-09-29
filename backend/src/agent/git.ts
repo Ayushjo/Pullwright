@@ -149,21 +149,25 @@ export function octokit(token?: string, operatorFallback = false) {
 
 export async function fetchIssue(ref: RepoRef, token?: string, operatorFallback = false) {
   const ok = octokit(token, operatorFallback)
+  // format "full" adds body_html, whose attachment URLs are signed for 300 s (the only route to images
+  // in private repos) — download them right after this call (intake/attachments.ts).
+  const full = { mediaType: { format: "full" } }
   const [{ data: issue }, { data: repo }, comments] = await Promise.all([
-    ok.rest.issues.get({ owner: ref.owner, repo: ref.repo, issue_number: ref.issueNumber }),
+    ok.rest.issues.get({ owner: ref.owner, repo: ref.repo, issue_number: ref.issueNumber, ...full }),
     ok.rest.repos.get({ owner: ref.owner, repo: ref.repo }),
     ok.rest.issues
-      .listComments({ owner: ref.owner, repo: ref.repo, issue_number: ref.issueNumber, per_page: 20 })
+      .listComments({ owner: ref.owner, repo: ref.repo, issue_number: ref.issueNumber, per_page: 20, ...full })
       .then((r) => r.data)
       .catch(() => []),
   ])
   if (issue.pull_request) throw new Error("That URL is a pull request, not an issue")
+  const human = comments.filter((c) => !c.user?.type || c.user.type !== "Bot")
   return {
     title: issue.title,
     body: issue.body ?? "",
-    comments: comments
-      .filter((c) => !c.user?.type || c.user.type !== "Bot")
-      .map((c) => `@${c.user?.login ?? "someone"}: ${c.body ?? ""}`),
+    bodyHtml: issue.body_html ?? "",
+    commentsHtml: human.map((c) => ({ body: c.body ?? "", html: c.body_html ?? "" })),
+    comments: human.map((c) => `@${c.user?.login ?? "someone"}: ${c.body ?? ""}`),
     labels: issue.labels.map((l) => (typeof l === "string" ? l : (l.name ?? ""))).filter(Boolean),
     defaultBranch: repo.default_branch,
     isPrivate: repo.private,
