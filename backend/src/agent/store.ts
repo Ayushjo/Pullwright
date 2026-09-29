@@ -1,4 +1,6 @@
 import type { Redis } from "ioredis"
+import type { Described } from "./intake/describe.js"
+import type { SpecCheck } from "./intake/specCheck.js"
 import { createRedisClient } from "../config/redis.js"
 import { decrypt, encrypt } from "../auth/session.js"
 import type { Msg } from "./llm.js"
@@ -58,6 +60,10 @@ export type TaskState = {
   setupCmds?: string[]
   verifyCmds?: string[]
   instructions?: string
+  /** From the GitHub API at fetch time; private repos never send attachments to training lanes. */
+  repoPrivate?: boolean
+  /** Attachments with transcripts and the specification check (intake/, docs/architecture/intake.md). */
+  intake?: { attachments: Described[]; spec: SpecCheck | null; decision: "ask" | "plan" }
   baseline?: VerifyRun[]
   planMessage?: string
   plan?: SubmittedPlan

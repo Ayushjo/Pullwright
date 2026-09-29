@@ -21,6 +21,14 @@ import { groundIssue, groundingNote } from "./grounding.js"
 import { checkpoint, cloneForTask, cloneLocal, diffStat, diffVs, fetchIssue, git, publishPatch, redact, tasksRoot } from "./git.js"
 import { taskStore, type TaskState, type TaskStatus } from "./store.js"
 import { loadKey } from "../billing/index.js"
+import type { ChatCompletionContentPart } from "openai/resources/chat/completions"
+import type { UserContent } from "./llm.js"
+import { dataUrl, downloadAttachments, extractAttachments, type AttachmentRef } from "./intake/attachments.js"
+import { attachmentsBlock, describeImages, type Described } from "./intake/describe.js"
+import { specCheck, type SpecCheck } from "./intake/specCheck.js"
+import { decide, formatQuestions, openQuestionsBlock } from "./intake/decide.js"
+import { classifyTier } from "./tier.js"
+import { PROVIDERS, supportsVision } from "../llm/registry.js"
 
 export type StageName = "plan" | "run" | "publish"
 export type Enqueue = (stage: StageName, taskId: string) => Promise<void>
@@ -63,8 +71,22 @@ async function llmFor(s: TaskState, role: "plan" | "run" | "judge"): Promise<Cha
   const base = await modelSpec(s, role)
   if (base.apiKey) return chatVia([laneFromSpec(base, s.userId ?? null)])
   if (s.options.model && role !== "judge") return chatVia([laneFromSpec(base)])
-  const configured = parseLanes(process.env[`PW_LANES_${role.toUpperCase()}`], base.reasoningEffort)
+  // Executors can be chosen per task size (PW_LANES_RUN_S / _M / _L), falling back to PW_LANES_RUN.
+  const tier = role === "run" ? s.plan?.tier : undefined
+  const tiered = tier ? parseLanes(process.env[`PW_LANES_RUN_${tier}`], base.reasoningEffort) : []
+  const configured = tiered.length ? tiered : parseLanes(process.env[`PW_LANES_${role.toUpperCase()}`], base.reasoningEffort)
   return chatVia(configured.length ? configured : [laneFromSpec(base)])
+}
+
+/** Lanes that read issue images: measured vision models only; private repos skip lanes that train on data. */
+const DEFAULT_VISION_LANES = "groq:qwen/qwen3.8-27b,gemini:gemini-3.5-flash-lite,vercel:openai/gpt-5-mini"
+async function visionChat(s: TaskState): Promise<ChatFn | null> {
+  const base = await modelSpec(s, "plan")
+  if (base.apiKey) return supportsVision(base.provider, base.model) ? chatVia([laneFromSpec(base, s.userId ?? null)]) : null
+  const lanes = parseLanes(process.env.PW_LANES_VISION ?? DEFAULT_VISION_LANES, "low").filter(
+    (l) => supportsVision(l.provider, l.model) && (!s.repoPrivate || PROVIDERS[l.provider].dataPolicy[l.spendClass === "free" || l.spendClass === "free_credit" ? "free" : "paid"] === "no_train"),
+  )
+  return lanes.length ? chatVia(lanes) : null
 }
 
 export function taskCap(s: TaskState): number {
@@ -80,6 +102,18 @@ const LIMITS = {
 }
 
 const EXCLUDES = ["node_modules/", "__pycache__/", ".venv/", "*.pyc", ".npm/", ".pytest_cache/", ".cache/", "coverage/"]
+
+/** The planner's first message: the plan message plus up to 4 issue images (text-only lanes get a note instead). */
+async function planUser(s: TaskState): Promise<UserContent> {
+  const images = (s.intake?.attachments ?? []).filter((a) => a.kind === "image" && a.file && !a.skipped).slice(0, 4)
+  if (!images.length) return s.planMessage!
+  const parts: ChatCompletionContentPart[] = [{ type: "text", text: s.planMessage! }]
+  for (const a of images) {
+    const url = await dataUrl(a).catch(() => null)
+    if (url) parts.push({ type: "text", text: `Attachment ${a.n} (${a.where}):` }, { type: "image_url", image_url: { url } })
+  }
+  return parts.length > 1 ? parts : s.planMessage!
+}
 
 export class Pipeline {
   constructor(
@@ -157,7 +191,7 @@ export class Pipeline {
       await this.setStatus(s, "preparing", "Fetching issue and cloning repository", { startedAt: s.startedAt ?? new Date().toISOString() })
       const workDir = path.join(tasksRoot(), taskId, "repo")
       let baseSha: string
-      let issue: { title: string; body: string; comments: string[]; defaultBranch: string }
+      let issue: { title: string; body: string; comments: string[]; defaultBranch: string; bodyHtml?: string; commentsHtml?: { body: string; html: string }[] }
       if (s.source?.kind === "local") {
         const c = await cloneLocal(s.source.repoPath, workDir)
         baseSha = c.baseSha
@@ -166,8 +200,9 @@ export class Pipeline {
       } else {
         const token = await githubToken(s)
         const ref = { owner: s.owner, repo: s.repo, issueNumber: s.issueNumber }
-        issue = await fetchIssue(ref, token)
-        Object.assign(s, { title: issue.title, body: issue.body, comments: issue.comments, defaultBranch: issue.defaultBranch })
+        const fetched = await fetchIssue(ref, token)
+        issue = fetched
+        Object.assign(s, { title: issue.title, body: issue.body, comments: issue.comments, defaultBranch: issue.defaultBranch, repoPrivate: fetched.isPrivate })
         await taskStore.put(s)
         baseSha = await cloneForTask(ref, issue.defaultBranch, workDir, token)
       }
@@ -210,6 +245,7 @@ export class Pipeline {
       if (grounding.missingPaths.length || grounding.missingSymbols.length) {
         await this.emit(taskId, { type: "notice", level: "warn", message: `Issue mentions things not found in the repo: ${[...grounding.missingPaths, ...grounding.missingSymbols].join(", ")}` })
       }
+      const intake = await this.intake(s, issue, map.text, groundingNote(grounding))
       s.planMessage = planTaskMessage({
         repo: `${s.owner}/${s.repo}`,
         issueNumber: s.issueNumber,
@@ -222,13 +258,22 @@ export class Pipeline {
           const b = s.baseline?.find((x) => x.cmd === c)
           return b ? `${c}   (currently ${b.exitCode === 0 ? "passing" : `FAILING, exit ${b.exitCode}`})` : c
         }),
+        attachments: intake.attachmentsText,
+        openQuestions: intake.openQuestions,
       })
       await taskStore.put(s)
+      if (intake.ask) {
+        // Work can't sensibly start: ask before the planner spends calls on a guess (the answer re-plans).
+        if (s.options.autoApprove) return this.fail(s, `Needs clarification: ${intake.ask}`)
+        await this.setStatus(s, "needs_input", intake.ask, { pendingQuestion: intake.ask })
+        await this.emit(taskId, { type: "question", question: intake.ask })
+        return
+      }
       }
       const ws = new Workspace(s.workDir!)
 
       sb = await Sandbox.create(taskId, ws.root, { network: false, readOnlyWorkspace: true })
-      const loop = new AgentLoop(taskId, "plan", await llmFor(s, "plan"), PLAN_SYSTEM, s.planMessage!, planTools(ws, sb, s.baseline), { ...LIMITS.plan, taskCapUsd: taskCap(s) }, {
+      const loop = new AgentLoop(taskId, "plan", await llmFor(s, "plan"), PLAN_SYSTEM, await planUser(s), planTools(ws, sb, s.baseline), { ...LIMITS.plan, taskCapUsd: taskCap(s) }, {
         emit: this.loopEvents(s, "plan"),
         isCancelled: () => taskStore.isCancelled(taskId),
       })
@@ -240,6 +285,9 @@ export class Pipeline {
       if (out.status === "cancelled") return this.cancelled(s)
       if (out.status !== "plan") return this.fail(s, out.status === "failed" ? out.reason : "Planner did not produce a plan")
       const plan = out.control.plan
+      const size = classifyTier(plan)
+      plan.tier = size.tier
+      plan.tierReason = size.reason
       s.plan = plan
       s.planChecklist = plan.steps.map((st) => ({ title: st.title, status: "pending" }))
       await this.emit(taskId, { type: "plan_ready", plan })
@@ -259,6 +307,77 @@ export class Pipeline {
       if (sb) await sb.destroy()
       if (err instanceof SpendLimitError) return this.fail(s, `Budget cap reached: ${err.message}`)
       return this.fail(s, (err as Error).message)
+    }
+  }
+
+  /** Usage from intake calls (transcripts, spec check) shows in the feed and cost like planner calls. */
+  private tracked(s: TaskState, chat: ChatFn): ChatFn {
+    const sink = this.loopEvents(s, "plan")
+    return (o) => chat({ ...o, onUsage: (u) => sink({ type: "llm_call", purpose: u.purpose, model: u.model, provider: u.provider, costUsd: u.costUsd, inputTokens: u.inputTokens, cachedInputTokens: u.cachedInputTokens, outputTokens: u.outputTokens, durationMs: u.durationMs }) })
+  }
+
+  /**
+   * Intake (docs/architecture/intake.md): attachments → transcripts → specification check → ask or plan.
+   * Failures here never fail the task: without transcripts or a spec check it plans as before.
+   */
+  private async intake(
+    s: TaskState,
+    issue: { title: string; body: string; comments: string[]; bodyHtml?: string; commentsHtml?: { body: string; html: string }[] },
+    repoMap: string,
+    grounding: string,
+  ): Promise<{ attachmentsText: string; openQuestions: string; ask?: string }> {
+    const refs: AttachmentRef[] = extractAttachments(issue.body, issue.bodyHtml, "issue")
+    issue.comments.forEach((c, i) => {
+      const raw = issue.commentsHtml?.[i]
+      refs.push(...extractAttachments(raw?.body ?? c, raw?.html, `comment ${i + 1}`, refs.length + 1))
+    })
+    let described: Described[] = []
+    if (refs.length) {
+      await this.setStatus(s, "planning", `Reading ${refs.length} attachment${refs.length === 1 ? "" : "s"}`)
+      try {
+        const atts = await downloadAttachments(refs, path.join(tasksRoot(), s.taskId, "attachments"), { local: s.source?.kind === "local" })
+        const chat = atts.some((a) => a.kind === "image" && a.file) ? await visionChat(s) : null
+        described = chat ? await describeImages(atts, issue, this.tracked(s, chat), s.taskId) : atts
+        const read = described.filter((a) => a.description && !a.skipped).length
+        const skipped = described.filter((a) => a.skipped)
+        const noVision = !chat && atts.some((a) => a.kind === "image" && a.file)
+        await this.emit(s.taskId, {
+          type: "notice",
+          level: skipped.length || noVision ? "warn" : "info",
+          message: [
+            read ? `Read ${read} attachment${read === 1 ? "" : "s"}` : "",
+            noVision ? "no model that can read images is available — images are skipped" : "",
+            ...skipped.map((a) => `attachment ${a.n}: ${a.skipped}`),
+          ].filter(Boolean).join("; "),
+        })
+      } catch (err) {
+        if (err instanceof SpendLimitError) throw err
+        logger.warn(`attachments failed for ${s.taskId}: ${(err as Error).message}`)
+      }
+    }
+    const attachmentsText = attachmentsBlock(described)
+
+    let spec: SpecCheck | null = null
+    if (process.env.PW_SPEC_CHECK !== "off") {
+      try {
+        spec = await specCheck({ title: issue.title, body: issue.body, comments: issue.comments, attachments: attachmentsText, grounding, repoMap }, this.tracked(s, await llmFor(s, "plan")), s.taskId)
+      } catch (err) {
+        if (err instanceof SpendLimitError) throw err
+        logger.warn(`spec check failed for ${s.taskId}: ${(err as Error).message}`)
+      }
+    }
+    const d = decide(spec)
+    s.intake = { attachments: described, spec, decision: d.action }
+    if (spec) {
+      const label = ["clear", "mostly clear", "vague", "unclear"][spec.underspec]
+      const n = spec.questions.length
+      await this.emit(s.taskId, { type: "notice", level: spec.underspec >= 2 ? "warn" : "info", message: `Specification check: ${label} (${spec.underspec}/3)${n ? ` — ${n} open question${n === 1 ? "" : "s"}${d.action === "ask" ? " for you" : " for the planner to settle"}` : ""}` })
+    }
+    const questions = d.action === "ask" ? d.questions : d.open
+    return {
+      attachmentsText,
+      openQuestions: openQuestionsBlock(questions),
+      ...(d.action === "ask" ? { ask: formatQuestions(d.questions, d.reason) } : {}),
     }
   }
 
@@ -331,7 +450,11 @@ export class Pipeline {
           const v = await judgePatch(await llmFor(s, "judge"), taskId, {
             title: s.title,
             body: s.body,
-            plan: planText,
+            plan: [
+              planText,
+              s.plan!.assumptions?.length ? `Decisions made where the issue left room (check the patch follows them):\n${s.plan!.assumptions.map((a) => `- ${a.question} → ${a.chosen}`).join("\n")}` : "",
+              attachmentsBlock(s.intake?.attachments ?? []),
+            ].filter(Boolean).join("\n\n"),
             requirements: s.plan!.requirements ?? [],
             summary: s.summary ?? "",
             patch,
