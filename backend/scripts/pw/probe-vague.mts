@@ -41,9 +41,16 @@ for (const v of pick) {
   const calls = (await api("GET", `/api/task/${taskId}/calls`).catch(() => [])) as unknown
   const cost = (Array.isArray(calls) ? (calls as { costUsd?: number }[]) : []).reduce((a, c) => a + (c.costUsd ?? 0), 0)
   const p = s.plan ?? {}
-  const row = { ts: new Date().toISOString(), id: v.id, taskId, model: MODEL ?? "default", status: s.status, asked: Boolean(p.blocked), question: p.blocked ?? null, requirements: p.requirements ?? [], risks: p.risks ?? null, files: (p.files ?? []).map((f: { path: string }) => f.path), costUsd: Number(cost.toFixed(4)) }
+  const question = s.status === "needs_input" ? (s.pendingQuestion ?? p.blocked ?? null) : null
+  const row = {
+    ts: new Date().toISOString(), id: v.id, taskId, model: MODEL ?? "default", status: s.status, asked: Boolean(question), question,
+    underspec: s.intake?.spec?.underspec ?? null, tier: p.tier ?? null,
+    assumptions: (p.assumptions ?? []) as { question: string; chosen: string; alternatives: string[]; evidence: string }[],
+    requirements: p.requirements ?? [], risks: p.risks ?? null, files: (p.files ?? []).map((f: { path: string }) => f.path), costUsd: Number(cost.toFixed(4)),
+  }
   appendFileSync(path.join(backend, ".spend/vague-probes.jsonl"), JSON.stringify(row) + "\n")
-  console.log(`\n▶ ${v.id} (${v.title} / "${v.body}") → ${s.status}${row.asked ? "  ASKED: " + row.question : ""}  $${row.costUsd}`)
+  console.log(`\n▶ ${v.id} (${v.title} / "${v.body}") → ${s.status}  underspec=${row.underspec} tier=${row.tier}  $${row.costUsd}${row.asked ? `\n   ASKED: ${String(row.question).replace(/\n/g, "\n          ")}` : ""}`)
+  for (const a of row.assumptions) console.log(`   DECISION: ${a.question} → ${a.chosen}  | alternatives: ${a.alternatives.join(" / ")}  | why: ${a.evidence}`)
   for (const r of row.requirements) console.log(`   R: ${r}`)
   if (row.risks) console.log(`   risks: ${String(row.risks).replace(/\s+/g, " ").slice(0, 300)}`)
   const asserts = (base.acceptance?.code ?? "").split("\n").filter((l) => /assert|expect|status|\?|query/.test(l)).slice(0, 8)
