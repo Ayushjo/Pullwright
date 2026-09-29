@@ -111,6 +111,26 @@ describe("Gateway", () => {
     expect((err as InstanceType<typeof NoLaneAvailable>).retryAt).toBeNull()
   })
 
+  it("a timeout, a 413 and a missing Gemini signature each move on to the next lane", async (ctx) => {
+    if (!available) ctx.skip()
+    const failures: Record<string, () => Error> = {
+      "slow": () => Object.assign(new Error("Request timed out."), {}),
+      "tiny": () => apiErr(413, "Request too large for model"),
+      "gem": () => apiErr(400, "Function call is missing a thought_signature in functionCall parts."),
+    }
+    const g = gw(async (spec) => {
+      const f = failures[spec.model]
+      if (f) throw f()
+      return ok
+    })
+    const r = await g.complete(
+      [lane("openai", "slow"), lane("groq", "tiny", "free"), lane("gemini", "gem", "free"), lane("vercel", "openai/gpt-5-mini", "free_credit")],
+      call(),
+    )
+    expect(r.lane.provider).toBe("vercel")
+    expect(r.attempts.map((a) => a.outcome)).toEqual(["timeout", "too_large", "signature", "ok"])
+  })
+
   it("budget errors are final, not a reason to try another lane", async (ctx) => {
     if (!available) ctx.skip()
     let calls = 0
