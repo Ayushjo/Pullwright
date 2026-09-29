@@ -6,7 +6,7 @@ const REDIS_URL = process.env.TEST_REDIS_URL ?? "redis://127.0.0.1:6380/9"
 vi.mock("../../agent/spend.js", () => ({ SpendLimitError: class SpendLimitError extends Error {} }))
 vi.mock("../../agent/llm.js", () => ({ chat: vi.fn() }))
 
-const { Gateway, NoLaneAvailable } = await import("../gateway.js")
+const { Gateway, NoLaneAvailable, estimateTokens, IMAGE_TOKENS } = await import("../gateway.js")
 const { QuotaTracker } = await import("../quota.js")
 const { CircuitBreaker } = await import("../breaker.js")
 const { SpendLimitError } = await import("../../agent/spend.js")
@@ -163,5 +163,14 @@ describe("Gateway", () => {
     })
     await expect(g.complete([lane("openai", "gpt-5-mini"), lane("vercel", "openai/gpt-5-mini", "free_credit")], call())).rejects.toBeInstanceOf(SpendLimitError)
     expect(calls).toBe(1)
+  })
+})
+
+describe("estimateTokens", () => {
+  it("counts an image at a flat rate, not by its base64 length", () => {
+    const b64 = "A".repeat(400_000) // a ~300 KB screenshot
+    const withImage = estimateTokens({ messages: [{ role: "user", content: [{ type: "text", text: "what is wrong?" }, { type: "image_url", image_url: { url: `data:image/png;base64,${b64}` } }] }] })
+    expect(withImage).toBeGreaterThanOrEqual(IMAGE_TOKENS)
+    expect(withImage).toBeLessThan(IMAGE_TOKENS + 100)
   })
 })

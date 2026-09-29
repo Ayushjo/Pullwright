@@ -163,9 +163,23 @@ export class Gateway {
   }
 }
 
-/** Prompt size estimate (chars/3.5 incl. tool schemas) — phase 1 refines this per provider. */
+/**
+ * Tokens one image costs, upper end of what we measured (probe-vision, 2026-09-29): gpt-5-mini 751 at
+ * 800 px and 3,001 at 1600 px, Gemini Flash-Lite 1,089, Groq qwen3.8-27b 1,282 (Groq caps at 2,048).
+ */
+export const IMAGE_TOKENS = 3_000
+
+/** Prompt size estimate (chars/3.5 incl. tool schemas; images at a flat IMAGE_TOKENS, not their base64 size). */
 export function estimateTokens(call: Pick<CallOptions, "messages" | "tools">): number {
-  let chars = JSON.stringify(call.messages).length
+  let images = 0
+  const json = JSON.stringify(call.messages, (key, value) => {
+    if (value && typeof value === "object" && (value as { type?: string }).type === "image_url") {
+      images++
+      return { type: "image_url" }
+    }
+    return value
+  })
+  let chars = json.length
   if (call.tools) chars += JSON.stringify(call.tools).length
-  return Math.ceil(chars / 3.5)
+  return Math.ceil(chars / 3.5) + images * IMAGE_TOKENS
 }
