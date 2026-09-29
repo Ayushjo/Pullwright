@@ -98,7 +98,8 @@ export const replanTask = (taskId: string, text: string) => post<{ ok: true }>(`
 /** An issue image Pullwright downloaded, as an object URL (fetched with the session cookie). */
 export async function attachmentObjectUrl(taskId: string, n: number): Promise<string | null> {
   try {
-    const res = await fetch(`${BASE}/api/task/${taskId}/attachments/${n}`, { credentials: CREDENTIALS })
+    // Revalidate (ETag) rather than trust a cached response: a stale 404 would hide an available image.
+    const res = await fetch(`${BASE}/api/task/${taskId}/attachments/${n}`, { credentials: CREDENTIALS, cache: 'no-cache' })
     if (!res.ok) return null
     return URL.createObjectURL(await res.blob())
   } catch {
