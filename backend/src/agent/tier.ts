@@ -32,11 +32,8 @@ export function classifyTier(plan: Pick<SubmittedPlan, "files" | "requirements">
   return { tier: "S", reason: `${files} file${files === 1 ? "" : "s"}, ${reqs} requirement${reqs === 1 ? "" : "s"}` }
 }
 
-/**
- * Executor call cap per tier. M keeps today's 40 (the ladder passes with it); S is ~2.3× its bucket
- * median so a stuck small task stops early; L gets headroom (hard-task p90 was 77 calls end to end).
- */
-export const RUN_STEPS: Record<Tier, number> = { S: 25, M: 40, L: 50 }
+// Call caps stay with the run loop's file-scaled formula (40 → 80 steps, pipeline.ts), which the ladder
+// passes with; tiers choose lanes (PW_LANES_RUN_<TIER>) and drive the UI and capacity forecasts.
 
 /** Expected calls and minutes per tier (bucket medians), for the UI and capacity forecasts. */
 export const TIER_EXPECT: Record<Tier, { calls: number; label: string }> = {
