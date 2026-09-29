@@ -66,6 +66,11 @@ export function queueEventForDb(taskId: string, sequence: number, event: TaskEve
   }
 }
 
+/** Drop a task's not-yet-written events (a retry clears the log; stale rows must not reappear). */
+export function dropPendingEvents(taskId: string): void {
+  for (let i = pending.length - 1; i >= 0; i--) if (pending[i]!.taskId === taskId) pending.splice(i, 1)
+}
+
 export async function flushEventsToDb(): Promise<number> {
   if (timer) {
     clearTimeout(timer)
