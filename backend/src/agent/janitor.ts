@@ -4,6 +4,7 @@ import path from "path"
 import logger from "../logger.js"
 import { evictDeps } from "./depCache.js"
 import { tasksRoot } from "./git.js"
+import { Sandbox } from "./sandbox.js"
 import { taskStore, TERMINAL, type TaskStatus } from "./store.js"
 
 /**
@@ -70,6 +71,8 @@ export async function sweepWorkspaces(now = Date.now()): Promise<{ removed: numb
     }
   }
   await evictDeps()
+  // Containers left behind by a crashed worker: no stage holds a sandbox for anywhere near 3 h.
+  await Sandbox.reapStale(hours(Number(process.env.JANITOR_CONTAINER_MAX_HOURS ?? 3))).catch(() => 0)
   return { removed, slimmed }
 }
 
