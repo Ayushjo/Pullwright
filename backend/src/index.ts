@@ -19,6 +19,7 @@ import { disconnectPrisma, verifyDatabaseConnection } from './db/prisma.js';
 import { startPipelineWorker } from './agent/service.js';
 import { Sandbox } from './agent/sandbox.js';
 import { startJanitor } from './agent/janitor.js';
+import { flushEventsToDb } from './repositories/eventRepository.js';
 import { useRedisForSpend } from './agent/spend.js';
 import { createRedisClient } from './config/redis.js';
 
@@ -91,6 +92,7 @@ const shutdown = async (signal: string) => {
   logger.info(`${signal} received — shutting down`);
   await worker?.close();
   if (MODE !== "api") await Sandbox.reapAll().catch(() => 0);
+  await flushEventsToDb().catch(() => 0); // buffered event rows must reach Postgres before exit
   await disconnectPrisma();
   server.close(() => process.exit(0));
 };
