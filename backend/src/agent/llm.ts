@@ -137,7 +137,8 @@ async function callWithRetries(spec: ModelSpec, opts: CallOptions, keyOwner: Led
 
   const client = clientFor(spec)
   const params = PROVIDERS[spec.provider].params
-  const reasoning = isReasoningModel(spec.model) || (spec.provider === "gemini" && spec.reasoningEffort !== undefined)
+  // Gemini thinking models take reasoning_effort; Gemma on the same API has no thinking and rejects it (400).
+  const reasoning = isReasoningModel(spec.model) || (spec.provider === "gemini" && /^gemini-/.test(spec.model) && spec.reasoningEffort !== undefined)
   const target = { provider: spec.provider, model: spec.model }
   // Only send what this provider accepts (unknown parameters are rejected by some, ignored by others).
   const body = {
