@@ -144,7 +144,7 @@ export class Pipeline {
         issue = { title: s.title, body: s.body, comments: s.comments, defaultBranch: c.branch }
         s.defaultBranch = c.branch
       } else {
-        const token = await taskStore.getToken(taskId)
+        const token = await githubToken(s)
         const ref = { owner: s.owner, repo: s.repo, issueNumber: s.issueNumber }
         issue = await fetchIssue(ref, token)
         Object.assign(s, { title: issue.title, body: issue.body, comments: issue.comments, defaultBranch: issue.defaultBranch })
@@ -551,7 +551,8 @@ export class Pipeline {
       let patch = (await taskStore.loadPatch(taskId)) ?? ""
       if (s.rejectedFiles.length) patch = filterPatch(patch, new Set(s.rejectedFiles))
       if (!patch.trim()) return this.fail(s, "Nothing to publish (all files rejected or empty patch)")
-      const token = await taskStore.getToken(taskId)
+      const token = await githubToken(s)
+      if (!token) return this.fail(s, "Your GitHub sign-in for this task expired. Sign in again and click Publish.")
       const title = prTitle(s)
       const res = await publishPatch({
         ref: { owner: s.owner, repo: s.repo, issueNumber: s.issueNumber },
@@ -672,6 +673,14 @@ async function plannedFilesContext(ws: Workspace, files: string[]): Promise<stri
     parts.push(body)
   }
   return parts.length ? `\n\n## Planned files (current content — no need to re-read these in full)\n${parts.join("\n\n")}` : ""
+}
+
+/**
+ * The task owner's GitHub token (refreshed on each of their actions). Only tasks without a user —
+ * operator and eval runs — may fall back to the operator's GITHUB_TOKEN; a user's task never does.
+ */
+async function githubToken(s: TaskState): Promise<string | undefined> {
+  return (await taskStore.getToken(s.taskId)) ?? (s.userId ? undefined : process.env.GITHUB_TOKEN)
 }
 
 function repairMessage(s: TaskState, unmet: { item: string; evidence: string }[], changed: string[]): string {
