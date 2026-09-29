@@ -26,3 +26,15 @@ describe("Dodo webhook verification (Standard Webhooks)", () => {
     expect(verifyWebhook(body, { "webhook-id": "m", "webhook-timestamp": now, "webhook-signature": sign("m", now, body) }, undefined)).toBe(false)
   })
 })
+
+describe("OpenRouter key info", () => {
+  it("keeps tier, limits and today's free-model requests", async () => {
+    const { openRouterKeyInfo } = await import("../index.js")
+    const info = openRouterKeyInfo({
+      data: { is_free_tier: true, limit: null, limit_remaining: null, usage: 0, free_model_daily_requests: { used: 3, limit: 50, remaining: 47 } },
+    })
+    expect(info).toEqual({ tier: "free", limitUsd: null, limitRemainingUsd: null, freeRequestsToday: { used: 3, limit: 50, remaining: 47 } })
+    expect(openRouterKeyInfo({ data: { is_free_tier: false, limit: 20, limit_remaining: 12.5 } })).toEqual({ tier: "paid", limitUsd: 20, limitRemainingUsd: 12.5 })
+    expect(openRouterKeyInfo(null)).toEqual({ tier: "unknown" })
+  })
+})
