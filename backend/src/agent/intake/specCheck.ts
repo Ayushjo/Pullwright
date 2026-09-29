@@ -34,7 +34,8 @@ Rate "underspec" with this rubric:
 2 = The issue is vague and there is room for ambiguity. It is unclear what a successful solution would look like.
 3 = It is almost impossible to understand what you are being asked to do without further information.
 
-Then list at most 3 open questions whose answers would change the observable result: names of parameters/fields/routes, response or error shapes and status codes, which component or behaviour to change, sync vs async API, what counts as done. Never ask about implementation details the agent can decide, tests, or style. Ask nothing when underspec is 0.
+If the request itself can be read in more than one way (e.g. "returns too much data" could mean paginate, filter, drop fields, or compress; "X is lost" could mean persist it somewhere new or fix a bug that deletes it), the FIRST question must be what the change should be, with each distinct reading as an option — include the most common way projects solve that complaint.
+Then list at most 3 open questions in total whose answers would change the observable result: names of parameters/fields/routes, response or error shapes and status codes, which component or behaviour to change, sync vs async API, what counts as done. Never ask about implementation details the agent can decide, tests, or style. Ask nothing when underspec is 0.
 For each question give 2-4 concrete options and a default: the option most consistent with the issue text and ordinary conventions.
 impact: "blocking" = work cannot sensibly start (the thing to change does not exist, the request contradicts itself, no identifiable goal); "behavior" = the options produce different observable behaviour; "cosmetic" = naming or wording only.
 answerableFromCode: true when reading the repository (existing tests, callers, docs, similar code) would most likely settle it.
