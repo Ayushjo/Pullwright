@@ -1,0 +1,20 @@
+{
+ "id": "L03-slugify-71241b46",
+ "source": "L03-slugify",
+ "model": "gpt-5-nano",
+ "label": "pass",
+ "title": "slugify produces repeated and leading/trailing dashes, and drops accented letters",
+ "body": "`slugify` in src/format.js has a few problems:\n\n- `slugify('  C++ -- The   Good Parts!  ')` returns `c----the-good-parts` \u2014 repeated dashes should collapse to one: `c-the-good-parts`.\n- `slugify('-Hello-')` should not start or end with a dash: `hello`.\n- Accented letters are removed instead of transliterated: `slugify('Caf\u00e9 Society')` gives `caf-society`, expected `cafe-society`.\n\nPlease fix it and add tests for these cases.",
+ "plan": "Improve slugify to normalize accented characters, collapse repeated dashes, and trim leading/trailing dashes; add tests for cases involving spaces and punctuation.\n1. Update slugify implementation to normalize Unicode and normalize dashes\n2. Add tests for slugify edge cases in test/format.test.js",
+ "requirements": [
+  "slugify handles accented letters by transliterating them (e.g. Caf\u00e9 -> cafe)",
+  "slugify collapses repeated dashes into a single dash",
+  "slugify does not start or end with a dash (e.g. '-Hello-' -> 'hello')",
+  "slugify('  C++ -- The   Good Parts!  ') -> 'c-the-good-parts'",
+  "unit tests cover the three edge cases: accented letters, repeated dashes, and leading/trailing dashes"
+ ],
+ "summary": "Implemented slugify improvements and added tests.\n\nWhat changed:\n- src/format.js: Enhanced slugify to normalize accented characters (Unicode transliteration via NFKD), collapse repeated dashes, and trim leading/trailing dashes. This fixes: (R1) Caf\u00e9 Society -> cafe-society, (R2) multiple dashes from spaces/punctuation, (R3) leading/trailing dashes.\n- test/format.test.js: Added edge-case tests asserting correct behavior for spaces/punctuation, leading/trailing dashes, and accented letters.\n\nVerification:\n- Ran npm test. New tests pass: 5) slugify basic titles, 6) slugify edge cases.\n- Note: There remains a pre-existing failing test (divide by zero throws RangeError) which is not related to this issue. The rest of the suite passed.\n\nFiles touched:\n- src/format.js\n- test/format.test.js\n\nRequirements:\n1. Slugify implementation updated in src/format.js\n2. Tests for slugify edge cases added to test/format.test.js\n3. All changes pass local tests except pre-existing failing test: divide by zero error",
+ "patch": "diff --git a/src/format.js b/src/format.js\nindex d5cc1f9..f80534c 100644\n--- a/src/format.js\n+++ b/src/format.js\n@@ -24,9 +24,16 @@ export function formatCurrency(cents, currency = 'USD') {\n export function slugify(text) {\n   return String(text)\n     .toLowerCase()\n+    // normalize accented characters to their base letters (e.g. Caf\u00e9 -> cafe)\n+    .normalize('NFKD')\n+    .replace(/[\\u0300-\\u036f]/g, '')\n     .trim()\n     .replace(/[^a-z0-9\\s-]/g, '')\n     .replace(/\\s+/g, '-')\n+    // collapse multiple dashes into one\n+    .replace(/-+/g, '-')\n+    // trim leading/trailing dashes\n+    .replace(/^-+|-+$/g, '')\n }\n \n /**\ndiff --git a/test/format.test.js b/test/format.test.js\nindex 66c8de7..e86bb6a 100644\n--- a/test/format.test.js\n+++ b/test/format.test.js\n@@ -13,6 +13,15 @@ test('slugify basic titles', () => {\n   assert.equal(slugify('Clean Code'), 'clean-code')\n })\n \n+test('slugify edge cases', () => {\n+  // repeated and leading/trailing dashes should be collapsed and trimmed\n+  assert.equal(slugify('  C++ -- The   Good Parts!  '), 'c-the-good-parts')\n+  // leading/trailing dashes are removed\n+  assert.equal(slugify('-Hello-'), 'hello')\n+  // accented letters should be transliterated\n+  assert.equal(slugify('Caf\u00e9 Society'), 'cafe-society')\n+})\n+\n test('formatDate', () => {\n   assert.equal(formatDate('2017-03-16T10:00:00Z'), '2017-03-16')\n   assert.throws(() => formatDate('nope'), TypeError)\n",
+ "verify": "npm test --silent: exit before=1 after=1; no new test failures",
+ "origJudge": true
+}

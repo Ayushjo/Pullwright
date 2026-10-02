@@ -1,0 +1,21 @@
+{
+ "id": "M05-checkout-save5-f7b6376a",
+ "source": "M05-checkout-save5",
+ "model": "default",
+ "label": "pass",
+ "title": "Checkout total is wrong with a fixed discount code",
+ "body": "Checkout shows the wrong total when a fixed discount code is used \u2014 screenshot below.\n\n![checkout](attachment://checkout-save5.png)\n\nPercent codes look fine.",
+ "plan": "Fix tax and total calculation for fixed discount codes by computing tax on (subtotal - discount) with rounding to nearest cent and clamping taxable base at zero. This changes Cart.total() to apply fixed discounts before tax and keeps percent discounts behavior unchanged.\n1. Apply fixed discount before tax in Cart.total",
+ "requirements": [
+  "When a fixed discount code is applied, tax must be computed on (subtotal - discount) not on subtotal.",
+  "Tax must be rounded to the nearest cent before computing total.",
+  "Taxable base must be clamped at zero if discount >= subtotal.",
+  "Percent discount codes must produce the same behavior as before (discount applied multiplicatively; order with tax does not change result).",
+  "Cart.total() must return an integer number of cents.",
+  "Cart.checkout() must continue to return receipt.totalCents computed from the updated Cart.total()."
+ ],
+ "summary": "Changed Cart.total() in src/cart.js to compute tax for fixed discounts on (subtotal - discount) with clamping and rounding. Kept percent-discount behavior unchanged. Verified by running npm test --silent: all tests pass that were passing before; one unrelated pre-existing test (divide by zero throws RangeError) still fails.\n\nRequirements:\n1. R1: When a fixed discount code is applied, tax is computed on (subtotal - discount): satisfied in src/cart.js total(), lines computing discountedBase = Math.max(0, subtotal - discount.value) and tax = Math.round(discountedBase * TAX_RATE).\n2. R2: Tax rounded to nearest cent before computing total: satisfied in src/cart.js total(), tax uses Math.round(...).\n3. R3: Taxable base clamped at zero if discount >= subtotal: satisfied via Math.max(0, ...).\n4. R4: Percent discount codes produce same behavior: satisfied \u2014 percent branch still applies percent to taxed amount (keeps previous behavior) in src/cart.js total().\n5. R5: Cart.total() returns integer cents: satisfied \u2014 returns integers from Math.round and integer arithmetic.\n6. R6: Cart.checkout() continues to return receipt.totalCents from Cart.total(): satisfied \u2014 checkout() still calls this.total() and includes totalCents in receipt (src/cart.js).",
+ "patch": "diff --git a/src/cart.js b/src/cart.js\nindex 9c7f263..c1a029b 100644\n--- a/src/cart.js\n+++ b/src/cart.js\n@@ -47,11 +47,21 @@ export class Cart {\n    */\n   total() {\n     const subtotal = this.subtotal()\n-    const taxed = Math.round(subtotal * (1 + TAX_RATE))\n     const discount = this.discountCode ? DISCOUNT_CODES[this.discountCode] : null\n-    if (!discount) return taxed\n-    if (discount.type === 'percent') return Math.round(taxed * (1 - discount.value / 100))\n-    return Math.max(0, taxed - discount.value)\n+    // No discount: tax on subtotal as before\n+    if (!discount) {\n+      return Math.round(subtotal * (1 + TAX_RATE))\n+    }\n+    // Percent discounts: keep existing behavior (apply percent after tax)\n+    if (discount.type === 'percent') {\n+      const taxed = Math.round(subtotal * (1 + TAX_RATE))\n+      return Math.round(taxed * (1 - discount.value / 100))\n+    }\n+    // Fixed discount: apply discount before tax, clamp taxable base at zero,\n+    // round tax to nearest cent, then total = discounted_base + tax\n+    const discountedBase = Math.max(0, subtotal - discount.value)\n+    const tax = Math.round(discountedBase * TAX_RATE)\n+    return discountedBase + tax\n   }\n \n   /** Remove purchased quantities from the inventory and empty the cart. */\n",
+ "verify": "npm test --silent: exit before=1 after=1; no new test failures",
+ "origJudge": true
+}

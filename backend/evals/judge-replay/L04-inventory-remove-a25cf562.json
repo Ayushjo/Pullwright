@@ -1,0 +1,20 @@
+{
+ "id": "L04-inventory-remove-a25cf562",
+ "source": "L04-inventory-remove",
+ "model": "default",
+ "label": "pass",
+ "title": "Inventory.remove lets stock go negative",
+ "body": "`Inventory.remove(id, quantity)` happily drives stock below zero (e.g. removing 5 when 2 are in stock leaves -3). It should throw a `RangeError` when the quantity is not a positive integer or exceeds the current stock, and it must leave the stock unchanged in that case.",
+ "plan": "Validate Inventory.remove input and prevent negative stock: throw RangeError for non-positive/non-integer quantities or when removing more than available, leaving stock unchanged.\n1. Add validation to Inventory.remove to enforce positive integer and stock bounds",
+ "requirements": [
+  "Inventory.remove(id, quantity) throws RangeError when quantity is not a positive integer",
+  "Inventory.remove(id, quantity) throws RangeError when quantity exceeds current stock",
+  "Inventory.remove leaves book.stock unchanged when it throws",
+  "Existing behavior when removing a valid quantity continues to decrement stock and return the book",
+  "All tests that rely on Inventory.remove's behavior (test/inventory.test.js) remain valid"
+ ],
+ "summary": "Modified Inventory.remove in src/inventory.js to validate quantity: throws RangeError when quantity is not a positive integer or when it exceeds current stock; leaves stock unchanged in those cases and continues to decrement and return book for valid removes. Verified by running npm test --silent: all tests that previously passed still pass; one pre-existing unrelated failing test remains (math.divide divide by zero test).\n\nRequirements:\n1. R1: Inventory.remove throws RangeError for non-positive/non-integer quantities \u2014 src/inventory.js remove() checks Number.isInteger and >0\n2. R2: Inventory.remove throws RangeError when quantity exceeds current stock \u2014 src/inventory.js remove() checks quantity > book.stock\n3. R3: Inventory.remove leaves book.stock unchanged when it throws \u2014 validation occurs before decrement so stock unchanged (src/inventory.js)\n4. R4: Valid behavior continues to decrement stock and return book \u2014 decrement executed after validations (src/inventory.js)\n5. R5: Tests relying on Inventory.remove (test/inventory.test.js) remain valid \u2014 ran npm test; inventory tests passed (no new failures)",
+ "patch": "diff --git a/src/inventory.js b/src/inventory.js\nindex 157e7bf..149acf2 100644\n--- a/src/inventory.js\n+++ b/src/inventory.js\n@@ -39,6 +39,8 @@ export class Inventory {\n   remove(id, quantity = 1) {\n     const book = this.books.get(id)\n     if (!book) throw new Error(`Unknown book: ${id}`)\n+    if (!Number.isInteger(quantity) || quantity <= 0) throw new RangeError('quantity must be a positive integer')\n+    if (quantity > book.stock) throw new RangeError('quantity exceeds current stock')\n     book.stock -= quantity\n     return book\n   }\n",
+ "verify": "npm test --silent: exit before=1 after=1; no new test failures",
+ "origJudge": true
+}

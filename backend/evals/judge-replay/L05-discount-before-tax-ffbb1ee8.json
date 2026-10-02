@@ -1,0 +1,21 @@
+{
+ "id": "L05-discount-before-tax-ffbb1ee8",
+ "source": "L05-discount-before-tax",
+ "model": "default",
+ "label": "pass",
+ "title": "Fixed discount codes are applied after tax instead of before",
+ "body": "The docs for `Cart.total()` say the discount is taken off the subtotal and tax is charged on the discounted amount, but the code taxes first and subtracts the discount afterwards. For SAVE5 (a fixed $5.00 off) on a $100.00 subtotal we currently charge $103.00; it should be ($100 - $5) * 1.08 = $102.60. Percent codes must keep working, and the total can never go below zero.",
+ "plan": "Apply discounts to the subtotal before computing tax, so fixed codes reduce subtotal prior to tax and percent codes still work; ensure totals never go below zero.\n1. Apply discount before tax in Cart.total()",
+ "requirements": [
+  "Total must apply discount to subtotal before tax (i.e. tax is charged on discounted amount).",
+  "Fixed discount codes (e.g. SAVE5 with value in cents) reduce the subtotal before tax.",
+  "Percent discount codes (e.g. WELCOME10) must continue to apply the percentage discount before tax.",
+  "Total must be rounded to the nearest cent after tax (integer cents) and never be negative (minimum 0).",
+  "Existing checkout() behavior continues to use total() and produce receipt.totalCents matching new calculation.",
+  "No other public API signatures change."
+ ],
+ "summary": "Changed Cart.total() to apply discounts to the subtotal before computing tax. For percent discounts the subtotal is reduced by the percentage and rounded to cents; for fixed discounts the value (in cents) is subtracted but not below zero. Tax is then applied to the discounted subtotal and rounded to nearest cent. checkout() continues to call total() and uses the new calculation. Verified by running npm test --silent: all tests pass that were previously passing; one unrelated pre-existing failing test (divide by zero throws RangeError) still fails and was not modified.\n\nRequirements:\n1. R1: Applied discount before tax in src/cart.js Cart.total() (lines updated to compute discountedSubtotal then apply tax).\n2. R2: Fixed discount codes reduce subtotal before tax (SAVE5 handled as fixed cents subtraction in Cart.total()).\n3. R3: Percent discount codes continue to work (WELCOME10 handled with percentage reduction on subtotal).\n4. R4: Total is rounded to nearest cent after tax and floored at 0 (Math.round and Math.max used).\n5. R5: checkout() still uses total() and receipt.totalCents reflects the new calculation (src/cart.js checkout() unchanged other than using updated total()).\n6. R6: No public API signatures changed (only internal total logic modified).",
+ "patch": "diff --git a/src/cart.js b/src/cart.js\nindex 9c7f263..7482d18 100644\n--- a/src/cart.js\n+++ b/src/cart.js\n@@ -47,11 +47,19 @@ export class Cart {\n    */\n   total() {\n     const subtotal = this.subtotal()\n-    const taxed = Math.round(subtotal * (1 + TAX_RATE))\n     const discount = this.discountCode ? DISCOUNT_CODES[this.discountCode] : null\n-    if (!discount) return taxed\n-    if (discount.type === 'percent') return Math.round(taxed * (1 - discount.value / 100))\n-    return Math.max(0, taxed - discount.value)\n+    // Apply discount to subtotal first\n+    let discountedSubtotal = subtotal\n+    if (discount) {\n+      if (discount.type === 'percent') {\n+        discountedSubtotal = Math.round(subtotal * (1 - discount.value / 100))\n+      } else {\n+        // fixed value is in cents\n+        discountedSubtotal = Math.max(0, subtotal - discount.value)\n+      }\n+    }\n+    // Charge tax on the discounted subtotal and round to nearest cent\n+    return Math.max(0, Math.round(discountedSubtotal * (1 + TAX_RATE)))\n   }\n \n   /** Remove purchased quantities from the inventory and empty the cart. */\n",
+ "verify": "npm test --silent: exit before=1 after=1; no new test failures",
+ "origJudge": true
+}

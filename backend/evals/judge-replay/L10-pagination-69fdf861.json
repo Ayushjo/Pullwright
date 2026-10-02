@@ -1,0 +1,21 @@
+{
+ "id": "L10-pagination-69fdf861",
+ "source": "L10-pagination",
+ "model": "gpt-4o-mini",
+ "label": "fail",
+ "title": "Paginate GET /books",
+ "body": "`GET /books` returns everything. Add pagination with `?page=` (1-based, default 1) and `?limit=` (default 20, max 50):\n\n- the response body stays a JSON array (existing clients rely on that)\n- add an `X-Total-Count` header with the total number of matching books\n- invalid values (page < 1, limit < 1, non-numbers) return 400 with `{ error }`; a limit above 50 is clamped to 50\n- a page past the end returns an empty array\n\nThe handler contract already supports returning `headers`.",
+ "plan": "Implement pagination for the GET /books endpoint by adding query parameters for page and limit.\n1. Modify the GET /books handler to implement pagination and validation.\n2. Update tests to validate the new pagination behavior for GET /books.",
+ "requirements": [
+  "GET /books now accepts optional query parameters `?page=` and `?limit=` with default values of 1 and 20, respectively.",
+  "The response body must remain a JSON array of books.",
+  "Add an `X-Total-Count` header to the response containing the total number of matching books.",
+  "Invalid query values (page < 1, limit < 1, non-numbers) must return a 400 status with `{ error: 'Bad Request' }`.",
+  "If limit exceeds 50, it should be clamped to 50.",
+  "A request for a page number that exceeds the total number of pages must return an empty array."
+ ],
+ "summary": "Stopped early: Step limit reached (41 model calls)",
+ "patch": "diff --git a/src/server.js b/src/server.js\nindex 0969320..7aaadd0 100644\n--- a/src/server.js\n+++ b/src/server.js\n@@ -13,7 +13,27 @@ export function createApp(inventory = Inventory.fromFile()) {\n \n   router.get('/health', () => ({ status: 200, body: { status: 'ok' } }))\n \n-  router.get('/books', () => ({ status: 200, body: inventory.list() }))\n+  router.get('/books', async ({ query }) => {\n+  const page = parseInt(query.get('page')) || 1;\n+  const limit = Math.min(parseInt(query.get('limit')) || 20, 50);\n+  const totalBooks = inventory.list().length;\n+\n+  // Validation\n+  if (page < 1 || limit < 1 || isNaN(page) || isNaN(limit)) {\n+    return { status: 400, body: { error: 'Bad Request' } };\n+  }\n+\n+  const start = (page - 1) * limit;\n+  const end = start + limit;\n+\n+  // Clamping the page if it exceeds the total number of pages\n+  if (start >= totalBooks) {\n+    return { status: 200, headers: { 'X-Total-Count': totalBooks }, body: [] };\n+  }\n+\n+  const paginatedBooks = inventory.list().slice(start, end);\n+  return { status: 200, headers: { 'X-Total-Count': totalBooks }, body: paginatedBooks };\n+});\n \n   router.get('/books/:id', ({ params }) => {\n     const book = inventory.find(params.id)\ndiff --git a/test/pagination.test.js b/test/pagination.test.js\nnew file mode 100644\nindex 0000000..5e5cdcf\n--- /dev/null\n+++ b/test/pagination.test.js\n@@ -0,0 +1,31 @@\n+import { test } from 'node:test';\n+import assert from 'node:assert/strict';\n+import { createApp } from '../src/server.js';\n+import { Inventory } from '../src/inventory.js';\n+\n+const app = () => createApp(Inventory.fromFile());\n+\n+// Test for pagination\n+\n+test('GET /books paginated results', async () => {\n+  const res1 = await app()({ method: 'GET', url: '/books?page=1&limit=5' });\n+  assert.equal(res1.status, 200);\n+  assert.equal(res1.body.length, 5);\n+\n+  const res2 = await app()({ method: 'GET', url: '/books?page=2&limit=5' });\n+  assert.equal(res2.status, 200);\n+  assert.equal(res2.body.length, 3);\n+\n+  const res3 = await app()({ method: 'GET', url: '/books?page=3&limit=5' });\n+  assert.equal(res3.status, 200);\n+  assert.equal(res3.body.length, 0);\n+\n+  const resInvalidPage = await app()({ method: 'GET', url: '/books?page=-1' });\n+  assert.equal(resInvalidPage.status, 400);\n+  assert.deepEqual(resInvalidPage.body, { error: 'Bad Request' });\n+\n+  const resInvalidLimit = await app()({ method: 'GET', url: '/books?limit=100' });\n+  assert.equal(resInvalidLimit.status, 200);\n+  assert.equal(resInvalidLimit.body.length, 8);\n+  assert.equal(resInvalidLimit.headers['X-Total-Count'], '8');\n+});\n",
+ "verify": "npm test --silent: exit before=1 after=1; NEW failures: GET /books paginated results",
+ "origJudge": false
+}

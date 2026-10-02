@@ -1,0 +1,22 @@
+{
+ "id": "L10-pagination-effc7757",
+ "source": "L10-pagination",
+ "model": "default",
+ "label": "pass",
+ "title": "Paginate GET /books",
+ "body": "`GET /books` returns everything. Add pagination with `?page=` (1-based, default 1) and `?limit=` (default 20, max 50):\n\n- the response body stays a JSON array (existing clients rely on that)\n- add an `X-Total-Count` header with the total number of matching books\n- invalid values (page < 1, limit < 1, non-numbers) return 400 with `{ error }`; a limit above 50 is clamped to 50\n- a page past the end returns an empty array\n\nThe handler contract already supports returning `headers`.",
+ "plan": "Add pagination to GET /books: parse page and limit from query, validate inputs, clamp limit to 50, compute total count, slice inventory list, return JSON array body and X-Total-Count header, and return 400 on invalid params.\n1. Update GET /books handler to support pagination and headers",
+ "requirements": [
+  "GET /books accepts optional query parameters page (1-based, default 1) and limit (default 20).",
+  "Response body remains a JSON array of books (not wrapped).",
+  "Response includes header X-Total-Count with the total number of matching books.",
+  "If page < 1, limit < 1, or non-numeric values are provided for page or limit, server responds with status 400 and body { error }.",
+  "If limit is above 50 it is clamped to 50.",
+  "If page is past the end, an empty array is returned (status 200).",
+  "No other routes are changed; existing tests for other endpoints keep working."
+ ],
+ "summary": "Updated GET /books handler in src/server.js to add pagination. It parses page and limit from query (defaults page=1, limit=20), validates that they are integers >=1 returning 400 with { error } otherwise, clamps limit to 50, slices the inventory list accordingly, and returns X-Total-Count header with total number of books. Verified by running npm test: all tests pass except a pre-existing failing test unrelated to this change.\n\nRequirements:\n1. R1: GET /books accepts optional query parameters page (1-based, default 1) and limit (default 20). (src/server.js: updated router.get('/books'))\n2. R2: Response body remains a JSON array of books (not wrapped). (src/server.js: returns slice array as body)\n3. R3: Response includes header X-Total-Count with the total number of matching books. (src/server.js: headers set)\n4. R4: Invalid page/limit return 400 with { error }. (src/server.js: validation returns status 400 and body { error })\n5. R5: limit above 50 is clamped to 50. (src/server.js: clampedLimit = Math.min(limit, 50))\n6. R6: page past the end returns empty array. (src/server.js: slice will be empty if start >= total)\n7. R7: No other routes changed; only src/server.js modified.",
+ "patch": "diff --git a/src/server.js b/src/server.js\nindex 0969320..278c92b 100644\n--- a/src/server.js\n+++ b/src/server.js\n@@ -13,7 +13,26 @@ export function createApp(inventory = Inventory.fromFile()) {\n \n   router.get('/health', () => ({ status: 200, body: { status: 'ok' } }))\n \n-  router.get('/books', () => ({ status: 200, body: inventory.list() }))\n+  router.get('/books', ({ query }) => {\n+    const all = inventory.list()\n+    const total = all.length\n+\n+    const pageParam = query.get('page')\n+    const limitParam = query.get('limit')\n+\n+    const page = pageParam === null ? 1 : Number(pageParam)\n+    const limit = limitParam === null ? 20 : Number(limitParam)\n+\n+    if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1) {\n+      return { status: 400, body: { error: 'Invalid pagination parameters' } }\n+    }\n+\n+    const clampedLimit = Math.min(limit, 50)\n+    const start = (page - 1) * clampedLimit\n+    const slice = all.slice(start, start + clampedLimit)\n+\n+    return { status: 200, body: slice, headers: { 'X-Total-Count': String(total) } }\n+  })\n \n   router.get('/books/:id', ({ params }) => {\n     const book = inventory.find(params.id)\n",
+ "verify": "npm test --silent: exit before=1 after=1; no new test failures",
+ "origJudge": true
+}

@@ -1,0 +1,21 @@
+{
+ "id": "L04-inventory-remove-e8ceb251",
+ "source": "L04-inventory-remove",
+ "model": "default",
+ "label": "pass",
+ "title": "Inventory.remove lets stock go negative",
+ "body": "`Inventory.remove(id, quantity)` happily drives stock below zero (e.g. removing 5 when 2 are in stock leaves -3). It should throw a `RangeError` when the quantity is not a positive integer or exceeds the current stock, and it must leave the stock unchanged in that case.",
+ "plan": "Validate remove() quantity and prevent negative stock: throw RangeError for invalid quantities (non-positive integer or exceeding current stock) and leave stock unchanged. This fixes bug where removing more than available produced negative stock.\n1. Validate quantity and prevent negative stock in remove()",
+ "requirements": [
+  "Inventory.remove(id, quantity) throws RangeError when quantity is not a positive integer",
+  "Inventory.remove(id, quantity) throws RangeError when quantity exceeds current stock",
+  "When RangeError is thrown, the book's stock must remain unchanged",
+  "Existing behavior: removing valid quantity still decrements stock and returns the book",
+  "Removing a non-existent book still throws Error(`Unknown book: ${id}`) (unchanged)",
+  "No other public APIs or tests are altered"
+ ],
+ "summary": "Tightened validation in Inventory.remove to enforce positive integer quantity and prevent removing more than available stock. Implementation throws RangeError for non-positive-integer quantity and when quantity exceeds current stock, leaving stock unchanged in those cases. Existing behavior for valid removals and unknown book errors unchanged. Verified by running npm test: all inventory-related tests pass; the test suite still has one unrelated pre-existing failure in math.divide (divide by zero test), which was not modified.\n\nRequirements:\n1. R1. Inventory.remove throws RangeError when quantity is not a positive integer (src/inventory.js: remove)\n2. R2. Inventory.remove throws RangeError when quantity exceeds current stock (src/inventory.js: remove)\n3. R3. When RangeError is thrown, the book's stock remains unchanged (logic checks before decrement in src/inventory.js: remove)\n4. R4. Removing valid quantity still decrements stock and returns the book (src/inventory.js: remove)\n5. R5. Removing a non-existent book still throws Error(`Unknown book: ${id}`) (src/inventory.js: remove)\n6. R6. No other public APIs or tests were altered (only src/inventory.js changed)",
+ "patch": "diff --git a/src/inventory.js b/src/inventory.js\nindex 157e7bf..04ac998 100644\n--- a/src/inventory.js\n+++ b/src/inventory.js\n@@ -39,6 +39,12 @@ export class Inventory {\n   remove(id, quantity = 1) {\n     const book = this.books.get(id)\n     if (!book) throw new Error(`Unknown book: ${id}`)\n+    if (!Number.isInteger(quantity) || quantity <= 0) {\n+      throw new RangeError('quantity must be a positive integer')\n+    }\n+    if (quantity > book.stock) {\n+      throw new RangeError('quantity exceeds current stock')\n+    }\n     book.stock -= quantity\n     return book\n   }\n",
+ "verify": "npm test --silent: exit before=1 after=1; no new test failures",
+ "origJudge": true
+}

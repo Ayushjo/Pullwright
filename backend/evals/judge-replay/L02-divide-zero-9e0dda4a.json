@@ -1,0 +1,19 @@
+{
+ "id": "L02-divide-zero-9e0dda4a",
+ "source": "L02-divide-zero",
+ "model": "default",
+ "label": "pass",
+ "title": "divide(n, 0) returns Infinity \u2014 should throw RangeError",
+ "body": "`divide(10, 0)` in src/math.js silently returns `Infinity`. It should throw a `RangeError` when the divisor is zero. There is already a failing test for this in test/math.test.js.",
+ "plan": "Make divide(a, b) throw a RangeError when b === 0 to satisfy test expecting that behaviour; no other behavior changes.\n1. Throw RangeError on division by zero in divide()",
+ "requirements": [
+  "divide(a, b) throws a RangeError when b is 0",
+  "divide(a, b) continues to return a / b for non-zero b",
+  "No other exported functions (multiply, add) are modified",
+  "Existing tests (test/math.test.js) pass without changes"
+ ],
+ "summary": "Updated src/math.js: divide(a, b) now throws a RangeError when b === 0 and otherwise returns a / b. Verified by running npm test --silent; all tests passed locally.\n\nRequirements:\n1. R1: divide(a, b) throws a RangeError when b is 0 \u2014 satisfied in src/math.js (divide)\n2. R2: divide(a, b) continues to return a / b for non-zero b \u2014 satisfied in src/math.js (divide)\n3. R3: No other exported functions (multiply, add) are modified \u2014 satisfied; multiply and add unchanged in src/math.js\n4. R4: Existing tests (test/math.test.js) pass without changes \u2014 satisfied; npm test passed (22 tests)",
+ "patch": "diff --git a/src/math.js b/src/math.js\nindex 7d8db16..14747a9 100644\n--- a/src/math.js\n+++ b/src/math.js\n@@ -4,6 +4,9 @@\n  *      It silently returns Infinity instead of throwing.\n  */\n export function divide(a, b) {\n+  if (b === 0) {\n+    throw new RangeError('division by zero')\n+  }\n   return a / b\n }\n \n",
+ "verify": "npm test --silent: exit before=1 after=0; no new test failures; now passing: divide by zero throws RangeError",
+ "origJudge": true
+}

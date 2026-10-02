@@ -1,0 +1,24 @@
+{
+ "id": "L06-books-filters-6eb83768",
+ "source": "L06-books-filters",
+ "model": "gpt-5-nano",
+ "label": "pass",
+ "title": "Support filtering GET /books by author and tag",
+ "body": "Clients need to filter the catalogue:\n\n- `GET /books?author=martin` \u2192 books whose author contains the text (case-insensitive)\n- `GET /books?tag=craft` \u2192 books that have exactly that tag\n- both filters can be combined; with no filters the full list is returned as today.\n\nPlease add tests.",
+ "plan": "Add server-side filtering for GET /books by author substring (case-insensitive) and by tag (exact match), and extend tests to cover new filtering behavior including combined filters.\n1. Update GET /books handler to apply optional author and tag filters\n2. Add tests for author and tag filtering in test/server.test.js",
+ "requirements": [
+  "GET /books supports optional query parameters: author, tag",
+  "author filter is case-insensitive substring match against book.author",
+  "tag filter matches books whose tags array contains exactly the specified tag",
+  "filters can be combined; when both provided, both conditions apply",
+  "GET /books without filters returns full catalogue (existing behavior)",
+  "New tests verify: /books?author=martin returns books authored by Martin (case-insensitive), /books?tag=craft returns books with tag craft, and /books?author=martin&tag=craft returns intersection",
+  "Tests must pass against existing catalog in src/data/books.json",
+  "Code changes touch only server route and minimal test additions; no refactors or dependency changes",
+  "No changes to data format or other endpoints"
+ ],
+ "summary": "Stopped early: Agent got stuck: repeating the same failing action",
+ "patch": "diff --git a/src/server.js b/src/server.js\nindex 0969320..f3a6f2c 100644\n--- a/src/server.js\n+++ b/src/server.js\n@@ -13,7 +13,22 @@ export function createApp(inventory = Inventory.fromFile()) {\n \n   router.get('/health', () => ({ status: 200, body: { status: 'ok' } }))\n \n-  router.get('/books', () => ({ status: 200, body: inventory.list() }))\n+  router.get('/books', ({ query }) => {\n+    // Start from full catalogue\n+    let books = inventory.list()\n+    const author = query.get('author')\n+    const tag = query.get('tag')\n+\n+    // Apply optional filters\n+    if (author) {\n+      const a = String(author).toLowerCase()\n+      books = books.filter((b) => String(b.author).toLowerCase().includes(a))\n+    }\n+    if (tag) {\n+      books = books.filter((b) => Array.isArray(b.tags) && b.tags.includes(tag))\n+    }\n+    return { status: 200, body: books }\n+  })\n \n   router.get('/books/:id', ({ params }) => {\n     const book = inventory.find(params.id)\ndiff --git a/test/server.test.js b/test/server.test.js\nindex f75a584..27d48dc 100644\n--- a/test/server.test.js\n+++ b/test/server.test.js\n@@ -29,3 +29,33 @@ test('POST /cart/quote', async () => {\n   assert.equal(res.status, 200)\n   assert.equal(res.body.totalCents, 3239)\n })\n+\n+test('GET /books with author filter (case-insensitive substring)', async () => {\n+  const res = await app()({ method: 'GET', url: '/books?author=martin' })\n+  assert.equal(res.status, 200)\n+  // All returned books should have author containing 'martin' (case-insensitive)\n+  for (const b of res.body) {\n+    assert.ok(String(b.author).toLowerCase().includes('martin'))\n+  }\n+  // Expect at least one known Martin author book\n+  const titles = res.body.map((b) => b.title)\n+  assert.ok(titles.includes('Clean Code'))\n+})\n+\n+test('GET /books with tag filter', async () => {\n+  const res = await app()({ method: 'GET', url: '/books?tag=craft' })\n+  assert.equal(res.status, 200)\n+  // All returned books must have the exact tag craft\n+  for (const b of res.body) {\n+    assert.ok(Array.isArray(b.tags) && b.tags.includes('craft'))\n+  }\n+})\n+\n+test('GET /books with combined author and tag filters', async () => {\n+  const res = await app()({ method: 'GET', url: '/books?author=martin&tag=craft' })\n+  assert.equal(res.status, 200)\n+  for (const b of res.body) {\n+    assert.ok(String(b.author).toLowerCase().includes('martin'))\n+    assert.ok(Array.isArray(b.tags) && b.tags.includes('craft'))\n+  }\n+})\n",
+ "verify": "",
+ "origJudge": false
+}

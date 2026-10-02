@@ -1,0 +1,18 @@
+{
+ "id": "L06-books-filters-82a19353",
+ "source": "L06-books-filters",
+ "model": "gpt-4.1-nano",
+ "label": "pass",
+ "title": "Support filtering GET /books by author and tag",
+ "body": "Clients need to filter the catalogue:\n\n- `GET /books?author=martin` \u2192 books whose author contains the text (case-insensitive)\n- `GET /books?tag=craft` \u2192 books that have exactly that tag\n- both filters can be combined; with no filters the full list is returned as today.\n\nPlease add tests.",
+ "plan": "Add filtering to GET /books by author substring and tag exact match.\n1. Update GET /books route handler to support author and tag filters.\n2. Add tests for filtering GET /books by author and tag.",
+ "requirements": [
+  "GET /books with ?author= filters books whose author contains the text (case-insensitive)",
+  "GET /books with ?tag= filters books that have exactly that tag",
+  "Both filters can be combined; with no filters the full list is returned as today."
+ ],
+ "summary": "Stopped early: Step limit reached (41 model calls)",
+ "patch": "diff --git a/src/server.js b/src/server.js\nindex 0969320..fe9ca88 100644\n--- a/src/server.js\n+++ b/src/server.js\n@@ -13,7 +13,22 @@ export function createApp(inventory = Inventory.fromFile()) {\n \n   router.get('/health', () => ({ status: 200, body: { status: 'ok' } }))\n \n-  router.get('/books', () => ({ status: 200, body: inventory.list() }))\n+  router.get('/books', ({ query }) => {\n+    let books = inventory.list()\n+\n+    const authorFilter = query.get('author')\n+    if (authorFilter) {\n+      const lowerAuthorFilter = authorFilter.toLowerCase()\n+      books = books.filter(book => book.author.toLowerCase().includes(lowerAuthorFilter))\n+    }\n+\n+    const tagFilter = query.get('tag')\n+    if (tagFilter) {\n+      books = books.filter(book => book.tags && book.tags.includes(tagFilter))\n+    }\n+\n+    return { status: 200, body: books }\n+  })\n \n   router.get('/books/:id', ({ params }) => {\n     const book = inventory.find(params.id)\n",
+ "verify": "npm test --silent: exit before=1 after=1; no new test failures",
+ "origJudge": false
+}

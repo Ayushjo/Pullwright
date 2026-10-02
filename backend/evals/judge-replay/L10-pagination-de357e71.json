@@ -1,0 +1,23 @@
+{
+ "id": "L10-pagination-de357e71",
+ "source": "L10-pagination",
+ "model": "gpt-5-nano",
+ "label": "pass",
+ "title": "Paginate GET /books",
+ "body": "`GET /books` returns everything. Add pagination with `?page=` (1-based, default 1) and `?limit=` (default 20, max 50):\n\n- the response body stays a JSON array (existing clients rely on that)\n- add an `X-Total-Count` header with the total number of matching books\n- invalid values (page < 1, limit < 1, non-numbers) return 400 with `{ error }`; a limit above 50 is clamped to 50\n- a page past the end returns an empty array\n\nThe handler contract already supports returning `headers`.",
+ "plan": "Add server-side pagination to GET /books with query params page and limit, preserving JSON array responses and X-Total-Count header. Validate inputs and clamp limit to 50; return 400 with { error } on invalid values; return empty array when page exceeds data.\n1. Implement pagination in GET /books handler\n2. Validate and normalize query parameters (page, limit)",
+ "requirements": [
+  "GET /books supports optional query parameters page and limit (1-based page, default 1; limit default 20, max 50)",
+  "Response body remains a JSON array of books (same shape)",
+  "Response header includes X-Total-Count with total number of matching books",
+  "Invalid values (page < 1, limit < 1, non-numeric) result in 400 with { error }",
+  "Limit greater than 50 is clamped to 50",
+  "Request for a page past the end returns an empty array",
+  "The handler contract that returns { status, body, headers? } is respected",
+  "No changes to other endpoints or behavior unless required by pagination"
+ ],
+ "summary": "Implemented server-side pagination for GET /books.\n- Added query handling for page and limit in src/server.js.\n- Defaults: page=1, limit=20; limit clamped to 50; validations for non-numeric and min values returning 400 with { error }.\n- Response remains JSON array; added X-Total-Count header with total matching items.\n- Returns empty array if page exceeds data.\n- Maintains existing endpoint contracts and behavior for other routes.\n- No changes to tests beyond enabling pagination behavior; existing tests pass except pre-existing math test unrelated to this task.\n\nVerification:\n- Ran npm test; GET /books tests pass; pagination logic not directly asserted in tests but maintains array shape and total header behavior. Other suites pass; one pre-existing math test failing is unrelated to this change.\n\nFiles touched:\n- src/server.js (GET /books handler updated)\n\nRequirements:\n1. GET /books supports page and limit args (R1)\n2. Response body remains JSON array (R2)\n3. X-Total-Count header present (R3)\n4. 400 with { error } on invalid inputs (R4)\n5. Limit clamp to 50 (R5)\n6. Page past end returns [] (R6)\n7. Handler contract with headers respected (R7)\n8. No unrelated changes (R8)",
+ "patch": "diff --git a/src/server.js b/src/server.js\nindex 0969320..940994b 100644\n--- a/src/server.js\n+++ b/src/server.js\n@@ -13,7 +13,40 @@ export function createApp(inventory = Inventory.fromFile()) {\n \n   router.get('/health', () => ({ status: 200, body: { status: 'ok' } }))\n \n-  router.get('/books', () => ({ status: 200, body: inventory.list() }))\n+  router.get('/books', ({ query }) => {\n+    const total = inventory.list().length\n+    // default params\n+    const pageRaw = query.get('page')\n+    const limitRaw = query.get('limit')\n+\n+    let page = 1\n+    let limit = 20\n+\n+    if (pageRaw !== null && pageRaw !== undefined) {\n+      const n = Number(pageRaw)\n+      if (Number.isNaN(n)) return { status: 400, body: { error: 'Invalid query' } }\n+      page = n\n+    }\n+    if (limitRaw !== null && limitRaw !== undefined) {\n+      const n = Number(limitRaw)\n+      if (Number.isNaN(n)) return { status: 400, body: { error: 'Invalid query' } }\n+      limit = n\n+    }\n+\n+    // validation\n+    if (page < 1 || limit < 1) {\n+      return { status: 400, body: { error: 'Invalid query' } }\n+    }\n+\n+    // clamp limit\n+    if (limit > 50) limit = 50\n+\n+    const books = inventory.list()\n+    const start = (page - 1) * limit\n+    const end = start + limit\n+    const pageItems = books.slice(start, end)\n+    return { status: 200, body: pageItems, headers: { 'X-Total-Count': String(total) } }\n+  })\n \n   router.get('/books/:id', ({ params }) => {\n     const book = inventory.find(params.id)\n",
+ "verify": "npm test --silent: exit before=1 after=1; no new test failures",
+ "origJudge": true
+}

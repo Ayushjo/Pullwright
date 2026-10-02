@@ -1,0 +1,19 @@
+{
+ "id": "L03-slugify-27f7d7d7",
+ "source": "L03-slugify",
+ "model": "gpt-4o-mini",
+ "label": "fail",
+ "title": "slugify produces repeated and leading/trailing dashes, and drops accented letters",
+ "body": "`slugify` in src/format.js has a few problems:\n\n- `slugify('  C++ -- The   Good Parts!  ')` returns `c----the-good-parts` \u2014 repeated dashes should collapse to one: `c-the-good-parts`.\n- `slugify('-Hello-')` should not start or end with a dash: `hello`.\n- Accented letters are removed instead of transliterated: `slugify('Caf\u00e9 Society')` gives `caf-society`, expected `cafe-society`.\n\nPlease fix it and add tests for these cases.",
+ "plan": "Fix the `slugify` function in `src/format.js` to resolve issues with repeated and leading/trailing dashes and to transliterate accented characters.\n1. Update `slugify` function to handle dashes and transliteration.\n2. Add tests for the new `slugify` behavior in `test/format.test.js`.",
+ "requirements": [
+  "`slugify('  C++ -- The   Good Parts!  ')` returns `c-the-good-parts` without repeated dashes.",
+  "`slugify('-Hello-')` does not start or end with a dash and returns `hello`.",
+  "`slugify('Caf\u00e9 Society')` correctly transliterates to `cafe-society`.",
+  "Add tests for all the mentioned cases."
+ ],
+ "summary": "Stopped early: Step limit reached (41 model calls)",
+ "patch": "diff --git a/src/format.js b/src/format.js\nindex d5cc1f9..41c7b1f 100644\n--- a/src/format.js\n+++ b/src/format.js\n@@ -25,7 +25,18 @@ export function slugify(text) {\n   return String(text)\n     .toLowerCase()\n     .trim()\n-    .replace(/[^a-z0-9\\s-]/g, '')\n+    .replace(/[^\\w\\s-]/g, '')\n+        .replace(/[\\u00e0-\\u00ff]/g, (c) => { return c.normalize('NFD').replace(/\\u0300-\\u036f/g, ''); })\n+          .replace(/[\\u00c0-\\u00c5]/g, '')\n+      .replace(/[\\u00e0-\\u00ff]+/g, function(c) {\n+          return c.normalize('NFD').replace(/\\u0300-\\u036f/g, '');\n+      })\n+    .replace(/\\u0300-\\u036f/g, '')\n+        .replace(/\\u0300-\\u036f/g, '')\n+      .replace(/\\s+/g, '-')\n+      .replace(/-+/g, '-')\n+      .replace(/^-+|-+$/g, '')\n+      .toLowerCase()\n     .replace(/\\s+/g, '-')\n }\n \ndiff --git a/test/format.test.js b/test/format.test.js\nindex 66c8de7..61ae8d6 100644\n--- a/test/format.test.js\n+++ b/test/format.test.js\n@@ -1,6 +1,20 @@\n import { test } from 'node:test'\n import assert from 'node:assert/strict'\n-import { formatCurrency, slugify, formatDate, padRight } from '../src/format.js'\n+import { formatCurrency, slugify, formatDate, padRight } from '../src/format.js';\n+\n+// New tests for slugify function\n+\n+test('slugify handles repeated dashes', () => {\n+  assert.equal(slugify('  C++ -- The   Good Parts!  '), 'c-the-good-parts');\n+});\n+\n+test('slugify removes leading and trailing dashes', () => {\n+  assert.equal(slugify('-Hello-'), 'hello');\n+});\n+\n+test('slugify transliterates accented letters', () => {\n+  assert.equal(slugify('Caf\u00e9 Society'), 'cafe-society');\n+});\n \n test('formatCurrency', () => {\n   assert.equal(formatCurrency(1999), '$19.99')\n",
+ "verify": "npm test --silent: exit before=1 after=1; NEW failures: slugify transliterates accented letters",
+ "origJudge": false
+}

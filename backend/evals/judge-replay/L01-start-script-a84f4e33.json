@@ -1,0 +1,18 @@
+{
+ "id": "L01-start-script-a84f4e33",
+ "source": "L01-start-script",
+ "model": "default",
+ "label": "pass",
+ "title": "README mentions `npm start` but there is no start script",
+ "body": "The README says you can start the API with `npm start`, but package.json has no `start` script so the command fails with \"Missing script: start\". Add a start script that runs the server (src/server.js).",
+ "plan": "Add a start script to package.json so README's npm start works. This adds a script that runs the server (src/server.js) using node (package.json already uses ESM via \"type\":\"module\").\n1. Add start script to package.json",
+ "requirements": [
+  "Add a \"start\" script to package.json that runs the server (src/server.js) using node so npm start does not fail.",
+  "Do not change any other behavior or tests.",
+  "Ensure the start command works with the repository's ESM setup (package.json has \"type\":\"module\")."
+ ],
+ "summary": "Added a \"start\" script to package.json that runs the server (node src/server.js). Verified by running the test suite (npm test --silent) to ensure no new failures were introduced; the suite still has the same pre-existing failing test (divide by zero throws RangeError) and all other tests pass.\n\nRequirements:\n1. R1: start script added in package.json (line in file: \"start\": \"node src/server.js\")\n2. R2: No other behavior or tests changed (only package.json scripts updated)\n3. R3: Start command uses node and is compatible with ESM via package.json's \"type\":\"module\"",
+ "patch": "diff --git a/package.json b/package.json\nindex 3e89e46..31ec720 100644\n--- a/package.json\n+++ b/package.json\n@@ -5,6 +5,7 @@\n   \"type\": \"module\",\n   \"main\": \"src/server.js\",\n   \"scripts\": {\n+    \"start\": \"node src/server.js\",\n     \"test\": \"node --test\"\n   },\n   \"engines\": {\n",
+ "verify": "npm test --silent: exit before=1 after=1; no new test failures",
+ "origJudge": true
+}

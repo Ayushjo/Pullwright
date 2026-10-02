@@ -1,0 +1,19 @@
+{
+ "id": "L03-slugify-6555a902",
+ "source": "L03-slugify",
+ "model": "gpt-5.4-nano",
+ "label": "pass",
+ "title": "slugify produces repeated and leading/trailing dashes, and drops accented letters",
+ "body": "`slugify` in src/format.js has a few problems:\n\n- `slugify('  C++ -- The   Good Parts!  ')` returns `c----the-good-parts` \u2014 repeated dashes should collapse to one: `c-the-good-parts`.\n- `slugify('-Hello-')` should not start or end with a dash: `hello`.\n- Accented letters are removed instead of transliterated: `slugify('Caf\u00e9 Society')` gives `caf-society`, expected `cafe-society`.\n\nPlease fix it and add tests for these cases.",
+ "plan": "Fix slugify in src/format.js to properly transliterate accented characters, collapse repeated separators into single dashes, and trim leading/trailing dashes. Add unit tests covering the reported C++/dash collapsing, leading/trailing dash trimming, and accented-letter transliteration.\n1. Update slugify to normalize/transliterate diacritics, replace non-alphanumerics with dashes, collapse repeats, and trim dashes\n2. Extend format tests with the three new slugify cases",
+ "requirements": [
+  "slugify('  C++ -- The   Good Parts!  ') must return 'c-the-good-parts' with repeated dashes collapsed to one",
+  "slugify('-Hello-') must not start or end with a dash; result must be 'hello'",
+  "slugify('Caf\u00e9 Society') must transliterate accented letters; result must be 'cafe-society'",
+  "Add automated tests for the above three cases in test/format.test.js"
+ ],
+ "summary": "Updated src/format.js slugify to NFKD-normalize and remove combining marks (transliteration of accents), replace any run of non-alphanumeric chars with a single dash, and trim leading/trailing dashes. Extended test/format.test.js with three new cases: collapsing C++ separators, trimming dashes around Hello, and transliterating Caf\u00e9 to cafe.\n\nRequirements:\n1. src/format.js slugify now transliterates with normalize('NFKD') + removing combining marks, replaces non-alphanumerics with '-', collapses via +, and trims leading/trailing dashes (meets R1\u2013R3)\n2. test/format.test.js adds the three automated slugify cases (meets R4)",
+ "patch": "diff --git a/src/format.js b/src/format.js\nindex d5cc1f9..8cdcc86 100644\n--- a/src/format.js\n+++ b/src/format.js\n@@ -22,11 +22,17 @@ export function formatCurrency(cents, currency = 'USD') {\n  * @param {string} text\n  */\n export function slugify(text) {\n+  // 1) Normalize to split accented characters (e.g., \u00e9 -> e + \u0301)\n+  // 2) Strip combining marks to transliterate Latin accents\n+  // 3) Replace any run of non-alphanumerics with a single dash\n+  // 4) Trim leading/trailing dashes\n   return String(text)\n     .toLowerCase()\n     .trim()\n-    .replace(/[^a-z0-9\\s-]/g, '')\n-    .replace(/\\s+/g, '-')\n+    .normalize('NFKD')\n+    .replace(/[\\u0300-\\u036f]/g, '')\n+    .replace(/[^a-z0-9]+/g, '-')\n+    .replace(/^-+|-+$/g, '')\n }\n \n /**\ndiff --git a/test/format.test.js b/test/format.test.js\nindex 66c8de7..d4de942 100644\n--- a/test/format.test.js\n+++ b/test/format.test.js\n@@ -13,6 +13,15 @@ test('slugify basic titles', () => {\n   assert.equal(slugify('Clean Code'), 'clean-code')\n })\n \n+test('slugify collapses separators and trims dashes', () => {\n+  assert.equal(slugify('  C++ -- The   Good Parts!  '), 'c-the-good-parts')\n+  assert.equal(slugify('-Hello-'), 'hello')\n+})\n+\n+test('slugify transliterates accented letters', () => {\n+  assert.equal(slugify('Caf\u00e9 Society'), 'cafe-society')\n+})\n+\n test('formatDate', () => {\n   assert.equal(formatDate('2017-03-16T10:00:00Z'), '2017-03-16')\n   assert.throws(() => formatDate('nope'), TypeError)\n",
+ "verify": "npm test --silent: exit before=1 after=1; no new test failures",
+ "origJudge": true
+}

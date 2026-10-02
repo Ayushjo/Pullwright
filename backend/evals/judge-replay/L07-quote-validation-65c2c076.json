@@ -1,0 +1,20 @@
+{
+ "id": "L07-quote-validation-65c2c076",
+ "source": "L07-quote-validation",
+ "model": "default",
+ "label": "pass",
+ "title": "POST /cart/quote returns 500 for bad input",
+ "body": "Sending bad input to `POST /cart/quote` crashes with a 500:\n\n- missing or empty `items`\n- an item with an unknown book id\n- a quantity that is not a positive integer\n- an invalid `discountCode`\n\nThese are client errors and should return **400** with a JSON body `{ \"error\": \"<helpful message>\" }`. Valid requests must keep working.",
+ "plan": "Validate input to POST /cart/quote and return 400 with helpful JSON errors for client-side bad requests (missing/empty items, unknown book id, non-positive/non-integer quantity, invalid discountCode). Preserve existing successful behavior.\n1. Validate cart quote input and return 400 for client errors",
+ "requirements": [
+  "POST /cart/quote returns 400 and body { error: '<message>' } when request body is missing items or items is empty",
+  "POST /cart/quote returns 400 and body { error: '<message>' } when any item references an unknown book id",
+  "POST /cart/quote returns 400 and body { error: '<message>' } when any item has a quantity that is not a positive integer",
+  "POST /cart/quote returns 400 and body { error: '<message>' } when discountCode is present but invalid",
+  "Valid requests (e.g., items: [{ id: 'b6', quantity: 1 }]) continue to return 200 with the same body shape as before"
+ ],
+ "summary": "Added input validation to POST /cart/quote in src/server.js. Checks for missing/empty items array, per-item id and positive integer quantity, unknown book ids, and invalid discount codes. Returns 400 with { error: '<message>' } for client errors; preserves successful behavior. Verified by running npm test --silent: existing failing test unrelated to this change remains (divide by zero), all tests otherwise pass and POST /cart/quote tests pass.\n\nRequirements:\n1. R1: src/server.js route now returns 400 when items missing/empty\n2. R2: src/server.js returns 400 when unknown book id encountered\n3. R3: src/server.js returns 400 when quantity is not a positive integer\n4. R4: src/server.js returns 400 when discountCode is invalid (handled via Cart.applyDiscount try/catch)\n5. R5: Valid requests still return 200 with same body shape (tested by existing tests)",
+ "patch": "diff --git a/src/server.js b/src/server.js\nindex 0969320..8b4ab25 100644\n--- a/src/server.js\n+++ b/src/server.js\n@@ -22,9 +22,25 @@ export function createApp(inventory = Inventory.fromFile()) {\n   })\n \n   router.post('/cart/quote', ({ body }) => {\n+    // Basic validation for client errors\n+    if (!body || !Array.isArray(body.items) || body.items.length === 0) {\n+      return { status: 400, body: { error: 'items is required and must be a non-empty array' } }\n+    }\n     const cart = new Cart(inventory)\n-    for (const item of body.items) cart.addItem(item.id, item.quantity)\n-    if (body.discountCode) cart.applyDiscount(body.discountCode)\n+    for (const item of body.items) {\n+      if (!item || typeof item.id !== 'string') return { status: 400, body: { error: 'each item must have an id string' } }\n+      if (!Number.isInteger(item.quantity) || item.quantity <= 0) return { status: 400, body: { error: 'quantity must be a positive integer' } }\n+      const book = inventory.find(item.id)\n+      if (!book) return { status: 400, body: { error: `Unknown book: ${item.id}` } }\n+      cart.addItem(item.id, item.quantity)\n+    }\n+    if (body.discountCode) {\n+      try {\n+        cart.applyDiscount(body.discountCode)\n+      } catch (err) {\n+        return { status: 400, body: { error: err.message } }\n+      }\n+    }\n     const total = cart.total()\n     return { status: 200, body: { totalCents: total, total: formatCurrency(total) } }\n   })\n",
+ "verify": "npm test --silent: exit before=1 after=1; no new test failures",
+ "origJudge": true
+}

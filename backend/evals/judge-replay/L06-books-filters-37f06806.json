@@ -1,0 +1,20 @@
+{
+ "id": "L06-books-filters-37f06806",
+ "source": "L06-books-filters",
+ "model": "gpt-4o-mini",
+ "label": "fail",
+ "title": "Support filtering GET /books by author and tag",
+ "body": "Clients need to filter the catalogue:\n\n- `GET /books?author=martin` \u2192 books whose author contains the text (case-insensitive)\n- `GET /books?tag=craft` \u2192 books that have exactly that tag\n- both filters can be combined; with no filters the full list is returned as today.\n\nPlease add tests.",
+ "plan": "Implement filtering for GET /books by author and tag in the server route.\n1. Modify the GET /books route handler to filter by author and tag\n2. Add tests for filtering functionality",
+ "requirements": [
+  "GET /books?author=martin returns books whose author contains 'martin' (case-insensitive)",
+  "GET /books?tag=craft returns books with the exact tag 'craft'",
+  "GET /books?author=martin&tag=craft returns books by author 'martin' with tag 'craft'",
+  "GET /books returns the full list when no filters are specified",
+  "Add tests for the new filtering functionality."
+ ],
+ "summary": "Stopped early: Step limit reached (41 model calls)",
+ "patch": "diff --git a/src/server.js b/src/server.js\nindex 0969320..e79bb63 100644\n--- a/src/server.js\n+++ b/src/server.js\n@@ -13,7 +13,20 @@ export function createApp(inventory = Inventory.fromFile()) {\n \n   router.get('/health', () => ({ status: 200, body: { status: 'ok' } }))\n \n-  router.get('/books', () => ({ status: 200, body: inventory.list() }))\n+  router.get('/books', (req) => {\n+    const { author, tag } = req.query;\n+    let books = inventory.list();\n+\n+    if (author) {\n+        books = books.filter(book => book.author.toLowerCase().includes(author.toLowerCase()));\n+    }\n+\n+    if (tag) {\n+        books = books.filter(book => book.tags && book.tags.includes(tag));\n+    }\n+\n+    return { status: 200, body: books };\n+});\n \n   router.get('/books/:id', ({ params }) => {\n     const book = inventory.find(params.id)\ndiff --git a/test/server.test.js b/test/server.test.js\nindex f75a584..1b03dc7 100644\n--- a/test/server.test.js\n+++ b/test/server.test.js\n@@ -1,4 +1,29 @@\n-import { test } from 'node:test'\n+import { test } from 'node:test';\n+import assert from 'node:assert/strict';\n+\n+const app = () => createApp(Inventory.fromFile());\n+import { createApp } from '../src/server.js';\n+import { Inventory } from '../src/inventory.js';\n+\n+const app = () => createApp(Inventory.fromFile());\n+\n+test('GET /books?author=martin filters by author', async () => {\n+  const res = await app()({ method: 'GET', url: '/books?author=martin' });\n+  assert.equal(res.status, 200);\n+  assert.ok(res.body.every(book => book.author.toLowerCase().includes('martin')));\n+});\n+\n+test('GET /books?tag=craft filters by tag', async () => {\n+  const res = await app()({ method: 'GET', url: '/books?tag=craft' });\n+  assert.equal(res.status, 200);\n+  assert.ok(res.body.every(book => book.tags && book.tags.includes('craft')));\n+});\n+\n+test('GET /books?author=martin&tag=craft filters by author and tag', async () => {\n+  const res = await app()({ method: 'GET', url: '/books?author=martin&tag=craft' });\n+  assert.equal(res.status, 200);\n+  assert.ok(res.body.every(book => book.author.toLowerCase().includes('martin') && book.tags && book.tags.includes('craft')));\n+});\n import assert from 'node:assert/strict'\n import { createApp } from '../src/server.js'\n import { Inventory } from '../src/inventory.js'\n",
+ "verify": "",
+ "origJudge": false
+}
