@@ -8,6 +8,7 @@
  * full suite inside a throwaway node:20 container. Results → .spend/eval-results.jsonl
  */
 import { execFileSync } from "node:child_process"
+import { chatVia, parseLanes } from "../../src/llm/lanes.js"
 import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -28,7 +29,7 @@ const derived = ["vague.json", "multimodal.json"].flatMap((f) =>
     const base = d.base ? baseLadder.find((l) => l.id === d.base) : undefined
     if (d.base && !base) throw new Error(`${f}: unknown base ${d.base}`)
     const { base: _b, ...own } = d
-    return { level: 0, acceptance: null, ...(base ?? {}), ...own } as LadderItem
+    return { level: 0, acceptance: null, ...(base ?? {}), ...own, ...(base ? { fullBody: base.body } : {}) } as LadderItem
   }),
 )
 const ladder = [...baseLadder, ...derived]
@@ -40,6 +41,8 @@ type LadderItem = {
   title: string
   body: string
   expect?: "blocked"
+  /** Variants (vague/image items): the base item's full issue text, which only the simulated user sees. */
+  fullBody?: string
   acceptance: { file: string; code: string } | null
   gitSource?: string
   gitRef?: string
@@ -81,16 +84,37 @@ const STOP = new Set(["ready", "needs_review", "failed", "cancelled", "needs_inp
 async function runItem(item: LadderItem) {
   const repo = materialise(item.fixture, item.gitSource, item.gitRef)
   const t0 = Date.now()
-  const { taskId } = await api("POST", "/api/eval/task", { localRepo: repo, title: item.title, body: item.body, autoApprove: true, ...(MODEL ? { model: MODEL } : {}) })
+  const { taskId } = await api("POST", "/api/eval/task", { localRepo: repo, title: item.title, body: item.body, autoApprove: !SIM_USER, ...(MODEL ? { model: MODEL } : {}) })
   process.stdout.write(`\n▶ ${item.id} task=${taskId}\n`)
   let s: Record<string, any> = {}
   let last = ""
+  const sim = { questions: 0, replans: 0, answers: [] as string[] }
   while (true) {
     await new Promise((r) => setTimeout(r, 4000))
     s = await api("GET", `/api/task/${taskId}`)
     const line = `  ${s.status}${s.statusDetail ? " — " + String(s.statusDetail).slice(0, 90) : ""} · $${Number(s.costUsd).toFixed(4)} · ${s.llmCalls} calls`
     if (line !== last) console.log(line)
     last = line
+    if (SIM_USER && s.status === "needs_input" && s.pendingQuestion) {
+      const a = await simAnswer(item, s.pendingQuestion)
+      sim.questions++
+      sim.answers.push(a)
+      console.log(`  💬 asked: ${String(s.pendingQuestion).replace(/\s+/g, " ").slice(0, 160)}\n  👤 ${a.slice(0, 200)}`)
+      await api("POST", `/api/task/${taskId}/message`, { text: a })
+      continue
+    }
+    if (SIM_USER && s.status === "awaiting_approval" && s.plan) {
+      const change = sim.replans < 1 ? await simReview(item, s.plan) : null // one review round, like a real user
+      if (change) {
+        sim.replans++
+        console.log(`  👤 changed decisions → re-plan\n${change.replace(/^/gm, "     ")}`)
+        await api("POST", `/api/task/${taskId}/replan`, { text: change })
+      } else {
+        console.log(`  👤 approved${s.plan.assumptions?.length ? ` (${s.plan.assumptions.length} decisions kept)` : ""}`)
+        await api("POST", `/api/task/${taskId}/approve`, {})
+      }
+      continue
+    }
     if (STOP.has(s.status)) break
     if (Date.now() - t0 > 25 * 60_000) {
       await api("POST", `/api/task/${taskId}/cancel`).catch(() => {})
@@ -193,6 +217,7 @@ async function runItem(item: LadderItem) {
     level: item.level,
     model: MODEL ?? "default",
     ...(TAG ? { tag: TAG } : {}),
+    ...(SIM_USER ? { sim } : {}),
     taskId,
     status: s.status,
     reason: s.failureReason ?? s.statusDetail,
@@ -243,6 +268,44 @@ const TAG = flag("--tag")
 const ci = argv.indexOf("--campaign")
 const CAMPAIGN = ci >= 0
 if (CAMPAIGN) argv.splice(ci, 1)
+// --simulated-user: plans are not auto-approved. A cheap model that holds the item's FULL issue text (the
+// vague variant hides it from the agent) answers clarification questions and reviews the plan's
+// decisions at approval, changing the ones that contradict the full issue — the Ambig-SWE / Ask-or-Assume
+// protocol. It may also say "I don't know".
+const si = argv.indexOf("--simulated-user")
+const SIM_USER = si >= 0
+if (SIM_USER) argv.splice(si, 1)
+const simLane = parseLanes(process.env.PW_SIM_USER_LANE ?? "vercel:openai/gpt-5-mini", "low")
+const simChat = SIM_USER ? chatVia(simLane) : null
+const SIM_SYSTEM = `You are the developer who filed a GitHub issue. You know exactly what you want (the FULL issue below); the coding agent only saw a short version. Answer its questions the way a busy but helpful developer would: short, concrete, only what the full issue supports. If the full issue does not settle something, say "I don't have a preference" for that point. Never paste the full issue or mention that it exists. Reply with a JSON object only.`
+
+async function simAnswer(item: LadderItem, question: string): Promise<string> {
+  const res = await simChat!({
+    taskId: "sim-user", purpose: "sim_user", jsonMode: true, maxOutputTokens: 800,
+    messages: [
+      { role: "system", content: SIM_SYSTEM },
+      { role: "user", content: `FULL issue:\n${item.title}\n${item.fullBody ?? item.body}\n\nThe agent asks:\n${question}\n\nReply {"answer": "..."}` },
+    ],
+  })
+  return (JSON.parse(res.text.match(/\{[\s\S]*\}/)?.[0] ?? "{}").answer as string) || "I don't have a preference."
+}
+
+/** Review the plan's decisions against the full issue: null = approve as is, else the re-plan text. */
+async function simReview(item: LadderItem, plan: { assumptions?: { question: string; chosen: string; alternatives: string[] }[]; requirements?: string[] }): Promise<string | null> {
+  const dec = plan.assumptions ?? []
+  if (!dec.length) return null
+  const res = await simChat!({
+    taskId: "sim-user", purpose: "sim_user", jsonMode: true, maxOutputTokens: 1200,
+    messages: [
+      { role: "system", content: SIM_SYSTEM },
+      { role: "user", content: `FULL issue:\n${item.title}\n${item.fullBody ?? item.body}\n\nThe agent's plan made these decisions (chosen → alternatives):\n${dec.map((a, i) => `${i + 1}. ${a.question}\n   chosen: ${a.chosen}\n   alternatives: ${a.alternatives.join(" | ") || "(none)"}`).join("\n")}\n\nFor each decision say whether the chosen option matches what the full issue wants. Reply {"decisions": [{"n": 1, "ok": true} | {"n": 2, "ok": false, "want": "<what it should be, concretely>"}]}` },
+    ],
+  })
+  const j = JSON.parse(res.text.match(/\{[\s\S]*\}/)?.[0] ?? "{}") as { decisions?: { n: number; ok: boolean; want?: string }[] }
+  const changes = (j.decisions ?? []).filter((d) => !d.ok && d.want && dec[d.n - 1])
+  if (!changes.length) return null
+  return ["Decisions for this plan (final — plan around these):", ...dec.map((a, i) => `- ${a.question} → ${changes.find((c) => c.n === i + 1)?.want ?? a.chosen}`)].join("\n")
+}
 const wanted = argv
 
 type QuotaRow = { lane: string; rpd: { used: number; limit: number | null }; cooldownMs: number; dayResetAt: string }
