@@ -23,14 +23,16 @@ The dangerous error is a **false approval**: the hidden test fails but the revie
 
 | Reviewer lane | Judged | False approvals (of 11 bad) | False rejections (of 49 good) | Cost | Latency |
 |---|---|---|---|---|---|
-| gpt-5-mini (Vercel) — today's reviewer | _running_ | | | | ≈ 12 s |
-| **Gemini 3.5 Flash-Lite (free)** | 60/60 | **8 / 11** | 1 / 49 | $0 | 4.9 s |
-| Groq gpt-oss-120b (free) | _running_ | | | $0 | ≈ 48 s incl. waiting |
+| **gpt-5-mini (Vercel) — today's reviewer** | 60/60 | **2 / 11** (both H01) | 5 / 49 | $0.142 ($0.0024 each) | 19 s (shared 5 RPM) |
+| Gemini 3.5 Flash-Lite (free) | 60/60 | **8 / 11** | 1 / 49 | $0 | 4.9 s |
+| Groq gpt-oss-120b (free) | _running_ (21/60 so far: FA 1/6, FR 1/15, 7 too large for 8K, 2 JSON failures) | | | $0 | 57 s incl. waiting |
 | Groq qwen3.8-27b (free) | _queued_ | | | | |
 
 **Findings so far**
 - **Flash-Lite is disqualified as reviewer**: it approves almost anything (8 of 11 bad patches, including an H03 run with 6 failing tests). Cheap and fast, but it does not catch errors.
 - **Groq's real limit for reviews is tokens per minute, not requests per day.** Its free tier allows 8K tokens/min; a review prompt is 5–7K, so the gateway paces it to about **one review per minute**. Fine for one task; a problem for several at once.
+- **gpt-5-mini is a strict reviewer**: 5 of 49 good patches rejected (they then go through a fix round, which costs calls but not correctness) and only the two H01 cases approved wrongly.
+- **Groq gpt-oss-120b can't review large-repo patches**: 7 of its first 28 inputs (every H07 and some H06/H08, the MyOwnDevin fixture) exceed the 8K request cap, and it failed JSON mode twice. It fits the small fixture only.
 - The hard cases are the three **H01 (persistence) patches**: they look complete, match the plan, but fail the hidden test because the spec wanted a synchronous store and the agent chose async. Even gpt-5-mini approved 2 of 3. No reviewer can see a hidden spec; this is the intake problem (settle sync/async from the code's conventions), which P1.5 now addresses.
 
 ## 2. Replacing gpt-5-mini (shutdown Dec 11, 2026)
@@ -49,7 +51,15 @@ Decision: qualify **gpt-5.4-nano** on the full ladder (step 4 below). gpt-5.6-te
 
 ## 3. Image items (fact only in the image)
 
-_running_ — M11 (availability legend) and M12 ("Unknown" decade row), each with a no-image control.
+gpt-5-mini pipeline, transcripts by Groq qwen3.8-27b (free), one run each:
+
+| Item | With the image | Without it (control) |
+|---|---|---|
+| M11 availability badge (legend: "in stock" ≥ 5, "low" 1–4, "out of stock" 0) | **pass** $0.014 | **fail** $0.014 — guessed `"low stock"` and a ≤ 5 threshold |
+| M12 "Unknown" decade row | **pass** $0.018 | **fail** $0.014 |
+
+Unlike the Sept M05 item (whose fact was also in a code comment), these two depend on the image: **2/2 pass with it, 0/2 without**. The transcript alone (no pixels to the executor) was enough.
+The no-image control also shows the spec check working as designed: it rated M11n "mostly clear" (1) and listed the threshold as an open question with a default — exactly the case a user would fix with one click at plan approval.
 
 ## 4. Open steps
 
