@@ -4,6 +4,7 @@
  *
  *   npx tsx --env-file=.env scripts/pw/probe-judge.mts vercel:openai/gpt-5-mini groq:openai/gpt-oss-120b gemini:gemini-3.5-flash-lite
  *   npx tsx --env-file=.env scripts/pw/probe-judge.mts --limit 20 groq:qwen/qwen3.8-27b
+ *   npx tsx --env-file=.env scripts/pw/probe-judge.mts --only H06,H07 groq:openai/gpt-oss-120b   # the large ones (compact path)
  *
  * Reports per lane: false approvals (label fail, reviewer says success — the dangerous one), false
  * rejections (label pass, reviewer says fail), items the lane couldn't take (Groq's 8K request cap),
@@ -21,13 +22,20 @@ const dir = path.join(backend, "evals/judge-replay")
 const argv = process.argv.slice(2)
 const li = argv.indexOf("--limit")
 const LIMIT = li >= 0 ? Number(argv.splice(li, 2)[1]) : Infinity
+// --only <prefix,prefix>: just the items whose id starts with one of these (e.g. H06,H07 to retry the large ones).
+const oi = argv.indexOf("--only")
+const ONLY = oi >= 0 ? argv.splice(oi, 2)[1]!.split(",") : null
 const lanes = parseLanes(argv.join(","), "low")
 if (!lanes.length) {
   console.log("usage: probe-judge.mts [--limit N] provider:model [...]")
   process.exit(1)
 }
 type Item = { id: string; source: string; label: "pass" | "fail"; title: string; body: string; plan: string; requirements: string[]; summary: string; patch: string; verify: string }
-const items = readdirSync(dir).filter((f) => f.endsWith(".json")).sort().slice(0, LIMIT).map((f) => JSON.parse(readFileSync(path.join(dir, f), "utf8")) as Item)
+const items = readdirSync(dir)
+  .filter((f) => f.endsWith(".json") && (!ONLY || ONLY.some((p) => f.startsWith(p))))
+  .sort()
+  .slice(0, LIMIT)
+  .map((f) => JSON.parse(readFileSync(path.join(dir, f), "utf8")) as Item)
 console.log(`${items.length} items (${items.filter((i) => i.label === "pass").length} pass / ${items.filter((i) => i.label === "fail").length} fail)`)
 
 for (const lane of lanes) {
