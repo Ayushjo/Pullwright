@@ -5,7 +5,7 @@ import type { EventBus } from "../events/eventBus.js"
 import type { TaskEvent, TaskMetricsSnapshot } from "../events/types.js"
 import logger from "../logger.js"
 import { AgentLoop, type LoopEvent } from "./loop.js"
-import type { ModelSpec } from "./llm.js"
+import { chat, type ModelSpec } from "./llm.js"
 import { getSpendLedger, SpendLimitError } from "./spend.js"
 import { Workspace } from "./workspace.js"
 import { Sandbox } from "./sandbox.js"
@@ -69,6 +69,8 @@ async function modelSpec(s: TaskState, role: "plan" | "run" | "judge"): Promise<
  */
 async function llmFor(s: TaskState, role: "plan" | "run" | "judge"): Promise<ChatFn> {
   const base = await modelSpec(s, role)
+  // PW_GATEWAY=off: the P0 transport (direct chat, 3 attempts, 120 s) for A/B runs against the gateway.
+  if (process.env.PW_GATEWAY === "off") return (o) => chat(base, o)
   if (base.apiKey) return chatVia([laneFromSpec(base, s.userId ?? null)])
   if (s.options.model && role !== "judge") return chatVia([laneFromSpec(base)])
   // Executors can be chosen per task size (PW_LANES_RUN_S / _M / _L), falling back to PW_LANES_RUN.

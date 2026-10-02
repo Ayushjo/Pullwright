@@ -49,6 +49,18 @@
       ],
       "cwd": "backend",
       "port": 3500
+    },
+    {
+      "name": "pullwright-backend-direct",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "tsx",
+        "--env-file=.env",
+        "--env-file=lanes/direct.env",
+        "src/index.ts"
+      ],
+      "cwd": "backend",
+      "port": 3500
     }
   ]
 }
