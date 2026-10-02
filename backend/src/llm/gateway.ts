@@ -113,19 +113,27 @@ export class Gateway {
       }
       // Seed limits describe free tiers (incl. free-credit grants); paid lanes rely on learned limits and 429s.
       const seed = lane.spendClass === "free" || lane.spendClass === "free_credit" ? seedLimits(lane.provider, lane.model) : {}
-      // Per-request caps (Groq free: prompt + max output ≤ 8K): shrink the output budget to fit or skip.
+      // Per-request caps (Groq free: prompt + max output ≤ 8K): shrink the output budget to fit, fall back
+      // to the call's compact rendering if it has one, otherwise skip the lane.
       let maxOut = call.maxOutputTokens
+      let laneMessages = call.messages
+      let laneEst = est
       if (seed.maxRequestTokens) {
-        const room = seed.maxRequestTokens - est - 200
+        let room = seed.maxRequestTokens - laneEst - 200
+        if (room < 1024 && call.compact) {
+          laneMessages = call.compact
+          laneEst = estimateTokens({ messages: call.compact, ...(call.tools ? { tools: call.tools } : {}) })
+          room = seed.maxRequestTokens - laneEst - 200
+        }
         if (room < 1024) {
-          attempts.push({ lane: id, outcome: "skipped", detail: `prompt ≈${est} tokens exceeds the ${seed.maxRequestTokens}-token request cap` })
+          attempts.push({ lane: id, outcome: "skipped", detail: `prompt ≈${laneEst} tokens exceeds the ${seed.maxRequestTokens}-token request cap` })
           continue
         }
         maxOut = Math.min(maxOut, room)
       }
       const scope = id
       const reset = PROVIDERS[lane.provider].dailyReset
-      const q = await this.quota.reserve(scope, est + maxOut, seed, reset)
+      const q = await this.quota.reserve(scope, laneEst + maxOut, seed, reset)
       if (!q.ok) {
         attempts.push({ lane: id, outcome: "quota", detail: q.reason, retryInMs: q.retryInMs })
         if (q.retryInMs >= 0) wait(q.retryInMs)
@@ -140,12 +148,13 @@ export class Gateway {
         ...(lane.reasoningEffort ? { reasoningEffort: lane.reasoningEffort } : {}),
       }
       // Text-only lanes get the attachment transcript instead of pixels (gpt-oss answers 400 to image parts).
-      const messages = supportsVision(lane.provider, lane.model) ? call.messages : withoutImages(call.messages)
+      const messages = supportsVision(lane.provider, lane.model) ? laneMessages : withoutImages(laneMessages)
       try {
-        const result = await this.send(spec, { ...call, messages, maxOutputTokens: maxOut, attempts: 1, timeoutMs: lane.timeoutMs ?? call.timeoutMs ?? 90_000 })
-        await this.quota.reconcile(scope, est + maxOut, result.inputTokens + result.outputTokens, reset).catch(() => {})
+        const { compact: _c, ...rest } = call
+        const result = await this.send(spec, { ...rest, messages, maxOutputTokens: maxOut, attempts: 1, timeoutMs: lane.timeoutMs ?? call.timeoutMs ?? 90_000 })
+        await this.quota.reconcile(scope, laneEst + maxOut, result.inputTokens + result.outputTokens, reset).catch(() => {})
         await this.breaker.success(pm).catch(() => {})
-        attempts.push({ lane: id, outcome: "ok" })
+        attempts.push({ lane: id, outcome: "ok", ...(laneMessages !== call.messages ? { detail: "compact rendering" } : {}) })
         return { result: { ...result, lane }, waitMs, lastHardError }
       } catch (err) {
         if (err instanceof SpendLimitError) throw err // budget decisions are final, not a lane problem

@@ -195,3 +195,20 @@ describe("images on text-only lanes", () => {
     expect(withoutImages(msgs)).toBe(msgs)
   })
 })
+
+describe("compact rendering for capped lanes", () => {
+  it("Groq gets the compact messages when the full ones exceed 8K; an uncapped lane gets the full ones", async (ctx) => {
+    if (!available) ctx.skip()
+    const sent: { model: string; len: number }[] = []
+    const g = gw(async (spec, opts) => {
+      sent.push({ model: spec.model, len: JSON.stringify((opts as unknown as { messages: unknown }).messages).length })
+      return ok
+    })
+    const full = [{ role: "user" as const, content: "x".repeat(40_000) }] // ≈ 11.4K tokens
+    const compact = [{ role: "user" as const, content: "y".repeat(12_000) }] // ≈ 3.4K tokens
+    await g.complete([lane("groq", "openai/gpt-oss-120b", "free")], { ...call(), messages: full, compact, maxOutputTokens: 2000 })
+    await g.complete([lane("openai", "gpt-5-mini")], { ...call(), messages: full, compact, maxOutputTokens: 2000 })
+    expect(sent[0]!.len).toBeLessThan(13_000)
+    expect(sent[1]!.len).toBeGreaterThan(40_000)
+  })
+})

@@ -63,6 +63,8 @@ export type CallOptions = {
   attempts?: number
   /** Per-call timeout; default 120 s (the gateway uses shorter per-lane timeouts). */
   timeoutMs?: number
+  /** A shorter rendering of the same request, used only on a lane whose request cap the full one exceeds (Groq free: 8K). */
+  compact?: Msg[]
   onUsage?: (r: LLMResult & { model: string; provider: string; purpose: string }) => void
 }
 

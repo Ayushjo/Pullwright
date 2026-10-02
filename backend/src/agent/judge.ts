@@ -17,16 +17,21 @@ export async function judgePatch(
   input: { title: string; body: string; plan: string; requirements: string[]; summary: string; patch: string; verify: string; capUsd?: number },
   onUsage?: (u: { costUsd: number; model: string; provider: string; inputTokens: number; cachedInputTokens: number; outputTokens: number; durationMs: number }) => void,
 ): Promise<Verdict> {
-  const patch = input.patch.length > 24_000 ? input.patch.slice(0, 24_000) + "\n… (patch truncated)" : input.patch
-  const user = [
-    `# Issue: ${input.title}`,
-    input.body.slice(0, 5000) || "(no description)",
-    `\n# Approved plan\n${input.plan}`,
-    input.requirements.length ? `\n# Requirements checklist\n${input.requirements.map((r, i) => `R${i + 1}. ${r}`).join("\n")}` : "",
-    `\n# Agent's summary\n${input.summary.slice(0, 2000)}`,
-    `\n# Verification results\n${input.verify || "(none detected)"}`,
-    `\n# Patch\n\`\`\`diff\n${patch}\n\`\`\``,
-  ].join("\n")
+  const render = (limits: { patch: number; body: number; plan: number; summary: number }) => {
+    const patch = input.patch.length > limits.patch ? input.patch.slice(0, limits.patch) + "\n… (patch truncated)" : input.patch
+    return [
+      `# Issue: ${input.title}`,
+      input.body.slice(0, limits.body) || "(no description)",
+      `\n# Approved plan\n${input.plan.slice(0, limits.plan)}`,
+      input.requirements.length ? `\n# Requirements checklist\n${input.requirements.map((r, i) => `R${i + 1}. ${r}`).join("\n")}` : "",
+      `\n# Agent's summary\n${input.summary.slice(0, limits.summary)}`,
+      `\n# Verification results\n${input.verify || "(none detected)"}`,
+      `\n# Patch\n\`\`\`diff\n${patch}\n\`\`\``,
+    ].join("\n")
+  }
+  const user = render({ patch: 24_000, body: 5000, plan: 4000, summary: 2000 })
+  // For lanes with an 8K request cap (Groq free): ≈ 4.5K tokens of input, leaving room for the verdict.
+  const compact = render({ patch: 11_000, body: 1500, plan: 1200, summary: 600 })
   const res = await (typeof spec === "function" ? spec : (o: Parameters<typeof chat>[1]) => chat(spec, o))({
     taskId,
     purpose: "judge",
@@ -34,6 +39,10 @@ export async function judgePatch(
     messages: [
       { role: "system", content: JUDGE_SYSTEM },
       { role: "user", content: user },
+    ],
+    compact: [
+      { role: "system", content: JUDGE_SYSTEM },
+      { role: "user", content: compact },
     ],
     maxOutputTokens: 12000,
     jsonMode: true,
