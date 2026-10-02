@@ -18,7 +18,10 @@ import { taskStore, TERMINAL, type TaskState } from "../agent/store.js"
 import { getSpendLedger } from "../agent/spend.js"
 import { getEntitlement } from "../billing/index.js"
 import { diffStat, diffVs, restoreCheckpoint, tasksRoot } from "../agent/git.js"
-import { filterPatch, metricsOf, taskCap } from "../agent/pipeline.js"
+import { filterPatch, metricsOf, spec, taskCap } from "../agent/pipeline.js"
+import { configuredLanes, getGateway } from "../llm/lanes.js"
+import { laneId } from "../llm/gateway.js"
+import { PROVIDERS, seedLimits } from "../llm/registry.js"
 
 const ISSUE_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/issues\/\d+\/?$/
 
@@ -511,6 +514,23 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
   router.get("/stats", async (req, res) => {
     if (req.session?.userId && isDatabaseEnabled()) return res.json(await getStatsForUser(req.session.userId))
     res.json({ total: 0, running: 0, done: 0, failed: 0, queued: 0, needsYou: 0, totalCostUsd: 0 })
+  })
+
+  // Operator: used / limit per configured platform lane (per minute and per provider day), for campaigns and the capacity meter.
+  router.get("/quota", async (req, res) => {
+    if (!req.isOperator) return res.status(403).json({ error: "Operator only" })
+    const quota = getGateway().quota
+    const roles = configuredLanes((r) => spec(r))
+    const out: Record<string, unknown[]> = {}
+    for (const [role, lanes] of Object.entries(roles)) {
+      out[role] = await Promise.all(
+        lanes.map(async (l) => {
+          const seed = l.spendClass === "free" || l.spendClass === "free_credit" ? seedLimits(l.provider, l.model) : {}
+          return { lane: `${l.provider}/${l.model}`, spendClass: l.spendClass, ...(await quota.status(laneId(l), seed, PROVIDERS[l.provider].dailyReset)) }
+        }),
+      )
+    }
+    res.json(out)
   })
 
   router.get("/budget", async (req, res) => {

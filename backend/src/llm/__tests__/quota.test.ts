@@ -67,3 +67,20 @@ describe("dayWindow", () => {
     expect(dayWindow("utc_midnight", Date.UTC(2026, 8, 29, 18)).msToEnd).toBe(6 * 3_600_000)
   })
 })
+
+describe("QuotaTracker.status", () => {
+  it("reports used vs limit per window, cooldown and the day reset", async (ctx) => {
+    if (!available) ctx.skip()
+    const q = new QuotaTracker(redis)
+    const seed = { rpm: 15, rpd: 500 }
+    await q.reserve("platform:gemini|gemini-3.5-flash-lite", 1000, seed, "pt_midnight")
+    await q.reserve("platform:gemini|gemini-3.5-flash-lite", 1000, seed, "pt_midnight")
+    await q.cooldown("platform:gemini|gemini-3.5-flash-lite", 5000)
+    const st = await q.status("platform:gemini|gemini-3.5-flash-lite", seed, "pt_midnight")
+    expect(st.rpd).toEqual({ used: 2, limit: 500 })
+    expect(st.rpm.used).toBe(2)
+    expect(st.tpd.used).toBe(2000)
+    expect(st.cooldownMs).toBeGreaterThan(4000)
+    expect(Date.parse(st.dayResetAt) - Date.now()).toBeLessThanOrEqual(86_400_000)
+  })
+})

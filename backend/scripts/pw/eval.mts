@@ -190,6 +190,7 @@ async function runItem(item: LadderItem) {
     id: item.id,
     level: item.level,
     model: MODEL ?? "default",
+    ...(TAG ? { tag: TAG } : {}),
     taskId,
     status: s.status,
     reason: s.failureReason ?? s.statusDetail,
@@ -214,7 +215,9 @@ async function runItem(item: LadderItem) {
     stuck,
     stopReason: /Stopped early: (.*)/.exec(String(s.summary ?? ""))?.[1] ?? null,
   }
-  appendFileSync(path.join(backend, ".spend/eval-results.jsonl"), JSON.stringify(result) + "\n")
+  // A task that died on exhausted quota is a campaign retry, not a measurement.
+  const quotaDeath = CAMPAIGN && result.status === "failed" && /No model available right now/.test(String(result.reason ?? ""))
+  if (!quotaDeath) appendFileSync(path.join(backend, ".spend/eval-results.jsonl"), JSON.stringify(result) + "\n")
   console.log(`  ⇒ [${result.model}] ${result.status} | accept=${accept} | suite: ${suite} | judge=${result.judge} | $${result.costUsd.toFixed(4)} | ${result.minutes}m`)
   console.log(`    calls=${result.llmCalls} tools=${result.toolCalls} toolFail=${toolFailures} stuck=${stuck} gateBounces=${gateBounces} reviews=${reviewRounds} cached=${result.tokens.cachedPct}% cost=${JSON.stringify(byPurpose)} lanes=${JSON.stringify(lanes)} phases=${JSON.stringify(phases)}${result.stopReason ? " STOP=" + result.stopReason : ""}`)
   if (result.files.length) console.log(`    files: ${result.files.join(", ")}`)
@@ -224,10 +227,49 @@ async function runItem(item: LadderItem) {
 }
 
 // --model <id> pins the plan/run model for a comparison run (e.g. gpt-5-nano, deepseek/deepseek-v4-flash-0731).
+// --campaign: free-tier runs over several days — waits for daily resets instead of burning items on
+//   exhausted quota (stops starting items when a role's lanes are all ≥ 90% used or cooling down, and
+//   re-runs an item that failed with "No model available" once the lane is back).
+// --tag <name>: label rows in eval-results.jsonl (e.g. free-v1) so runs can be compared.
 const argv = process.argv.slice(2)
-const mi = argv.indexOf("--model")
-const MODEL = mi >= 0 ? argv[mi + 1] : undefined
-const wanted = argv.filter((_, i) => mi < 0 || (i !== mi && i !== mi + 1))
+const flag = (name: string) => {
+  const i = argv.indexOf(name)
+  return i >= 0 ? (argv.splice(i, 2)[1] as string) : undefined
+}
+const MODEL = flag("--model")
+const TAG = flag("--tag")
+const ci = argv.indexOf("--campaign")
+const CAMPAIGN = ci >= 0
+if (CAMPAIGN) argv.splice(ci, 1)
+const wanted = argv
+
+type QuotaRow = { lane: string; rpd: { used: number; limit: number | null }; cooldownMs: number; dayResetAt: string }
+/** When the free lanes of some role can't take another task, the time to wait until; otherwise null. */
+async function campaignWait(): Promise<{ until: number; why: string } | null> {
+  const q = (await api("GET", "/api/quota").catch(() => ({}))) as Record<string, QuotaRow[]>
+  let worst: { until: number; why: string } | null = null
+  for (const role of ["plan", "run", "judge"]) {
+    const lanes = q[role] ?? []
+    if (!lanes.length) continue
+    const free = lanes.filter((l) => l.rpd.limit !== null || l.cooldownMs > 0)
+    if (free.length !== lanes.length) continue // a lane without a daily cap can always take the task
+    const blocked = lanes.map((l) => {
+      if (l.rpd.limit !== null && l.rpd.used >= 0.9 * l.rpd.limit) return Date.parse(l.dayResetAt)
+      if (l.cooldownMs > 60_000) return Date.now() + l.cooldownMs
+      return null
+    })
+    if (blocked.every((b) => b !== null)) {
+      const until = Math.min(...(blocked as number[]))
+      if (!worst || until > worst.until) worst = { until, why: `${role}: ${lanes.map((l) => `${l.lane} ${l.rpd.used}/${l.rpd.limit ?? "∞"}`).join(", ")}` }
+    }
+  }
+  return worst
+}
+const sleepUntil = async (t: number, why: string) => {
+  const ms = Math.max(0, t - Date.now()) + 30_000
+  console.log(`⏸ campaign: waiting ${(ms / 60000).toFixed(0)} min (${why}) → resumes ${new Date(Date.now() + ms).toISOString()}`)
+  await new Promise((r) => setTimeout(r, ms))
+}
 // With no ids, only the base ladder runs (variants are opt-in).
 const items = wanted.length === 0 ? baseLadder : ladder.filter((i) => wanted.some((w) => i.id.startsWith(w)))
 const budget = await api("GET", "/api/budget")
@@ -238,7 +280,17 @@ for (const item of items) {
     console.log("Stopping: too close to the spend hard stop.")
     break
   }
-  await runItem(item)
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (CAMPAIGN) {
+      const w = await campaignWait()
+      if (w) await sleepUntil(w.until, w.why)
+    }
+    const r = await runItem(item)
+    const m = /No model available right now \(next available ([^)]+)\)/.exec(String(r.reason ?? ""))
+    if (!(CAMPAIGN && r.status === "failed" && m)) break
+    console.log(`  ↻ quota exhausted mid-task; not counted. Retrying after the reset (attempt ${attempt}/3).`)
+    await sleepUntil(Date.parse(m[1]!), "lane exhausted mid-task")
+  }
 }
 const end = await api("GET", "/api/budget")
 console.log(`\nPlatform spend now: $${Number(end.platformSpentUsd).toFixed(4)}`)

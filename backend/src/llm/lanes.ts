@@ -67,3 +67,19 @@ export function laneFromSpec(spec: ModelSpec, ownerUserId: string | null = null)
 export function chatVia(lanes: Lane[]): ChatFn {
   return (opts) => getGateway().complete(lanes, opts)
 }
+
+/** Every platform lane the worker may use, by role — from PW_LANES_* (and the single default model). */
+export function configuredLanes(defaultSpec: (role: "plan" | "run" | "judge") => ModelSpec): Record<string, Lane[]> {
+  const out: Record<string, Lane[]> = {}
+  for (const role of ["plan", "run", "judge"] as const) {
+    const l = parseLanes(process.env[`PW_LANES_${role.toUpperCase()}`], "low")
+    out[role] = l.length ? l : [laneFromSpec(defaultSpec(role))]
+  }
+  for (const t of ["S", "M", "L"]) {
+    const l = parseLanes(process.env[`PW_LANES_RUN_${t}`], "low")
+    if (l.length) out[`run_${t}`] = l
+  }
+  const v = parseLanes(process.env.PW_LANES_VISION, "low")
+  if (v.length) out.vision = v
+  return out
+}

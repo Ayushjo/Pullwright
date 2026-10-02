@@ -34,7 +34,7 @@ export type StageName = "plan" | "run" | "publish"
 export type Enqueue = (stage: StageName, taskId: string) => Promise<void>
 export type StatusSink = (s: TaskState) => Promise<void>
 
-function spec(role: "plan" | "run" | "judge", override?: string): ModelSpec {
+export function spec(role: "plan" | "run" | "judge", override?: string): ModelSpec {
   const env = { plan: process.env.PW_PLAN_MODEL, run: process.env.PW_RUN_MODEL, judge: process.env.PW_JUDGE_MODEL }[role]
   const model = override && role !== "judge" ? override : (env ?? "gpt-5-mini")
   const effort = (process.env[`PW_${role.toUpperCase()}_EFFORT`] as ModelSpec["reasoningEffort"]) ?? "low"

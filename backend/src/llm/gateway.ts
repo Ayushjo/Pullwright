@@ -41,7 +41,7 @@ export class NoLaneAvailable extends Error {
 export type Send = (spec: ModelSpec, opts: CallOptions) => Promise<LLMResult>
 export type GatewayResult = LLMResult & { lane: Lane; attempts: Attempt[] }
 
-const laneId = (l: Lane) => `${l.credentialId}|${l.model}`
+export const laneId = (l: Lane) => `${l.credentialId}|${l.model}`
 const HOUR = 3_600_000
 
 /** How long to keep a lane out after each error class (retry hints win when the provider gives one). */
@@ -70,7 +70,7 @@ const OUTAGE: ReadonlySet<ErrorClass> = new Set(["overloaded", "timeout", "serve
 
 export class Gateway {
   constructor(
-    private quota: QuotaTracker,
+    readonly quota: QuotaTracker,
     private breaker: CircuitBreaker,
     private send: Send = chat,
     private opts: { maxLanesTried?: number; inlineWaitMs?: number; rounds?: number; sleep?: (ms: number) => Promise<void> } = {},

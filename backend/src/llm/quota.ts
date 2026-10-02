@@ -12,6 +12,14 @@ import type { Limits, ResetPolicy } from "./registry.js"
 
 export type Scope = string // e.g. "platform:gemini|gemini-3.8-flash", "cred_123|@free"
 export type Window = "rpm" | "tpm" | "rpd" | "tpd"
+export type QuotaStatus = {
+  rpm: { used: number; limit: number | null }
+  tpm: { used: number; limit: number | null }
+  rpd: { used: number; limit: number | null }
+  tpd: { used: number; limit: number | null }
+  cooldownMs: number
+  dayResetAt: string
+}
 export type ReserveResult = { ok: true } | { ok: false; reason: Window | "cooldown" | "too_large"; retryInMs: number }
 
 const k = {
@@ -105,6 +113,30 @@ export class QuotaTracker {
     const entries = Object.entries(limits).filter(([, v]) => typeof v === "number" && Number.isFinite(v))
     if (!entries.length) return
     await this.redis.multi().hset(k.lim(scope), Object.fromEntries(entries)).expire(k.lim(scope), 30 * 24 * 3600).exec()
+  }
+
+  /** Used vs limit per window (seeds overridden by learned limits) and any active cooldown — for the capacity meter and eval campaigns. */
+  async status(scope: Scope, seed: Limits, reset: ResetPolicy, now = Date.now()): Promise<QuotaStatus> {
+    const minuteId = String(Math.floor(now / 60_000))
+    const day = dayWindow(reset, now)
+    const [rm, tm, rd, td, cool, learnedRaw] = await Promise.all([
+      this.redis.get(k.win(scope, "rpm", minuteId)),
+      this.redis.get(k.win(scope, "tpm", minuteId)),
+      this.redis.get(k.win(scope, "rpd", day.id)),
+      this.redis.get(k.win(scope, "tpd", day.id)),
+      this.redis.pttl(k.cool(scope)),
+      this.redis.hgetall(k.lim(scope)),
+    ])
+    const learned = Object.fromEntries(Object.entries(learnedRaw).map(([key, v]) => [key, Number(v)])) as Limits
+    const lim = { ...seed, ...learned }
+    return {
+      rpm: { used: Number(rm ?? 0), limit: lim.rpm ?? null },
+      tpm: { used: Number(tm ?? 0), limit: lim.tpm ?? null },
+      rpd: { used: Number(rd ?? 0), limit: lim.rpd ?? null },
+      tpd: { used: Number(td ?? 0), limit: lim.tpd ?? null },
+      cooldownMs: cool > 0 ? cool : 0,
+      dayResetAt: new Date(now + day.msToEnd).toISOString(),
+    }
   }
 
   async learned(scope: Scope): Promise<Limits> {
