@@ -64,9 +64,26 @@ gpt-5-mini pipeline, transcripts by Groq qwen3.8-27b (free), one run each:
 Unlike the Sept M05 item (whose fact was also in a code comment), these two depend on the image: **2/2 pass with it, 0/2 without**. The transcript alone (no pixels to the executor) was enough.
 The no-image control also shows the spec check working as designed: it rated M11n "mostly clear" (1) and listed the threshold as an open question with a default — exactly the case a user would fix with one click at plan approval.
 
-## 4. Open steps
+## 4. Vague issues end to end, with a simulated user
+
+`eval.mts --simulated-user --tag p2-vague-sim`: gpt-5-mini plans; a gpt-5-mini stand-in user who holds the full issue answers questions and reviews the plan's decisions once (the Ambig-SWE / Ask-or-Assume protocol).
+
+| Item (vague text) | Before intake (silent guess) | With intake + simulated user | Notes |
+|---|---|---|---|
+| V02 "dividing by zero gives a weird result" | pass | **pass** $0.012 | user tightened the error message; 1 re-plan |
+| V06 "users want to filter the book list" | fail (`?q=`) | **pass** $0.018 | user switched `?q=` → `author`/`tag`; 1 re-plan |
+| V07 "POST /cart/quote sometimes returns 500" | fail (200 + total 0) | **fail** $0.020 | the plan's two decisions didn't cover the one that mattered (400 for bad input), so the user had nothing to correct |
+| V10 "books endpoint returns too much data" | fail (strip fields) | **pass** $0.036 (reviewer rejected) | user switched to pagination; 1 re-plan |
+| VH01 "inventory changes are lost on restart" | fail (write into the bundled file) | **fail** $0.023 | user changed decisions, but the hidden spec (separate atomic `JsonStore`, `fromStore`) is too specific to recover from 5 choices |
+
+**3/5 resolved vs 1/5 before** — in line with the published recovery rates (Sonnet 4 recovered 89% of full-spec performance; smaller models 54–59%). The misses show the two remaining gaps:
+- the decisions list must include the *behaviour that fixes the complaint* (V07 asked about body shape and status codes in general, not "what should happen on bad input"), and
+- some specs can't be recovered by choosing among options at all (VH01 names new classes and methods) — those need the asker to describe the API, which only a real user can do.
+No question was asked outright in these 5 runs (all underspec ≤ 2 without a blocking item); every correction came through the plan's decisions.
+
+## 5. Open steps
 
 - [ ] free-mode campaign over the full ladder (`lanes/free.env`, `--campaign --tag free-v1`)
 - [~] 2 more gpt-5-mini runs each of H04 and H10 (the P1 cost question). So far: H04 $0.049 **fail** then $0.024 pass; H10 $0.120 pass (judge rejected). Since P1, H04 is 2 pass / 2 fail (3/3 before) and every H10 run costs $0.106–0.121 with 61–75 calls (P0: $0.064–0.095, 43–57). Six runs point the same way, so an A/B with the gateway bypassed (`lanes/direct.env`, `PW_GATEWAY=off`) runs next, same day, same model.
 - [ ] gpt-5.4-nano on the full ladder
-- [ ] vague set end to end with `--simulated-user`
+- [x] vague set end to end with `--simulated-user` (§4)
