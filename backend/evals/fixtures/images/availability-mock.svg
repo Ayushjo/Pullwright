@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="620" viewBox="0 0 1000 620">
+<rect width="1000" height="620" fill="#ffffff"/>
+<text x="30" y="40" font-family="Helvetica" font-weight="bold" font-size="22" fill="#111827">Mock · GET /books/b2 response (new field highlighted)</text>
+<rect x="30" y="60" width="520" height="300" rx="8" fill="#0f172a"/>
+<text font-family="Menlo, monospace" font-size="17" fill="#e2e8f0">
+<tspan x="50" y="95">{</tspan>
+<tspan x="70" y="123">"id": "b2",</tspan>
+<tspan x="70" y="151">"title": "Clean Code",</tspan>
+<tspan x="70" y="179">"author": "Robert C. Martin",</tspan>
+<tspan x="70" y="207">"priceCents": 3499,</tspan>
+<tspan x="70" y="235">"stock": 3,</tspan>
+<tspan x="70" y="263">"tags": ["craft"],</tspan>
+<tspan x="70" y="291">"published": "2008-08-01",</tspan>
+</text>
+<rect x="60" y="300" width="300" height="32" rx="4" fill="#facc15" opacity="0.25"/>
+<text x="70" y="323" font-family="Menlo, monospace" font-size="17" fill="#fde68a">"availability": "low"</text>
+<text x="50" y="352" font-family="Menlo, monospace" font-size="17" fill="#e2e8f0">}</text>
+<rect x="575" y="60" width="305" height="300" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+<text x="600" y="92" font-family="Helvetica" font-weight="bold" font-size="18" fill="#111827">Legend (by stock)</text>
+<rect x="600" y="115" width="16" height="16" rx="3" fill="#16a34a"/><text x="626" y="129" font-family="Helvetica" font-size="16" fill="#111827">"in stock"  = stock ≥ 5</text>
+<rect x="600" y="160" width="16" height="16" rx="3" fill="#f59e0b"/><text x="626" y="174" font-family="Helvetica" font-size="16" fill="#111827">"low"  = stock 1 to 4</text>
+<rect x="600" y="205" width="16" height="16" rx="3" fill="#dc2626"/><text x="626" y="219" font-family="Helvetica" font-size="16" fill="#111827">"out of stock"  = stock 0</text>
+<text x="600" y="270" font-family="Helvetica" font-size="14" fill="#475569">Same field on every item of</text>
+<text x="600" y="290" font-family="Helvetica" font-size="14" fill="#475569">GET /books (the list).</text>
+<text x="600" y="330" font-family="Helvetica" font-size="14" fill="#475569">Use exactly these strings.</text>
+<text x="30" y="420" font-family="Helvetica" font-weight="bold" font-size="20" fill="#111827">Catalogue page (for reference)</text>
+<rect x="30" y="440" width="840" height="150" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+<text x="50" y="475" font-family="Helvetica" font-size="16" fill="#111827">The Pragmatic Programmer</text><rect x="640" y="458" width="110" height="24" rx="12" fill="#dcfce7"/><text x="655" y="475" font-family="Helvetica" font-size="13" fill="#166534">in stock (12)</text>
+<text x="50" y="515" font-family="Helvetica" font-size="16" fill="#111827">Clean Code</text><rect x="640" y="498" width="80" height="24" rx="12" fill="#fef3c7"/><text x="655" y="515" font-family="Helvetica" font-size="13" fill="#92400e">low (3)</text>
+<text x="50" y="555" font-family="Helvetica" font-size="16" fill="#111827">Designing Data-Intensive Applications</text><rect x="640" y="538" width="120" height="24" rx="12" fill="#fee2e2"/><text x="655" y="555" font-family="Helvetica" font-size="13" fill="#991b1b">out of stock (0)</text>
+</svg>

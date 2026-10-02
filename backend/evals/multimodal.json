@@ -3,12 +3,56 @@
     "id": "M05-checkout-save5",
     "base": "L05-discount-before-tax",
     "title": "Checkout total is wrong with a fixed discount code",
-    "body": "Checkout shows the wrong total when a fixed discount code is used — screenshot below.\n\n![checkout](attachment://checkout-save5.png)\n\nPercent codes look fine."
+    "body": "Checkout shows the wrong total when a fixed discount code is used \u2014 screenshot below.\n\n![checkout](attachment://checkout-save5.png)\n\nPercent codes look fine."
   },
   {
     "id": "M05n-checkout-save5-noimage",
     "base": "L05-discount-before-tax",
     "title": "Checkout total is wrong with a fixed discount code",
     "body": "Checkout shows the wrong total when a fixed discount code is used.\n\nPercent codes look fine."
+  },
+  {
+    "id": "M11-availability",
+    "fixture": "bookstore",
+    "level": 8,
+    "title": "Show availability in the book API",
+    "body": "Product wants the availability badge from the catalogue page in the API too \u2014 mock attached, it has the details.\n\n![availability mock](attachment://availability-mock.png)",
+    "acceptance": {
+      "file": "test/zz_accept_M11.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { createApp } from '../src/server.js'\nimport { Inventory } from '../src/inventory.js'\nconst app = createApp(Inventory.fromFile())\nconst one = async (id) => (await app({ method: 'GET', url: `/books/${id}` })).body\ntest('availability field follows the mock legend', async () => {\n  assert.equal((await one('b1')).availability, 'in stock') // 12\n  assert.equal((await one('b3')).availability, 'in stock') // 7\n  assert.equal((await one('b7')).availability, 'low') // 4\n  assert.equal((await one('b2')).availability, 'low') // 3\n  assert.equal((await one('b8')).availability, 'low') // 1\n  assert.equal((await one('b4')).availability, 'out of stock') // 0\n  const list = (await app({ method: 'GET', url: '/books' })).body\n  assert.equal(list.length, 8)\n  for (const b of list) assert.ok(['in stock', 'low', 'out of stock'].includes(b.availability), `${b.id}: ${b.availability}`)\n  assert.equal(list.find((b) => b.id === 'b2').availability, 'low')\n})\n"
+    }
+  },
+  {
+    "id": "M11n-availability-noimage",
+    "fixture": "bookstore",
+    "level": 8,
+    "title": "Show availability in the book API",
+    "body": "Product wants the availability badge from the catalogue page in the API too.",
+    "acceptance": {
+      "file": "test/zz_accept_M11.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { createApp } from '../src/server.js'\nimport { Inventory } from '../src/inventory.js'\nconst app = createApp(Inventory.fromFile())\nconst one = async (id) => (await app({ method: 'GET', url: `/books/${id}` })).body\ntest('availability field follows the mock legend', async () => {\n  assert.equal((await one('b1')).availability, 'in stock') // 12\n  assert.equal((await one('b3')).availability, 'in stock') // 7\n  assert.equal((await one('b7')).availability, 'low') // 4\n  assert.equal((await one('b2')).availability, 'low') // 3\n  assert.equal((await one('b8')).availability, 'low') // 1\n  assert.equal((await one('b4')).availability, 'out of stock') // 0\n  const list = (await app({ method: 'GET', url: '/books' })).body\n  assert.equal(list.length, 8)\n  for (const b of list) assert.ok(['in stock', 'low', 'out of stock'].includes(b.availability), `${b.id}: ${b.availability}`)\n  assert.equal(list.find((b) => b.id === 'b2').availability, 'low')\n})\n"
+    }
+  },
+  {
+    "id": "M12-decades",
+    "fixture": "bookstore",
+    "level": 9,
+    "title": "Undated books vanish from the report's By decade section",
+    "body": "Books without a publication date aren't counted anywhere in \"By decade\". Mock of what it should look like:\n\n![by decade mock](attachment://report-decades-mock.png)",
+    "acceptance": {
+      "file": "test/zz_accept_M12.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { Inventory } from '../src/inventory.js'\nimport { summary, render } from '../src/report.js'\nconst dated = () => Inventory.fromFile().list()\nconst undated = () => [\n  ...dated(),\n  { id: 'n1', title: 'New One', author: 'A', priceCents: 1000, stock: 4, tags: [] },\n  { id: 'n2', title: 'New Two', author: 'B', priceCents: 1000, stock: 7, tags: [], published: null },\n]\ntest('undated books land in a final Unknown decade row', () => {\n  const s = summary(undated(), { generatedAt: '2026-01-01' })\n  const last = s.decades[s.decades.length - 1]\n  assert.deepEqual(last, { decade: 'Unknown', titles: 2, units: 11 })\n  assert.deepEqual(s.decades.slice(0, -1).map((d) => d.decade), ['1970s', '1980s', '1990s', '2000s', '2010s'])\n  const md = render(undated(), 'markdown', { generatedAt: '2026-01-01' })\n  assert.match(md, /\\| Unknown \\| 2 \\| 11 \\|/)\n  const rows = md.split('\\n').filter((l) => /^\\| (\\d{4}s|Unknown) \\|/.test(l))\n  assert.equal(rows[rows.length - 1].startsWith('| Unknown'), true)\n  const all = summary(dated(), { generatedAt: '2026-01-01' })\n  assert.equal(all.decades.some((d) => d.decade === 'Unknown'), false)\n  assert.doesNotMatch(render(dated(), 'markdown', { generatedAt: '2026-01-01' }), /Unknown/)\n})\n"
+    }
+  },
+  {
+    "id": "M12n-decades-noimage",
+    "fixture": "bookstore",
+    "level": 9,
+    "title": "Undated books vanish from the report's By decade section",
+    "body": "Books without a publication date aren't counted anywhere in \"By decade\". They should show up too.",
+    "acceptance": {
+      "file": "test/zz_accept_M12.test.js",
+      "code": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { Inventory } from '../src/inventory.js'\nimport { summary, render } from '../src/report.js'\nconst dated = () => Inventory.fromFile().list()\nconst undated = () => [\n  ...dated(),\n  { id: 'n1', title: 'New One', author: 'A', priceCents: 1000, stock: 4, tags: [] },\n  { id: 'n2', title: 'New Two', author: 'B', priceCents: 1000, stock: 7, tags: [], published: null },\n]\ntest('undated books land in a final Unknown decade row', () => {\n  const s = summary(undated(), { generatedAt: '2026-01-01' })\n  const last = s.decades[s.decades.length - 1]\n  assert.deepEqual(last, { decade: 'Unknown', titles: 2, units: 11 })\n  assert.deepEqual(s.decades.slice(0, -1).map((d) => d.decade), ['1970s', '1980s', '1990s', '2000s', '2010s'])\n  const md = render(undated(), 'markdown', { generatedAt: '2026-01-01' })\n  assert.match(md, /\\| Unknown \\| 2 \\| 11 \\|/)\n  const rows = md.split('\\n').filter((l) => /^\\| (\\d{4}s|Unknown) \\|/.test(l))\n  assert.equal(rows[rows.length - 1].startsWith('| Unknown'), true)\n  const all = summary(dated(), { generatedAt: '2026-01-01' })\n  assert.equal(all.decades.some((d) => d.decade === 'Unknown'), false)\n  assert.doesNotMatch(render(dated(), 'markdown', { generatedAt: '2026-01-01' }), /Unknown/)\n})\n"
+    }
   }
 ]

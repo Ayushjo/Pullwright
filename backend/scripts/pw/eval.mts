@@ -23,10 +23,12 @@ const baseLadder = JSON.parse(readFileSync(path.join(backend, "evals/ladder.json
 // Vague and image variants of ladder items (evals/vague.json, evals/multimodal.json): their own title and
 // body, the base item's fixture, hidden acceptance test and checks. Run them by id, e.g. `eval.mts V06 M05`.
 const derived = ["vague.json", "multimodal.json"].flatMap((f) =>
-  (JSON.parse(readFileSync(path.join(backend, "evals", f), "utf8")) as { id: string; base: string; title: string; body: string }[]).map((d) => {
-    const base = baseLadder.find((l) => l.id === d.base)
-    if (!base) throw new Error(`${f}: unknown base ${d.base}`)
-    return { ...base, id: d.id, title: d.title, body: d.body }
+  (JSON.parse(readFileSync(path.join(backend, "evals", f), "utf8")) as (Partial<LadderItem> & { id: string; base?: string; title: string; body: string })[]).map((d) => {
+    // Either a variant of a ladder item (base: same fixture, hidden test and checks) or a full item of its own.
+    const base = d.base ? baseLadder.find((l) => l.id === d.base) : undefined
+    if (d.base && !base) throw new Error(`${f}: unknown base ${d.base}`)
+    const { base: _b, ...own } = d
+    return { level: 0, acceptance: null, ...(base ?? {}), ...own } as LadderItem
   }),
 )
 const ladder = [...baseLadder, ...derived]

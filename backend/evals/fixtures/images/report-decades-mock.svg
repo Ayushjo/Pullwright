@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="560" viewBox="0 0 1000 560">
+<rect width="1000" height="560" fill="#ffffff"/>
+<text x="30" y="40" font-family="Helvetica" font-weight="bold" font-size="22" fill="#111827">Inventory report · Markdown · "By decade" — today vs wanted</text>
+<rect x="30" y="70" width="400" height="260" rx="8" fill="#fef2f2" stroke="#fca5a5"/>
+<text x="50" y="100" font-family="Helvetica" font-weight="bold" font-size="17" fill="#991b1b">Today (2 undated titles silently missing)</text>
+<text font-family="Menlo, monospace" font-size="15" fill="#111827">
+<tspan x="50" y="135">## By decade</tspan>
+<tspan x="50" y="165">| Decade | Titles | Units |</tspan>
+<tspan x="50" y="190">| --- | ---: | ---: |</tspan>
+<tspan x="50" y="215">| 1970s | 1 | 9 |</tspan>
+<tspan x="50" y="240">| 1980s | 1 | 2 |</tspan>
+<tspan x="50" y="265">| 1990s | 2 | 19 |</tspan>
+<tspan x="50" y="290">| 2000s | 3 | 8 |</tspan>
+<tspan x="50" y="315">| 2010s | 1 | 0 |</tspan>
+</text>
+<rect x="470" y="70" width="400" height="290" rx="8" fill="#ecfdf5" stroke="#6ee7b7"/>
+<text x="490" y="100" font-family="Helvetica" font-weight="bold" font-size="17" fill="#065f46">Wanted</text>
+<text font-family="Menlo, monospace" font-size="15" fill="#111827">
+<tspan x="490" y="135">## By decade</tspan>
+<tspan x="490" y="165">| Decade | Titles | Units |</tspan>
+<tspan x="490" y="190">| --- | ---: | ---: |</tspan>
+<tspan x="490" y="215">| 1970s | 1 | 9 |</tspan>
+<tspan x="490" y="240">| 1980s | 1 | 2 |</tspan>
+<tspan x="490" y="265">| 1990s | 2 | 19 |</tspan>
+<tspan x="490" y="290">| 2000s | 3 | 8 |</tspan>
+<tspan x="490" y="315">| 2010s | 1 | 0 |</tspan>
+</text>
+<rect x="485" y="325" width="250" height="26" rx="4" fill="#facc15" opacity="0.35"/>
+<text x="490" y="343" font-family="Menlo, monospace" font-size="15" fill="#111827">| Unknown | 2 | 11 |</text>
+<text x="30" y="400" font-family="Helvetica" font-size="16" fill="#111827">• Books with no "published" value go in one row labelled exactly  <tspan font-family="Menlo, monospace" font-weight="bold">Unknown</tspan>, always the last row.</text>
+<text x="30" y="430" font-family="Helvetica" font-size="16" fill="#111827">• summary().decades gets the same entry, last: { decade: "Unknown", titles, units }.</text>
+<text x="30" y="460" font-family="Helvetica" font-size="16" fill="#111827">• No row when every book has a date. Nothing else in the report changes.</text>
+</svg>
