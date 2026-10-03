@@ -66,9 +66,12 @@ export const PROVIDERS: Record<ProviderId, ProviderDescriptor> = {
     params: { ...COMPAT_PARAMS, reasoningEffort: true },
     // Google pricing page: free tier data "used to improve our products": yes; paid: no.
     dataPolicy: { free: "trains", paid: "no_train" },
-    // Sept 2026 reports + forum (not in Google's docs; AI Studio shows the live values).
-    freeLimits: { "gemini-*-flash": { rpd: 20, rpm: 10 }, "gemini-*-flash-lite": { rpd: 500, rpm: 15 }, "*": { tpm: 250_000 } },
-    dailyReset: "pt_midnight", reportsCost: false,
+    // Flash: confirmed by Google's 429 on 2026-10-03 (QuotaFailure "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+    // quotaValue 20). Flash-Lite and RPM values: Sept 2026 reports + forum; AI Studio shows the live values.
+    freeLimits: { "gemini-*-flash": { rpd: 20, rpm: 10 }, "gemini-*-flash-preview": { rpd: 20, rpm: 10 }, "gemini-*-flash-lite": { rpd: 500, rpm: 15 }, "*": { tpm: 250_000 } },
+    // Measured, not documented: the same 429's RetryInfo at 11:03 UTC was 46,586 s, i.e. the free daily
+    // quota resets at 00:00 UTC (docs and forums say Pacific midnight, which would be 07:00 UTC).
+    dailyReset: "utc_midnight", reportsCost: false,
     notes: "Quota is per Google Cloud project, not per key. 2.5 models: 404 for new users (probed). Thought signatures required (probed).",
   },
   groq: {
