@@ -94,7 +94,10 @@ async function runItem(item: LadderItem) {
   let parkedSince: number | null = null
   while (true) {
     await new Promise((r) => setTimeout(r, 4000))
-    s = await api("GET", `/api/task/${taskId}`)
+    // The backend may be restarting (deploy, crash test): keep polling instead of dying.
+    const next = await api("GET", `/api/task/${taskId}`).catch(() => null)
+    if (!next) continue
+    s = next
     const line = `  ${s.status}${s.statusDetail ? " — " + String(s.statusDetail).slice(0, 90) : ""} · $${Number(s.costUsd).toFixed(4)} · ${s.llmCalls} calls`
     if (line !== last) console.log(line)
     last = line
