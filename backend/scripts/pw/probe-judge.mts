@@ -25,25 +25,34 @@ const LIMIT = li >= 0 ? Number(argv.splice(li, 2)[1]) : Infinity
 // --only <prefix,prefix>: just the items whose id starts with one of these (e.g. H06,H07 to retry the large ones).
 const oi = argv.indexOf("--only")
 const ONLY = oi >= 0 ? argv.splice(oi, 2)[1]!.split(",") : null
-const lanes = parseLanes(argv.join(","), "low")
-if (!lanes.length) {
-  console.log("usage: probe-judge.mts [--limit N] provider:model [...]")
-  process.exit(1)
-}
-type Item = { id: string; source: string; label: "pass" | "fail"; title: string; body: string; plan: string; requirements: string[]; summary: string; patch: string; verify: string }
 // --label <name>: tag rows (e.g. contract-v2) so prompt versions can be compared on the same items.
 const lbi = argv.indexOf("--label")
 const LABEL = lbi >= 0 ? argv.splice(lbi, 2)[1] : undefined
-const items = readdirSync(dir)
+// --balanced N: every known-bad item plus the first N known-good ones (keeps free-quota runs small).
+const bi = argv.indexOf("--balanced")
+const BALANCED = bi >= 0 ? Number(argv.splice(bi, 2)[1]) : null
+// --pool: judge with all given lanes as ONE failover pool (how the product uses them), not each separately.
+const pi = argv.indexOf("--pool")
+const POOL = pi >= 0
+if (POOL) argv.splice(pi, 1)
+const lanes = parseLanes(argv.join(","), "low")
+if (!lanes.length) {
+  console.log("usage: probe-judge.mts [--limit N] [--only P,Q] [--balanced N] [--pool] [--label L] provider:model [...]")
+  process.exit(1)
+}
+type Item = { id: string; source: string; label: "pass" | "fail"; title: string; body: string; plan: string; requirements: string[]; summary: string; patch: string; verify: string }
+let items = readdirSync(dir)
   .filter((f) => f.endsWith(".json") && (!ONLY || ONLY.some((p) => f.startsWith(p))))
   .sort()
   .slice(0, LIMIT)
   .map((f) => JSON.parse(readFileSync(path.join(dir, f), "utf8")) as Item)
+if (BALANCED !== null) items = [...items.filter((i) => i.label === "fail"), ...items.filter((i) => i.label === "pass").slice(0, BALANCED)]
 console.log(`${items.length} items (${items.filter((i) => i.label === "pass").length} pass / ${items.filter((i) => i.label === "fail").length} fail)`)
 
-for (const lane of lanes) {
-  const name = `${lane.provider}/${lane.model}`
-  const chat = chatVia([lane])
+const groups = POOL ? [lanes] : lanes.map((l) => [l])
+for (const group of groups) {
+  const name = group.length > 1 ? `pool(${group.map((l) => l.model).join("|")})` : `${group[0]!.provider}/${group[0]!.model}`
+  const chat = chatVia(group)
   const tally = { n: 0, agree: 0, falseApprove: 0, falseReject: 0, tooLarge: 0, error: 0, cost: 0, ms: 0 }
   for (const it of items) {
     const t0 = Date.now()
