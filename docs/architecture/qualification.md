@@ -87,7 +87,7 @@ No question was asked outright in these 5 runs (all underspec ≤ 2 without a bl
 ## 5. Open steps
 
 - [ ] free-mode campaign over the full ladder (`lanes/free.env`, `--campaign --tag free-v1`)
-- [~] **Gateway vs direct transport (the P1 cost question)** — see §6.
+- [x] **Gateway vs direct transport (the P1 cost question)** — §6: transport cleared; the cause was a redaction bug, fixed and verified.
 - [x] (superseded) 2 more gpt-5-mini runs each of H04 and H10 (the P1 cost question). So far: H04 $0.049 **fail** then $0.024 pass; H10 $0.120 pass (judge rejected). Since P1, H04 is 2 pass / 2 fail (3/3 before) and every H10 run costs $0.106–0.121 with 61–75 calls (P0: $0.064–0.095, 43–57). Six runs point the same way, so an A/B with the gateway bypassed (`lanes/direct.env`, `PW_GATEWAY=off`) runs next, same day, same model.
 - [ ] gpt-5.4-nano on the full ladder
 - [x] vague set end to end with `--simulated-user` (§4)
@@ -145,7 +145,15 @@ Same session, same model, H10 ×2 per arm, interleaved:
 
 **The second direct run fell into the same trap**, so the transport was never the cause. Pacing isn't either (the unpaced arm behaves like the paced one). Every expensive H10 run, on any transport, is the redaction trap. A run hits it when its plan touches `Orchestrator/index.ts`, or when the gate's "planned file not changed" check sends it there. The P1 "hard items cost more through the gateway" finding was this bug, plus small-n luck in which runs hit it.
 
-Verification on the fixed code: H10 ×3 through the gateway (`--tag p2-h10-fixed`) — _running_.
+**Verification on the fixed code** (H10 ×3 through the gateway, `--tag p2-h10-fixed`):
+
+| Run | Cost | Calls | Tool failures | End |
+|---|---|---|---|---|
+| 1 | $0.107 | 53 | 6 | ready, pass, reviewer ✔ (several rounds on a TypeScript error) |
+| 2 | $0.060 | 37 | 4 | ready, pass, reviewer ✔ |
+| 3 | $0.056 | 37 | 2 | ready, pass, reviewer ✔ |
+
+Before the fix: 6/6 gateway runs ended in "needs review" at $0.110–0.140. After: **3/3 ready, median $0.060**, in line with the P0 direct runs ($0.064–0.095). The run that worked on `Orchestrator/index.ts` saw no `[REDACTED]` and had no trap failures. **The P1 cost question is closed: the gateway is cost-neutral.**
 
 ## 7. H04: the agent breaks a contract the issue states
 
