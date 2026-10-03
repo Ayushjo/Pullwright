@@ -86,7 +86,7 @@ No question was asked outright in these 5 runs (all underspec ≤ 2 without a bl
 
 ## 5. Open steps
 
-- [ ] free-mode campaign over the full ladder (`lanes/free.env`, `--campaign --tag free-v1`)
+- [~] free-mode campaign: L + R done (§9); H items wait for credit (≈ $0.25 needed, $0.25 left)
 - [x] **Gateway vs direct transport (the P1 cost question)** — §6: transport cleared; the cause was a redaction bug, fixed and verified.
 - [x] (superseded) 2 more gpt-5-mini runs each of H04 and H10 (the P1 cost question). So far: H04 $0.049 **fail** then $0.024 pass; H10 $0.120 pass (judge rejected). Since P1, H04 is 2 pass / 2 fail (3/3 before) and every H10 run costs $0.106–0.121 with 61–75 calls (P0: $0.064–0.095, 43–57). Six runs point the same way, so an A/B with the gateway bypassed (`lanes/direct.env`, `PW_GATEWAY=off`) runs next, same day, same model.
 - [ ] gpt-5.4-nano on the full ladder
@@ -196,6 +196,9 @@ Lanes:
 | L10 | ✅ pass | $0.008 | 18 | 3.5 |
 | L11 | ✅ pass | $0.009 | 28 | 3.5 + 3.1 |
 | R01 | ✅ pass | $0.006 | 12 | |
-| R02 | ✅ pass | $0.010 | 19 | |
+| R02 | ✅ pass | $0.010 | 19 | 3.5 |
+| R03 | ⚠️ checks pass, but step limit → needs review | $0.014 | 48 | 3.5 + 3.1 |
+| R04 | ✅ pass | $0.014 | 52 | 3.5 + 3.1 |
+| R05 | ❌ fail (step limit, 80) | $0.024 | 94 | 3.5 + 3.1 |
 
-**L set: 11/11 in free mode, the same as gpt-5-mini (P0: 11/11).** Execution costs nothing (free Gemini quota); the credit pays only for planning and review, **≈ $0.007 per easy issue**, so the $5 monthly grant covers roughly 700 easy issues' planning and review. Runs take 1–3 min. 3.5 Flash-Lite answered "high demand" now and then, and the gateway moved those calls to 3.1 Flash-Lite without the task noticing.
+**L set: 11/11 in free mode, the same as gpt-5-mini (P0: 11/11).** **R set: 4/5 pass their checks (3 ready), R05 fails.** gpt-5-mini history on R (09-26, an older pipeline): R01–R04 mostly pass; R05 failed 5/5. So R05 is hard for both, and the free result on L+R is **15/16 correct outcomes against gpt-5-mini's 15/16 on the same items**. Free runs on the large-repo items use more calls (48–94; Flash-Lite needs more turns) but still almost no credit (≤ $0.024). Execution costs nothing (free Gemini quota); the credit pays only for planning and review, **≈ $0.007 per easy issue**, so the $5 monthly grant covers roughly 700 easy issues' planning and review. Runs take 1–3 min. 3.5 Flash-Lite answered "high demand" now and then, and the gateway moved those calls to 3.1 Flash-Lite without the task noticing.
