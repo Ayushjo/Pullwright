@@ -37,8 +37,23 @@ When no model lane can take the next call (`NoLaneAvailable` with a retry time),
 | `kill -9` of the backend mid-run, H02 (12 calls in) | after restart the job came back in ~90 s (dead worker's lock expiry), logged "worker restarted mid-run; continuing from the last saved step", **ready, hidden test passes**, 28 calls (same as uninterrupted) |
 | `kill -9` exactly between "status → running" and queueing the run (H06) | **found a bug**: the task was stuck in "running" with no job. Fixed with the orphan sweeper; after restart it re-queued the run stage, and the task completed (H06 checks 7/7, reviewer flagged → needs review) |
 
-## Still to do in P3
+## Admission (`src/entitlements/admission.ts`)
 
-- Admission: 3 task starts per rolling 24 h and 1 active task on the free plan (atomic, per user).
-- Separate free / paid queues with reserved worker slots.
-- A longer repeated-kill stress run.
+- **Limits:** free has 3 task starts per rolling 24 h and 1 active task (running *or* paused); Pro has 25 / 3. Env: `FREE_TASKS_PER_DAY`, `FREE_MAX_ACTIVE`, `PRO_TASKS_PER_DAY`, `PRO_MAX_ACTIVE`.
+- **One Lua script** prunes the window, checks both limits and records the start. Redis test: 30 simultaneous submits with 1 slot admit exactly 1.
+- **Errors:** `429 {code: "daily_limit", nextSlotAt}` with the time the oldest start leaves the window, or `429 {code: "active_limit"}`.
+- **Active slots** are kept in step with every state write (`put` and `transition`). Waiting on the user (plan approval, a question, review) frees the slot; finished or expired tasks are pruned before each check.
+- **Refunds:** a task that ends failed or cancelled before execution began (`runStarted`) gives its start back, as does a creation that throws after admission.
+- `GET /api/capacity` returns tier, limit, used, left, next slot, active — for the "2 of 3 free tasks left today" meter.
+- The operator and owner accounts bypass admission. A live 429 test needs a non-owner user with a key (P4 wallet); the logic is covered by the Redis tests.
+
+## Free and paid queues
+
+- Two BullMQ queues with their own worker slots (`WORKER_CONCURRENCY_FREE`, `WORKER_CONCURRENCY_PAID`), so free load can't delay paid work. BullMQ priorities can't preempt a running job; separate pools can.
+- The class is fixed at creation: a Pro plan or the user's own key means paid. It's stored on the task, so resume and retry jobs go to the same pool. The free queue keeps the original name, so jobs queued before the split still run.
+- **Live test:** 4 free tasks queued, then 1 paid. **The paid task left the queue after 0.0 s**; the free ones waited 17 / 31 / 65 s behind each other.
+
+## Still open
+
+- A longer repeated-kill stress run (one kill per test so far, plus the orphan case).
+- Per-host exec semaphore for CPU-heavy tests (needed once a host runs several tasks at once).
