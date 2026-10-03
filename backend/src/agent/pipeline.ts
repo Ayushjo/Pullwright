@@ -486,6 +486,7 @@ export class Pipeline {
     let sb: Sandbox | null = null
     try {
       const ws = this.workspace(s)
+      s.runStarted = true
       await this.setStatus(s, "running", "Implementing the plan")
       // The janitor drops node_modules from idle workspaces; bring them back (cache first) before running.
       if (s.setupCmds?.length) await this.installDeps(s, ws.root, s.setupCmds, true)

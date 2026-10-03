@@ -1,4 +1,5 @@
 import type { Redis } from "ioredis"
+import { admissionKeys } from "../entitlements/admission.js"
 import type { Described } from "./intake/describe.js"
 import type { SpecCheck } from "./intake/specCheck.js"
 import { createRedisClient } from "../config/redis.js"
@@ -76,6 +77,8 @@ export type TaskState = {
   runUsed?: { steps: number; gateAttempts: number; judgeRounds: number }
   /** Set while the run loop is mid-flight (persisted every step); found set at run start = the last worker died. */
   runInFlight?: boolean
+  /** Execution began at least once (admission: a start that never ran is refunded). */
+  runStarted?: boolean
   baseline?: VerifyRun[]
   planMessage?: string
   plan?: SubmittedPlan
@@ -122,10 +125,27 @@ const k = {
   rev: (id: string) => `pw:rev:${id}`,
 }
 
+/**
+ * Indexes kept in step with every state write:
+ * - in-flight tasks (the orphan sweeper checks these);
+ * - per user, tasks holding an active slot (in flight or parked) — admission counts them;
+ * - a start that ended (failed / cancelled) before execution began is given back to the user's daily allowance.
+ */
+function indexes(m: ReturnType<Redis["multi"]>, s: TaskState) {
+  if (IN_FLIGHT_STATUSES.includes(s.status)) m.sadd(IN_FLIGHT, s.taskId)
+  else m.srem(IN_FLIGHT, s.taskId)
+  if (!s.userId) return
+  if (HOLDS_SLOT.includes(s.status)) m.sadd(admissionKeys.active(s.userId), s.taskId)
+  else m.srem(admissionKeys.active(s.userId), s.taskId)
+  if ((s.status === "failed" || s.status === "cancelled") && !s.runStarted) m.zrem(admissionKeys.starts(s.userId), s.taskId)
+}
+
 const PARKED = "pw:parked"
 const IN_FLIGHT = "pw:inflight"
 /** Statuses in which some stage job must exist or be running; anything else waits on the user or is done. */
 export const IN_FLIGHT_STATUSES: TaskStatus[] = ["queued", "preparing", "planning", "running", "validating", "publishing"]
+/** Statuses that occupy one of the user's active-task slots (waiting on the user doesn't). */
+export const HOLDS_SLOT: TaskStatus[] = [...IN_FLIGHT_STATUSES, "parked"]
 
 const IF_OWNER_PEXPIRE = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) end return 0`
 const IF_OWNER_DEL = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`
@@ -153,9 +173,7 @@ export const taskStore = {
   async put(s: TaskState): Promise<TaskState> {
     s.updatedAt = new Date().toISOString()
     const m = r().multi().set(k.state(s.taskId), JSON.stringify(s), "EX", TTL).incr(k.rev(s.taskId)).expire(k.rev(s.taskId), TTL)
-    // Index of tasks a worker should be moving forward (the orphan sweeper checks these).
-    if (IN_FLIGHT_STATUSES.includes(s.status)) m.sadd(IN_FLIGHT, s.taskId)
-    else m.srem(IN_FLIGHT, s.taskId)
+    indexes(m, s)
     await m.exec()
     return s
   },
@@ -196,7 +214,12 @@ export const taskStore = {
       if (!cur || !from.includes(cur.status)) return null
       const next = mutate(cur)
       next.updatedAt = new Date().toISOString()
-      if (Number(await r().eval(CAS, 2, k.state(id), k.rev(id), rev, JSON.stringify(next), TTL)) === 1) return next
+      if (Number(await r().eval(CAS, 2, k.state(id), k.rev(id), rev, JSON.stringify(next), TTL)) === 1) {
+        const m = r().multi()
+        indexes(m, next)
+        await m.exec()
+        return next
+      }
     }
     throw new Error(`Task ${id} is being updated concurrently; try again`)
   },

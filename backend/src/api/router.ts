@@ -14,7 +14,10 @@ import { countActiveTasksForUser, getStatsForUser, listTasksForUser, userOwnsTas
 import { RedisRateStore } from "./redisRateStore.js"
 import { flushLlmCalls, listCallsForTask } from "../repositories/llmCallRepository.js"
 import { allocGen, createTask, enqueue } from "../agent/service.js"
-import { taskStore, TERMINAL, type TaskState } from "../agent/store.js"
+import { HOLDS_SLOT, taskStore, TERMINAL, type TaskState } from "../agent/store.js"
+import { admissionKeys, admit, limitsFor, pruneActive, refund, startsUsed, WINDOW_MS } from "../entitlements/admission.js"
+import { createRedisClient } from "../config/redis.js"
+import type { Redis } from "ioredis"
 import { getSpendLedger } from "../agent/spend.js"
 import { getEntitlement } from "../billing/index.js"
 import { diffStat, diffVs, restoreCheckpoint, tasksRoot } from "../agent/git.js"
@@ -52,6 +55,9 @@ const Reject = z.object({ path: z.string().min(1).max(500), rejected: z.boolean(
 const Restore = z.object({ sha: z.string().regex(/^[0-9a-f]{7,40}$/) })
 
 /** Client-safe view of a task (no transcripts, paths or secrets). */
+let admRedis: Redis | null = null
+const admissionRedis = () => (admRedis ??= createRedisClient())
+
 export function publicView(s: TaskState) {
   const { runMessages: _m, workDir: _w, planMessage: _p, instructions: _i, baseline, intake, ...rest } = s
   return {
@@ -142,10 +148,12 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     }
     try {
       let keyChoice: { keyKind: "platform" | "byok"; keyProvider?: "openai" | "openrouter" } = { keyKind: "platform" }
+      let tier: "free" | "pro" = "free"
       const owners = (process.env.OPERATOR_GITHUB_LOGINS ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean)
       const isOwner = Boolean(req.session?.login && owners.includes(req.session.login.toLowerCase()))
       if (!req.isOperator && !isOwner && req.session?.userId && isDatabaseEnabled()) {
         const ent = await getEntitlement(req.session.userId)
+        tier = ent.tier
         if (!ent.key) return res.status(402).json({ error: ent.reason ?? "Add an API key or upgrade to run tasks.", code: "needs_key_or_plan" })
         keyChoice = ent.key.kind === "byok" ? { keyKind: "byok", keyProvider: ent.key.provider } : { keyKind: "platform" }
       }
@@ -157,14 +165,30 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
         return res.status(429).json({ error: "Another task is being created — try again in a moment." })
       }
       try {
-        if (!req.isOperator && req.session?.userId) {
-          const active = await countActiveTasksForUser(req.session.userId)
-          if (active >= Number(process.env.MAX_ACTIVE_TASKS_PER_USER ?? 1)) {
-            return res.status(429).json({ error: "You already have a task running. Wait for it to finish or cancel it." })
+        // Admission: tasks per rolling 24 h and active tasks (running or paused), atomically per user.
+        const taskId = randomUUID()
+        const uid = !req.isOperator && !isOwner ? req.session?.userId : undefined
+        if (uid) {
+          await pruneActive(admissionRedis(), uid, async (id) => {
+            const t = await taskStore.get(id)
+            return Boolean(t && HOLDS_SLOT.includes(t.status))
+          })
+          const limits = limitsFor(tier)
+          const a = await admit(admissionRedis(), uid, taskId, limits)
+          if (!a.ok && a.reason === "daily_limit") {
+            return res.status(429).json({
+              error: `You've started ${limits.tasksPerDay} tasks in the last 24 hours (your plan's limit). The next one is available at ${new Date(a.nextSlotAt).toISOString().slice(11, 16)} UTC.`,
+              code: "daily_limit",
+              nextSlotAt: a.nextSlotAt,
+            })
+          }
+          if (!a.ok) {
+            return res.status(429).json({ error: `You already have ${limits.maxActive === 1 ? "a task" : `${limits.maxActive} tasks`} in progress (running or paused). Wait for it to finish or cancel it.`, code: "active_limit" })
           }
         }
         const s = await createTask(
           {
+            taskId,
             issueUrl: parsed.data.issueUrl,
             ...(req.session?.userId ? { userId: req.session.userId } : {}),
             ...(req.session?.login ? { githubLogin: req.session.login } : {}),
@@ -177,7 +201,10 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
             },
           },
           taskRegistry,
-        )
+        ).catch(async (err) => {
+          if (uid) await refund(admissionRedis(), uid, taskId) // admitted, but the task never existed
+          throw err
+        })
         logger.info(`Task created ${s.taskId} for ${s.owner}/${s.repo}#${s.issueNumber}${req.session?.login ? ` by ${req.session.login}` : ""}`)
         res.status(201).json({ taskId: s.taskId, status: s.status, issueUrl: s.issueUrl, issueNumber: s.issueNumber, createdAt: s.createdAt })
       } finally {
@@ -547,6 +574,30 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
       )
     }
     res.json(out)
+  })
+
+  // What the signed-in user can start now: "2 of 3 free tasks left today, next at 14:05 UTC".
+  router.get("/capacity", async (req, res) => {
+    const uid = req.session?.userId
+    if (!uid) return res.status(401).json({ error: "Sign in" })
+    const tier = isDatabaseEnabled() ? (await getEntitlement(uid)).tier : "free"
+    const limits = limitsFor(tier)
+    await pruneActive(admissionRedis(), uid, async (id) => {
+      const t = await taskStore.get(id)
+      return Boolean(t && HOLDS_SLOT.includes(t.status))
+    })
+    const used = await startsUsed(admissionRedis(), uid)
+    const oldest = await admissionRedis().zrange(admissionKeys.starts(uid), 0, 0, "WITHSCORES")
+    const active = await admissionRedis().scard(admissionKeys.active(uid))
+    res.json({
+      tier,
+      tasksPerDay: limits.tasksPerDay,
+      used,
+      left: Math.max(0, limits.tasksPerDay - used),
+      nextSlotAt: used >= limits.tasksPerDay && oldest[1] ? Number(oldest[1]) + WINDOW_MS : null,
+      maxActive: limits.maxActive,
+      active,
+    })
   })
 
   router.get("/budget", async (req, res) => {

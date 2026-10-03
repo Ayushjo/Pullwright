@@ -107,13 +107,15 @@ export type CreateTaskInput = {
   githubLogin?: string
   githubToken?: string
   options?: Partial<TaskOptions>
+  /** Pre-allocated id (admission records the start under it before the task exists). */
+  taskId?: string
 }
 
 export async function createTask(input: CreateTaskInput, registry: TaskRegistry): Promise<TaskState> {
   const ref = input.local
     ? { owner: "local", repo: input.local.repoPath.split("/").filter(Boolean).pop() ?? "repo", issueNumber: 0 }
     : parseIssueUrl(input.issueUrl)
-  const taskId = uuidv4()
+  const taskId = input.taskId ?? uuidv4()
   const now = new Date().toISOString()
   const state: TaskState = {
     taskId,
