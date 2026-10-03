@@ -39,6 +39,7 @@ const LocalTask = z.object({
   /** Pin the planning/execution model for this eval run (the reviewer stays on the configured model). */
   model: z.string().trim().min(3).max(100).regex(/^[\w./:-]+$/).optional(),
   transport: z.enum(["direct", "unpaced"]).optional(),
+  specCheck: z.literal(false).optional(),
 })
 const Approve = z.object({
   requirements: z.array(z.string().trim().min(3).max(500)).max(15).optional(),
@@ -126,7 +127,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
       {
         issueUrl: "",
         local: { repoPath, title: parsed.data.title, body: parsed.data.body },
-        options: { autoApprove: parsed.data.autoApprove ?? true, autoPublish: false, draft: true, ...(parsed.data.model ? { model: parsed.data.model } : {}), ...(parsed.data.transport ? { transport: parsed.data.transport } : {}) },
+        options: { autoApprove: parsed.data.autoApprove ?? true, autoPublish: false, draft: true, ...(parsed.data.model ? { model: parsed.data.model } : {}), ...(parsed.data.transport ? { transport: parsed.data.transport } : {}), ...(parsed.data.specCheck === false ? { specCheck: false as const } : {}) },
       },
       taskRegistry,
     )

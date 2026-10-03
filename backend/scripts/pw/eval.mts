@@ -84,7 +84,7 @@ const STOP = new Set(["ready", "needs_review", "failed", "cancelled", "needs_inp
 async function runItem(item: LadderItem) {
   const repo = materialise(item.fixture, item.gitSource, item.gitRef)
   const t0 = Date.now()
-  const { taskId } = await api("POST", "/api/eval/task", { localRepo: repo, title: item.title, body: item.body, autoApprove: !SIM_USER, ...(MODEL ? { model: MODEL } : {}), ...(TRANSPORT ? { transport: TRANSPORT } : {}) })
+  const { taskId } = await api("POST", "/api/eval/task", { localRepo: repo, title: item.title, body: item.body, autoApprove: !SIM_USER, ...(MODEL ? { model: MODEL } : {}), ...(TRANSPORT ? { transport: TRANSPORT } : {}), ...(NO_SPEC ? { specCheck: false } : {}) })
   process.stdout.write(`\n▶ ${item.id} task=${taskId}\n`)
   let s: Record<string, any> = {}
   let last = ""
@@ -219,6 +219,7 @@ async function runItem(item: LadderItem) {
     ...(TAG ? { tag: TAG } : {}),
     ...(SIM_USER ? { sim } : {}),
     ...(TRANSPORT ? { transport: TRANSPORT } : {}),
+    ...(NO_SPEC ? { specCheck: false } : {}),
     taskId,
     status: s.status,
     reason: s.failureReason ?? s.statusDetail,
@@ -268,6 +269,10 @@ const MODEL = flag("--model")
 const TAG = flag("--tag")
 // --transport direct|unpaced: per-task transport for interleaved A/B runs (see TaskOptions.transport).
 const TRANSPORT = flag("--transport")
+// --no-spec: skip the specification check for these tasks (A/B of intake on well-specified items).
+const nsi = argv.indexOf("--no-spec")
+const NO_SPEC = nsi >= 0
+if (NO_SPEC) argv.splice(nsi, 1)
 const ci = argv.indexOf("--campaign")
 const CAMPAIGN = ci >= 0
 if (CAMPAIGN) argv.splice(ci, 1)

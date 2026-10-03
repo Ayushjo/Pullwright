@@ -38,6 +38,8 @@ export type TaskOptions = {
   capUsd?: number
   /** Eval A/B only: "direct" bypasses the gateway (P0 transport); "unpaced" keeps the gateway but drops free-tier pacing seeds. */
   transport?: "direct" | "unpaced"
+  /** Eval A/B only: skip the specification check (intake still reads attachments). */
+  specCheck?: false
 }
 
 export type TaskState = {

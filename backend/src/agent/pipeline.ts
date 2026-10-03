@@ -362,7 +362,7 @@ export class Pipeline {
     const attachmentsText = attachmentsBlock(described)
 
     let spec: SpecCheck | null = null
-    if (process.env.PW_SPEC_CHECK !== "off") {
+    if (process.env.PW_SPEC_CHECK !== "off" && s.options.specCheck !== false) {
       try {
         spec = await specCheck({ title: issue.title, body: issue.body, comments: issue.comments, attachments: attachmentsText, grounding, repoMap }, this.tracked(s, await llmFor(s, "plan")), s.taskId)
       } catch (err) {
