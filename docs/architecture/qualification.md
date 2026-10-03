@@ -111,3 +111,24 @@ Eight runs separate cleanly: direct 3–9 tool failures, gateway 18–25. H04 fa
 - caching — the gateway runs had *higher* cache hit rates (85–88% vs 79–81%).
 
 **What remains:** wall-clock pacing. The gateway keeps Vercel's free tier under 5 requests/min per model, so a gateway run takes 13–19 min where a direct run takes 6–10. An interleaved three-arm run is in progress (`--transport`: gateway / gateway without pacing / direct, 2 runs each, same session).
+
+### Root cause found: our secret redaction made one line of the H10 repo un-editable
+
+Reading a gateway run's tool trace: after the gate sent the model back to change `backend/src/Orchestrator/index.ts`, it failed the same edit 15+ times in a row, re-reading the file each time. The file contains
+
+    const repoUrl = `https://x-access-token:${pushToken}@github.com/${owner}/${repo}.git`
+
+and `redact()` (since 09-27) rewrote it to `x-access-token:[REDACTED]@` in every tool result. The model copied `[REDACTED]` into `old_str` / patch context, which can never match the real file, until the step limit.
+
+| H10 run (10-02) | Transport | Tool failures | From this trap | Rest |
+|---|---|---|---|---|
+| 11:30 | gateway | 25 | 20 | 5 |
+| 11:46 | gateway | 18 | 15 | 3 |
+| 12:20 | direct | 3 | 0 | 3 |
+| 12:33 | direct | 8 | 0 | 8 |
+
+Without the trap, both transports fail 3–8 edits. Whether a run hits it depends on whether its plan touches that line, not on the transport. The 09-29 runs' events have expired, so those can't be checked.
+
+**Fix (`b3660a2`):** the pattern only matches real token shapes (`x-access-token:[A-Za-z0-9_]{20,}@`), so template code reaches the model intact. Any `view`/`search` output that redaction did change now carries a note: never put `[REDACTED]` in an edit, anchor on neighbouring lines. Tests cover both a real token (still hidden) and the template (kept).
+
+**General lesson:** redaction protects secrets but corrupts the agent's view of the code. Anything that alters tool output must tell the model it did.
