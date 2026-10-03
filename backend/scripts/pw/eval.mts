@@ -89,6 +89,9 @@ async function runItem(item: LadderItem) {
   let s: Record<string, any> = {}
   let last = ""
   const sim = { questions: 0, replans: 0, answers: [] as string[] }
+  // Time spent parked (waiting for model quota) doesn't count toward the 25-minute limit.
+  let parkedMs = 0
+  let parkedSince: number | null = null
   while (true) {
     await new Promise((r) => setTimeout(r, 4000))
     s = await api("GET", `/api/task/${taskId}`)
@@ -116,7 +119,18 @@ async function runItem(item: LadderItem) {
       continue
     }
     if (STOP.has(s.status)) break
-    if (Date.now() - t0 > 25 * 60_000) {
+    if (s.status === "parked") {
+      if (parkedSince === null) {
+        parkedSince = Date.now()
+        console.log(`  ⏸ parked: ${s.statusDetail ?? ""}`)
+      }
+      continue
+    }
+    if (parkedSince !== null) {
+      parkedMs += Date.now() - parkedSince
+      parkedSince = null
+    }
+    if (Date.now() - t0 - parkedMs > 25 * 60_000) {
       await api("POST", `/api/task/${taskId}/cancel`).catch(() => {})
       break
     }
@@ -210,6 +224,7 @@ async function runItem(item: LadderItem) {
   const reviewRounds = events.filter((e) => e.type === "judge_result").length
   const toolFailures = events.filter((e) => e.type === "tool_result" && !e.success).length
   const stuck = events.filter((e) => e.type === "notice" && /Loop detected/.test(e.message ?? "")).length
+  const parks = events.filter((e) => e.type === "parked").length
 
   const result = {
     ts: new Date().toISOString(),
@@ -242,6 +257,8 @@ async function runItem(item: LadderItem) {
     reviewRounds,
     toolFailures,
     stuck,
+    parks,
+    parkedMin: +(parkedMs / 60000).toFixed(1),
     stopReason: /Stopped early: (.*)/.exec(String(s.summary ?? ""))?.[1] ?? null,
   }
   // A task that died on exhausted quota is a campaign retry, not a measurement.
