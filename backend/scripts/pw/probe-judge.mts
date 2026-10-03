@@ -31,6 +31,9 @@ if (!lanes.length) {
   process.exit(1)
 }
 type Item = { id: string; source: string; label: "pass" | "fail"; title: string; body: string; plan: string; requirements: string[]; summary: string; patch: string; verify: string }
+// --label <name>: tag rows (e.g. contract-v2) so prompt versions can be compared on the same items.
+const lbi = argv.indexOf("--label")
+const LABEL = lbi >= 0 ? argv.splice(lbi, 2)[1] : undefined
 const items = readdirSync(dir)
   .filter((f) => f.endsWith(".json") && (!ONLY || ONLY.some((p) => f.startsWith(p))))
   .sort()
@@ -69,7 +72,7 @@ for (const lane of lanes) {
     }
     tally.cost += cost
     tally.ms += Date.now() - t0
-    appendFileSync(path.join(backend, ".spend/judge-probes.jsonl"), JSON.stringify({ ts: new Date().toISOString(), lane: name, item: it.id, source: it.source, label: it.label, success, outcome, costUsd: +cost.toFixed(5), ms: Date.now() - t0 }) + "\n")
+    appendFileSync(path.join(backend, ".spend/judge-probes.jsonl"), JSON.stringify({ ts: new Date().toISOString(), ...(LABEL ? { label_run: LABEL } : {}), lane: name, item: it.id, source: it.source, label: it.label, success, outcome, costUsd: +cost.toFixed(5), ms: Date.now() - t0 }) + "\n")
     process.stdout.write(outcome === "agree" ? "." : outcome === "FALSE_APPROVE" ? "A" : outcome === "false_reject" ? "r" : outcome === "too_large" ? "L" : "E")
   }
   const fails = items.filter((i) => i.label === "fail").length
