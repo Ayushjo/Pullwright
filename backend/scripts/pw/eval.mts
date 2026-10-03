@@ -348,6 +348,14 @@ for (const item of items) {
     console.log("Stopping: too close to the spend hard stop.")
     break
   }
+  // The Vercel free credit is a balance, not a daily window: stop cleanly instead of failing items on 402s.
+  if (process.env.AI_GATEWAY_API_KEY) {
+    const c = (await fetch("https://ai-gateway.vercel.sh/v1/credits", { headers: { Authorization: `Bearer ${process.env.AI_GATEWAY_API_KEY}` } }).then((r) => r.json()).catch(() => null)) as { balance?: string } | null
+    if (c?.balance !== undefined && Number(c.balance) < 0.03) {
+      console.log(`Stopping: Vercel credit is $${Number(c.balance).toFixed(3)} (< $0.03).`)
+      break
+    }
+  }
   for (let attempt = 1; attempt <= 3; attempt++) {
     if (CAMPAIGN) {
       const w = await campaignWait()
