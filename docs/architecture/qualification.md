@@ -132,3 +132,17 @@ Without the trap, both transports fail 3–8 edits. Whether a run hits it depend
 **Fix (`b3660a2`):** the pattern only matches real token shapes (`x-access-token:[A-Za-z0-9_]{20,}@`), so template code reaches the model intact. Any `view`/`search` output that redaction did change now carries a note: never put `[REDACTED]` in an edit, anchor on neighbouring lines. Tests cover both a real token (still hidden) and the template (kept).
 
 **General lesson:** redaction protects secrets but corrupts the agent's view of the code. Anything that alters tool output must tell the model it did.
+
+### Three-arm interleaved experiment (10-03, before the fix)
+
+Same session, same model, H10 ×2 per arm, interleaved:
+
+| Arm | Cost | End | Tool failures | From the trap |
+|---|---|---|---|---|
+| gateway | $0.140, $0.116 | needs review ×2 | 27, 19 | 25, 14 |
+| gateway, no pacing | $0.131, $0.136 | needs review ×2 | 22, 26 | 19, 21 |
+| direct | $0.074, **$0.111** | ready, **needs review** | 8, **22** | 0, **21** |
+
+**The second direct run fell into the same trap**, so the transport was never the cause. Pacing isn't either (the unpaced arm behaves like the paced one). Every expensive H10 run, on any transport, is the redaction trap. A run hits it when its plan touches `Orchestrator/index.ts`, or when the gate's "planned file not changed" check sends it there. The P1 "hard items cost more through the gateway" finding was this bug, plus small-n luck in which runs hit it.
+
+Verification on the fixed code: H10 ×3 through the gateway (`--tag p2-h10-fixed`) — _running_.
