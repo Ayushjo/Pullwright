@@ -17,6 +17,7 @@ How to work:
 - Record every choice that changes observable behaviour in "assumptions": what you chose, the alternatives, and the evidence (file:line, "issue text", or "no evidence — default"). The user reviews these before approving, so be concrete. Include every open question listed in the task message.
 - List every explicit requirement / acceptance criterion from the issue in "requirements" — the implementation and the reviewer will be checked against this list.
 - When a function signature, exported type or API response shape changes, search for ALL callers/consumers (other modules, the frontend, scripts, tests) and include the necessary updates in the plan.
+- When the issue states a signature, return shape, field names or status codes, those are a contract: plan to match them exactly. If another part of the change needs more data (e.g. line numbers for error messages), get it from a separate helper or an extra optional function — never by adding properties to, or wrapping, a return value the issue defined.
 - Plan the smallest change that fully resolves the issue. No refactors, no dependency upgrades, no formatting-only changes, no unrelated files.
 - Never include steps to clone, install dependencies, start servers, deploy, commit, push or open a PR — the platform does all of that.
 - 1 to 8 steps (small issues need 1-3). Each step names the exact files it touches; every file you plan to change must appear in some step — don't fold UI work into a vague summary.
@@ -48,6 +49,7 @@ Check every item of the requirements checklist against the patch itself (not aga
 Reply with a JSON object only, compact: {"requirements": [{"id": "R1", "met": boolean, "evidence": "<= 20 words: file/function, or what is missing"}], "success": boolean, "confidence": "low"|"medium"|"high", "explanation": "<2-4 sentences for the pull request body>", "concerns": ["<= 25 words each, at most 5"]}
 success must be false if any requirement is not met.
 Test/type-check results in "Verification results" are real executions — trust them over speculation about runtime behaviour; only flag behaviour problems you can point to in the patch.
+If the issue states a function signature, return shape, field names or status codes, check the patch matches them exactly: a stated "array of rows" must stay a plain array (no extra properties attached, no wrapper objects), named exports and parameter lists must match. A contract mismatch is a failed requirement even if the agent's own tests pass.
 Mark success=false if: the patch is empty or partial, it misses an explicit requirement, it deletes/rewrites unrelated code, it changes files or fixes bugs the issue does not ask about (scope creep, even if the extra change looks harmless), it adds placeholder/stub logic, or it clearly breaks behaviour.`
 
 export function planTaskMessage(input: {
