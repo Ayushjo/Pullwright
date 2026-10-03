@@ -86,7 +86,7 @@ No question was asked outright in these 5 runs (all underspec ≤ 2 without a bl
 
 ## 5. Open steps
 
-- [~] free-mode campaign: L + R done (§9); H items wait for credit (≈ $0.25 needed, $0.25 left)
+- [x] free-mode campaign over the full ladder (§9)
 - [x] **Gateway vs direct transport (the P1 cost question)** — §6: transport cleared; the cause was a redaction bug, fixed and verified.
 - [x] (superseded) 2 more gpt-5-mini runs each of H04 and H10 (the P1 cost question). So far: H04 $0.049 **fail** then $0.024 pass; H10 $0.120 pass (judge rejected). Since P1, H04 is 2 pass / 2 fail (3/3 before) and every H10 run costs $0.106–0.121 with 61–75 calls (P0: $0.064–0.095, 43–57). Six runs point the same way, so an A/B with the gateway bypassed (`lanes/direct.env`, `PW_GATEWAY=off`) runs next, same day, same model.
 - [ ] gpt-5.4-nano on the full ladder
@@ -202,3 +202,41 @@ Lanes:
 | R05 | ❌ fail (step limit, 80) | $0.024 | 94 | 3.5 + 3.1 |
 
 **L set: 11/11 in free mode, the same as gpt-5-mini (P0: 11/11).** **R set: 4/5 pass their checks (3 ready), R05 fails.** gpt-5-mini history on R (09-26, an older pipeline): R01–R04 mostly pass; R05 failed 5/5. So R05 is hard for both, and the free result on L+R is **15/16 correct outcomes against gpt-5-mini's 15/16 on the same items**. Free runs on the large-repo items use more calls (48–94; Flash-Lite needs more turns) but still almost no credit (≤ $0.024). Execution costs nothing (free Gemini quota); the credit pays only for planning and review, **≈ $0.007 per easy issue**, so the $5 monthly grant covers roughly 700 easy issues' planning and review. Runs take 1–3 min. 3.5 Flash-Lite answered "high demand" now and then, and the gateway moved those calls to 3.1 Flash-Lite without the task noticing.
+
+### Hard items in free mode (10-03)
+
+| Item | Free mode | gpt-5-mini (P0, 09-29) | Credit | Calls | Min |
+|---|---|---|---|---|---|
+| H01 | ✅ pass | ❌ (0/3 across runs) | $0.009 | 23 | 1.4 |
+| H02 | ✅ pass | ✅ | $0.012 | 32 | 2.4 |
+| H03 | ✅ pass | ✅ | $0.011 | 20 | 1.7 |
+| H04 | ✅ pass | ✅ | $0.015 | 28 | 2.8 |
+| H05 | ✅ pass | ✅ | $0.009 | 17 | 1.7 |
+| H06 | ✅ pass | ✅ | $0.024 | 74 | 9.7 |
+| H07 | ❌ step limit, needs review | ✅ | $0.021 | 94 | 9.8 |
+| H08 | ✅ pass | ✅ | $0.026 | 59 | 8.4 |
+| H09 | ⚠️ hidden test passes; step limit → needs review | ✅ | $0.023 | 87 | 11.8 |
+| H10 | ✅ pass | ✅ | $0.017 | 44 | 5.0 |
+
+### Free mode vs paid, whole ladder
+
+| Set | Free mode (10-03) | gpt-5-mini (P0) |
+|---|---|---|
+| L (11) | **11/11** | 11/11 |
+| R (5) | **4/5** (R05 fails) | 4/5 (R05 failed 5/5 on 09-26) |
+| H (10) | **9/10** hidden tests pass (8 ready) | 9/10 |
+| Total | **24/26** | 24/26 |
+| Credit per task | **≈ $0.012** (planning + review only) | ≈ $0.04 (everything, same credit) |
+
+**The parity target (free within 10 pp of paid) is met on this ladder: 24/26 vs 24/26.**
+
+Caveats:
+- one free run per item;
+- the gpt-5-mini numbers come from P0 runs on an earlier pipeline;
+- free mode here means **free execution plus gpt-5-mini planning and review on the Vercel free credit**. It isn't measured without the credit (Flash planning, Groq review).
+
+The credit makes it cheap: 26 tasks used ≈ $0.36, so a $5 grant covers ≈ 350 tasks of planning and review per month.
+
+Notes:
+- **H01 passed in free mode for the first time.** The open-questions change (§8) was active, so this clear issue planned without them, as P0 did.
+- The two misses are step-limit stops on the largest items (H07, H09), where Flash-Lite needs more turns (87–94 calls). The run-loop cap, not the model, ends them. A per-lane step allowance for the free executor is a candidate fix.
