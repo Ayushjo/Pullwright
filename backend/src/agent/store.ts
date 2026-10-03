@@ -36,6 +36,8 @@ export type TaskOptions = {
   keyProvider?: "openai" | "openrouter"
   /** Per-task spend cap in USD (defaults from TASK_BUDGET_USD, scaled by plan size, raisable by the user). */
   capUsd?: number
+  /** Eval A/B only: "direct" bypasses the gateway (P0 transport); "unpaced" keeps the gateway but drops free-tier pacing seeds. */
+  transport?: "direct" | "unpaced"
 }
 
 export type TaskState = {

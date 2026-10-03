@@ -70,8 +70,10 @@ async function modelSpec(s: TaskState, role: "plan" | "run" | "judge"): Promise<
 async function llmFor(s: TaskState, role: "plan" | "run" | "judge"): Promise<ChatFn> {
   const base = await modelSpec(s, role)
   // PW_GATEWAY=off: the P0 transport (direct chat, 3 attempts, 120 s) for A/B runs against the gateway.
-  if (process.env.PW_GATEWAY === "off") return (o) => chat(base, o)
+  if (process.env.PW_GATEWAY === "off" || s.options.transport === "direct") return (o) => chat(base, o)
   if (base.apiKey) return chatVia([laneFromSpec(base, s.userId ?? null)])
+  // A/B: same lane but spend class "platform", so free-tier seed limits (Vercel 5 RPM pacing) don't apply.
+  if (s.options.transport === "unpaced") return chatVia([{ ...laneFromSpec(base), spendClass: "platform" }])
   if (s.options.model && role !== "judge") return chatVia([laneFromSpec(base)])
   // Executors can be chosen per task size (PW_LANES_RUN_S / _M / _L), falling back to PW_LANES_RUN.
   const tier = role === "run" ? s.plan?.tier : undefined
