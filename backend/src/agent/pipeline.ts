@@ -93,6 +93,12 @@ async function visionChat(s: TaskState): Promise<ChatFn | null> {
   return lanes.length ? chatVia(lanes) : null
 }
 
+/** Step allowance multiplier for the run loop (1 by default; the free lane profile raises it). Capped so a run stays ≤ 120 steps. */
+export function runStepFactor(): number {
+  const f = Number(process.env.PW_RUN_STEP_FACTOR ?? 1)
+  return Number.isFinite(f) && f >= 1 ? Math.min(f, 1.5) : 1
+}
+
 export function taskCap(s: TaskState): number {
   const base = getSpendLedger().taskCapUsd
   if (s.options.capUsd) return s.options.capUsd
@@ -526,7 +532,9 @@ export class Pipeline {
         {
           ...LIMITS.run,
           // Bigger plans get more steps; the per-task dollar cap remains the hard guard.
-          maxSteps: Math.min(80, Math.max(LIMITS.run.maxSteps, 25 + 8 * plannedFiles.length)),
+          // PW_RUN_STEP_FACTOR: free executors (Flash-Lite) need ~1.3-1.5x the turns of gpt-5-mini on big items
+          // (H06 74 vs 35 calls); their calls cost only free quota (qualification.md §9).
+          maxSteps: Math.round(Math.min(80 * runStepFactor(), Math.max(LIMITS.run.maxSteps, 25 + 8 * plannedFiles.length) * runStepFactor())),
           maxWallMs: Math.min(30 * 60_000, LIMITS.run.maxWallMs + plannedFiles.length * 60_000),
           taskCapUsd: taskCap(s),
         },
