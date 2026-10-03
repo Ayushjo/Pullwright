@@ -174,3 +174,28 @@ All failed H04 runs since 10-02 (3 of 5, on both transports) break the same requ
 The spec-check runs' decisions match the issue. They fail on an implementation slip: off-by-one start lines when the line numbers are recomputed by re-scanning. One of the three still bolted line data onto `parseCsv`, down from 3/3 before the planner contract rule (§7). What differs is effort: with the questions settled up front, runs finish fast and confident (19–23 calls, reviewer ✔); without them, the agent works longer (38–55 calls) and gets the tricky part right more often.
 
 **n is small** (Fisher exact on 5/7 vs 1/7: p ≈ 0.10), and the mechanism isn't proven. Change made (narrowest the data supports): **autonomous runs on issues rated 0–1 no longer get the open questions.** Interactive runs keep them, where a person can correct decisions (the measured benefit in §4). Ladder runs are autonomous, so on clear items they now plan as before intake. Re-measure H04 when credit allows.
+
+## 9. Free mode on the ladder (`lanes/free.env`, `--campaign --tag free-v1`, 10-03)
+
+Lanes:
+- **plan:** gpt-5-mini on the Vercel free credit (Gemini 3.5 Flash as fallback);
+- **execute:** Gemini 3.5 Flash-Lite → 3.1 Flash-Lite → Groq qwen;
+- **review:** gpt-5-mini on the credit → Groq gpt-oss-120b.
+
+| Item | Free mode | Credit used | Calls | Execution lanes |
+|---|---|---|---|---|
+| L01 | ✅ pass | $0.004 | 15 | 3.5 + 3.1 Flash-Lite (failover mid-task) |
+| L02 | ✅ pass | $0.005 | 12 | 3.5 Flash-Lite |
+| L03 | ✅ pass | $0.006 | 13 | 3.5 + 3.1 |
+| L04 | ✅ pass | $0.007 | 16 | 3.5 |
+| L05 | ✅ pass | $0.006 | 17 | 3.5 |
+| L06 | ✅ pass | $0.007 | 18 | 3.5 |
+| L07 | ✅ pass | $0.006 | 20 | 3.5 |
+| L08 | ✅ pass | $0.011 | 29 | 3.5 + 3.1 |
+| L09 | ✅ blocked as designed | $0.002 | 1 | — |
+| L10 | ✅ pass | $0.008 | 18 | 3.5 |
+| L11 | ✅ pass | $0.009 | 28 | 3.5 + 3.1 |
+| R01 | ✅ pass | $0.006 | 12 | |
+| R02 | ✅ pass | $0.010 | 19 | |
+
+**L set: 11/11 in free mode, the same as gpt-5-mini (P0: 11/11).** Execution costs nothing (free Gemini quota); the credit pays only for planning and review, **≈ $0.007 per easy issue**, so the $5 monthly grant covers roughly 700 easy issues' planning and review. Runs take 1–3 min. 3.5 Flash-Lite answered "high demand" now and then, and the gateway moved those calls to 3.1 Flash-Lite without the task noticing.
