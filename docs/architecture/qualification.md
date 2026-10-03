@@ -146,3 +146,10 @@ Same session, same model, H10 ×2 per arm, interleaved:
 **The second direct run fell into the same trap**, so the transport was never the cause. Pacing isn't either (the unpaced arm behaves like the paced one). Every expensive H10 run, on any transport, is the redaction trap. A run hits it when its plan touches `Orchestrator/index.ts`, or when the gate's "planned file not changed" check sends it there. The P1 "hard items cost more through the gateway" finding was this bug, plus small-n luck in which runs hit it.
 
 Verification on the fixed code: H10 ×3 through the gateway (`--tag p2-h10-fixed`) — _running_.
+
+## 7. H04: the agent breaks a contract the issue states
+
+All failed H04 runs since 10-02 (3 of 5, on both transports) break the same requirement. The issue says `parseCsv(text)` returns an array of rows (arrays of strings). To report line numbers, the agent attached extra data to that return value instead: a `startLines` / `lineStarts` property on the array, or `{ row, startLine }` objects. Its own tests pass; the hidden test's `deepEqual` fails. The reviewer approved all three.
+
+- **Planner rule** (`2e204c0`, kept): signatures, return shapes, field names and status codes stated in the issue are a contract; extra data comes from a separate helper, never from changing a stated return value. Measured next with H04 runs.
+- **Reviewer rule** (tried, reverted in `66ecbdf`): the replay with the same rule in `JUDGE_SYSTEM` still approved **3/3** of these contract breaks. False approvals on the original 60 went 2 → 1 and false rejections 5 → 7. No gain on the target and more noise, so it was removed. A reviewer reading a diff doesn't notice `rows.startLines = …` as a contract change. Prevention has to come earlier (plan) or be deterministic.
