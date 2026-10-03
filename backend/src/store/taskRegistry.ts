@@ -10,7 +10,7 @@ export type TaskRegistryEntry = {
   status:
     | "queued" | "running" | "done" | "failed"
     | "preparing" | "planning" | "awaiting_approval" | "needs_input" | "validating"
-    | "ready" | "needs_review" | "publishing" | "published" | "cancelled"
+    | "ready" | "needs_review" | "parked" | "publishing" | "published" | "cancelled"
   createdAt: string
   updatedAt: string
   prUrl?: string

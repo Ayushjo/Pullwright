@@ -38,6 +38,8 @@ export type LoopOutcome =
   | { status: "ask_user"; question: string }
   | { status: "failed"; reason: string }
   | { status: "cancelled" }
+  /** No model lane can take the next call: the task should wait (retryAt) or needs a key/credits (null). */
+  | { status: "parked"; retryAt: number | null; reason: string }
 
 export class AgentLoop {
   messages: Msg[]
@@ -117,7 +119,9 @@ export class AgentLoop {
         if (err instanceof SpendLimitError) return { status: "failed", reason: `Budget cap reached: ${err.message}` }
         if (err instanceof NoLaneAvailable) {
           const when = err.retryAt ? ` (next available ${new Date(err.retryAt).toISOString()})` : " — add a key or credits"
-          return { status: "failed", reason: `No model available right now${when}` }
+          // The conversation is consistent here (the failed call added nothing), so the caller can park
+          // the task and resume this exact conversation later.
+          return { status: "parked", retryAt: err.retryAt, reason: `No model available right now${when}` }
         }
         return { status: "failed", reason: `LLM error: ${redact((err as Error).message)}` }
       }

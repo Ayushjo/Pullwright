@@ -19,6 +19,8 @@ export type TaskStatus =
   | "validating"
   | "ready"
   | "needs_review"
+  /** Waiting for model quota to come back (or for a key/credits); resumes on its own. */
+  | "parked"
   | "publishing"
   | "published"
   | "failed"
@@ -68,6 +70,10 @@ export type TaskState = {
   repoPrivate?: boolean
   /** Attachments with transcripts and the specification check (intake/, docs/architecture/intake.md). */
   intake?: { attachments: Described[]; spec: SpecCheck | null; decision: "ask" | "plan" }
+  /** Park/resume (P3): which stage resumes, when, why, and the job generation allowed to resume it. */
+  park?: { stage: "plan" | "run"; until: number | null; reason: string; since: string; count: number; gen?: number; note?: "continue" | "finish_again" }
+  /** Run-loop budget carried across parks so a task can't get a fresh step allowance each time it waits. */
+  runUsed?: { steps: number; gateAttempts: number; judgeRounds: number }
   baseline?: VerifyRun[]
   planMessage?: string
   plan?: SubmittedPlan

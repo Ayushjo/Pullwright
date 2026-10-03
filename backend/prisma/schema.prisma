@@ -21,6 +21,7 @@ enum TaskStatus {
   validating
   ready
   needs_review
+  parked
   publishing
   published
   cancelled
