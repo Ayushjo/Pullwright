@@ -161,3 +161,16 @@ All failed H04 runs since 10-02 (3 of 5, on both transports) break the same requ
 
 - **Planner rule** (`2e204c0`, kept): signatures, return shapes, field names and status codes stated in the issue are a contract; extra data comes from a separate helper, never from changing a stated return value. Measured next with H04 runs.
 - **Reviewer rule** (tried, reverted in `66ecbdf`): the replay with the same rule in `JUDGE_SYSTEM` still approved **3/3** of these contract breaks. False approvals on the original 60 went 2 → 1 and false rejections 5 → 7. No gain on the target and more noise, so it was removed. A reviewer reading a diff doesn't notice `rows.startLines = …` as a contract change. Prevention has to come earlier (plan) or be deterministic.
+
+## 8. Does the spec check hurt well-specified hard issues? (H04)
+
+| H04 runs | Hidden test passes |
+|---|---|
+| Before intake existed (09-27 … 09-29 P1) | 3 / 4 |
+| With the spec check (since P1.5) | **1 / 7** |
+| Same current code, spec check off (`--no-spec`, 10-03) | **2 / 3** ($0.099, $0.075, $0.067) |
+| Same current code, spec check on (10-03) | 0 / 3 ($0.043, $0.032, $0.035) |
+
+The spec-check runs' decisions match the issue. They fail on an implementation slip: off-by-one start lines when the line numbers are recomputed by re-scanning. One of the three still bolted line data onto `parseCsv`, down from 3/3 before the planner contract rule (§7). What differs is effort: with the questions settled up front, runs finish fast and confident (19–23 calls, reviewer ✔); without them, the agent works longer (38–55 calls) and gets the tricky part right more often.
+
+**n is small** (Fisher exact on 5/7 vs 1/7: p ≈ 0.10), and the mechanism isn't proven. Change made (narrowest the data supports): **autonomous runs on issues rated 0–1 no longer get the open questions.** Interactive runs keep them, where a person can correct decisions (the measured benefit in §4). Ladder runs are autonomous, so on clear items they now plan as before intake. Re-measure H04 when credit allows.
