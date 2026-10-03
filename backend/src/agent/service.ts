@@ -29,18 +29,31 @@ let genRedis: Redis | null = null
  * Jobs carry a per-task generation number (monotonic, also a fencing token for later park/resume),
  * and enqueueing the same stage of the same task twice within 3 s is deduplicated.
  */
-export async function enqueue(stage: StageName, taskId: string) {
+/** Next generation number for a task (also the fencing token a parked task stores for its resume). */
+export async function allocGen(taskId: string): Promise<number> {
   genRedis ??= createRedisClient()
   const gen = await genRedis.incr(`pw:gen:${taskId}`)
   await genRedis.expire(`pw:gen:${taskId}`, 30 * 24 * 3600)
-  await pwQueue.add(stage, { stage, taskId, gen }, {
+  return gen
+}
+
+/** opts.gen: a generation already stored on the task (resume) — allocate it first, save it, then enqueue. */
+export async function enqueue(stage: StageName, taskId: string, opts: { delayMs?: number; resume?: boolean; gen?: number } = {}): Promise<number> {
+  const gen = opts.gen ?? (await allocGen(taskId))
+  await pwQueue.add(stage, { stage, taskId, gen, ...(opts.resume ? { resume: true } : {}) }, {
     jobId: `${taskId}:${stage}:${gen}`,
-    deduplication: { id: `${taskId}:${stage}`, ttl: 3000 },
+    // Resumes are fenced by gen instead (a manual "resume now" must not be swallowed by a pending delayed job).
+    ...(opts.resume ? {} : { deduplication: { id: `${taskId}:${stage}`, ttl: 3000 } }),
+    ...(opts.delayMs && opts.delayMs > 0 ? { delay: Math.round(opts.delayMs) } : {}),
     removeOnComplete: { age: 3600, count: 200 },
     removeOnFail: { age: 24 * 3600, count: 500 },
     attempts: 1,
   })
+  return gen
 }
+
+/** A parked task whose wait has run out without resuming is finalized (partial work kept for review). */
+export const MAX_PARK_MS = Number(process.env.PW_MAX_PARK_HOURS ?? 48) * 3_600_000
 
 /** Statuses in which a stage may (still) run. A duplicate job that finds the task elsewhere is skipped. */
 const STAGE_FROM: Record<StageName, TaskStatus[]> = {
@@ -153,7 +166,7 @@ export function startPipelineWorker(bus: EventBus, registry: TaskRegistry) {
   const concurrency = Number(process.env.WORKER_CONCURRENCY ?? 1)
   const worker = new Worker(
     QUEUE,
-    async (job: Job<{ stage: StageName; taskId: string; gen?: number }>, token?: string) => {
+    async (job: Job<{ stage: StageName; taskId: string; gen?: number; resume?: boolean }>, token?: string) => {
       const { stage, taskId } = job.data
       // One stage per task at a time, across all workers.
       const owner = `${WORKER_ID}:${job.id}`
@@ -166,7 +179,24 @@ export function startPipelineWorker(bus: EventBus, registry: TaskRegistry) {
         void taskStore.renewLock(taskId, owner, LOCK_MS).then((ok) => ok || logger.warn(`Lost the stage lock for ${taskId}`))
       }, LOCK_MS / 3)
       try {
-        const s = await taskStore.get(taskId)
+        let s = await taskStore.get(taskId)
+        // Resuming a parked task: only the job generation scheduled by the latest park (or a manual resume)
+        // may wake it, and only once (CAS). Stale delayed jobs find a different gen and do nothing.
+        if (s?.status === "parked") {
+          if (!job.data.resume || !s.park || job.data.gen !== s.park.gen) {
+            logger.info(`↷ skip ${stage} ${taskId}: parked, not this job's turn`)
+            return
+          }
+          if (Date.now() - Date.parse(s.park.since) > MAX_PARK_MS) {
+            await taskStore.unmarkParked(taskId)
+            await pipeline.expirePark(taskId)
+            return
+          }
+          s = await taskStore.transition(taskId, ["parked"], (cur) => ({ ...cur, status: stage === "plan" ? "planning" : "running", statusDetail: "Resuming after a pause" }))
+          if (!s) return
+          await taskStore.unmarkParked(taskId)
+          await bus.emit(taskId, { type: "resumed", stage })
+        }
         if (!s || !STAGE_FROM[stage].includes(s.status)) {
           logger.info(`↷ skip ${stage} ${taskId}: task is ${s?.status ?? "gone"}`)
           return
@@ -183,6 +213,24 @@ export function startPipelineWorker(bus: EventBus, registry: TaskRegistry) {
     { connection, concurrency, lockDuration: 60_000 },
   )
   worker.on("failed", (job, err) => logger.error(`Job ${job?.id} failed: ${err?.message}`))
+  // Sweeper: a parked task whose resume time passed 5 minutes ago and is still parked lost its delayed job
+  // (e.g. Redis was flushed); schedule a fresh one. The new gen fences any old job that shows up late.
+  const sweep = setInterval(() => {
+    void (async () => {
+      for (const id of await taskStore.parkedDue(Date.now() - 5 * 60_000)) {
+        const t = await taskStore.get(id)
+        if (!t || t.status !== "parked" || !t.park || t.park.until === null) {
+          await taskStore.unmarkParked(id)
+          continue
+        }
+        const gen = await allocGen(id)
+        if (!(await taskStore.transition(id, ["parked"], (cur) => ({ ...cur, park: { ...cur.park!, gen } })))) continue
+        await enqueue(t.park.stage, id, { resume: true, gen })
+        logger.info(`sweeper: re-scheduled resume of parked task ${id}`)
+      }
+    })().catch((e) => logger.warn(`park sweeper: ${(e as Error).message}`))
+  }, 60_000)
+  sweep.unref()
   // Containers left over from a crash are reaped on start.
   void Sandbox.reapAll().then((n) => n && logger.info(`Reaped ${n} stale sandbox containers`)).catch(() => {})
   return worker

@@ -11,6 +11,7 @@ import { Workspace } from "./workspace.js"
 import { Sandbox } from "./sandbox.js"
 import { buildRepoMap, outline } from "./repoMap.js"
 import { chatVia, laneFromSpec, parseLanes, type ChatFn } from "../llm/lanes.js"
+import { NoLaneAvailable } from "../llm/gateway.js"
 import { detectRepoConfig } from "./repoConfig.js"
 import { cacheableInstall, depKey, restoreDeps, saveDeps } from "./depCache.js"
 import { planTools, runTools } from "./tools/index.js"
@@ -31,7 +32,7 @@ import { classifyTier } from "./tier.js"
 import { PROVIDERS, supportsVision } from "../llm/registry.js"
 
 export type StageName = "plan" | "run" | "publish"
-export type Enqueue = (stage: StageName, taskId: string) => Promise<void>
+export type Enqueue = (stage: StageName, taskId: string, opts?: { delayMs?: number; resume?: boolean; gen?: number }) => Promise<number | void>
 export type StatusSink = (s: TaskState) => Promise<void>
 
 export function spec(role: "plan" | "run" | "judge", override?: string): ModelSpec {
@@ -293,7 +294,10 @@ export class Pipeline {
       await taskStore.put(s)
 
       if (out.status === "cancelled") return this.cancelled(s)
+      // Out of model quota mid-plan: wait and plan again from the saved plan message (a few cheap calls).
+      if (out.status === "parked") return this.park(s, "plan", out.retryAt, out.reason)
       if (out.status !== "plan") return this.fail(s, out.status === "failed" ? out.reason : "Planner did not produce a plan")
+      delete s.park
       const plan = out.control.plan
       const size = classifyTier(plan)
       plan.tier = size.tier
@@ -318,6 +322,39 @@ export class Pipeline {
       if (err instanceof SpendLimitError) return this.fail(s, `Budget cap reached: ${err.message}`)
       return this.fail(s, (err as Error).message)
     }
+  }
+
+  /**
+   * Park the task until a model lane frees up (P3). The worker resumes it from a delayed job; resumes
+   * after a provider's daily reset are spread over 2 minutes so parked tasks don't all wake at once.
+   * retryAt null = no lane can serve without the user acting (add a key or credits): no auto-resume.
+   */
+  private async park(s: TaskState, stage: "plan" | "run", retryAt: number | null, reason: string, note?: "continue" | "finish_again") {
+    const until = retryAt === null ? null : Math.max(retryAt, Date.now() + 30_000) + Math.floor(Math.random() * 120_000)
+    const gen = until === null ? undefined : ((await this.enqueue(stage, s.taskId, { delayMs: until - Date.now(), resume: true })) ?? undefined)
+    s.park = { stage, until, reason, since: new Date().toISOString(), count: (s.park?.count ?? 0) + 1, ...(gen !== undefined ? { gen } : {}), ...(note ? { note } : {}) }
+    await taskStore.markParked(s.taskId, until)
+    const detail = until === null ? `${reason}. Add a key or credits to continue.` : `Waiting for model quota — resumes about ${new Date(until).toISOString().slice(11, 16)} UTC`
+    await this.setStatus(s, "parked", detail)
+    await this.emit(s.taskId, { type: "parked", stage, until, reason })
+  }
+
+  /** A park that outlived MAX_PARK_MS: keep partial work for review, otherwise fail. */
+  async expirePark(taskId: string) {
+    const s = await taskStore.get(taskId)
+    if (!s || s.status !== "parked") return
+    const why = `Stopped: no model was available for ${Math.round((Date.now() - Date.parse(s.park?.since ?? s.updatedAt)) / 3_600_000)} h`
+    if (s.park?.stage === "run" && s.workDir && s.baseSha && existsSync(s.workDir)) {
+      const patch = await diffVs(s.workDir, s.baseSha).catch(() => "")
+      if (patch.trim()) {
+        await taskStore.savePatch(taskId, patch)
+        s.stats = await diffStat(s.workDir, s.baseSha).catch(() => [])
+        s.summary = `${why}. Partial work is kept for review.`
+        await this.setStatus(s, "needs_review", "Needs human review before publishing", { finishedAt: new Date().toISOString() })
+        return
+      }
+    }
+    return this.fail(s, why)
   }
 
   /** Usage from intake calls (transcripts, spec check) shows in the feed and cost like planner calls. */
@@ -454,8 +491,14 @@ export class Pipeline {
       if (s.setupCmds?.length) await this.installDeps(s, ws.root, s.setupCmds, true)
       sb = await Sandbox.create(taskId, ws.root, { network: false })
       const sandbox = sb
-      let gateAttempts = 0
-      let judgeRounds = 0
+      // Resuming after a park: carry the run's budget over so waiting never buys extra steps or rounds.
+      const resumed = s.park?.stage === "run" ? s.park : undefined
+      delete s.park
+      const used = s.runUsed ?? { steps: 0, gateAttempts: 0, judgeRounds: 0 }
+      let gateAttempts = used.gateAttempts
+      let judgeRounds = used.judgeRounds
+      // A review that couldn't get a model: the run parks and, on resume, the agent calls finish again.
+      let reviewParked: NoLaneAvailable | null = null
       const review = async (patch: string) => {
         try {
           const verifyText = (s.gate?.verify ?? [])
@@ -478,6 +521,10 @@ export class Pipeline {
           await this.emit(taskId, { type: "judge_result", ...v })
           return v
         } catch (err) {
+          if (err instanceof NoLaneAvailable) {
+            reviewParked = err
+            return null
+          }
           logger.warn(`judge failed: ${(err as Error).message}`)
           return null
         }
@@ -534,7 +581,7 @@ export class Pipeline {
           // Bigger plans get more steps; the per-task dollar cap remains the hard guard.
           // PW_RUN_STEP_FACTOR: free executors (Flash-Lite) need ~1.3-1.5x the turns of gpt-5-mini on big items
           // (H06 74 vs 35 calls); their calls cost only free quota (qualification.md §9).
-          maxSteps: Math.round(Math.min(80 * runStepFactor(), Math.max(LIMITS.run.maxSteps, 25 + 8 * plannedFiles.length) * runStepFactor())),
+          maxSteps: Math.max(8, Math.round(Math.min(80 * runStepFactor(), Math.max(LIMITS.run.maxSteps, 25 + 8 * plannedFiles.length) * runStepFactor())) - used.steps),
           maxWallMs: Math.min(30 * 60_000, LIMITS.run.maxWallMs + plannedFiles.length * 60_000),
           taskCapUsd: taskCap(s),
         },
@@ -596,6 +643,13 @@ export class Pipeline {
         s.runMessages,
       )
 
+      if (resumed) {
+        loop.addUserMessage(
+          resumed.note === "finish_again"
+            ? "The run was paused before the independent review could start (no model was available). Validation passed last time; call finish again with your summary so the review runs."
+            : "The run was paused because no model was available and has now resumed. Continue where you left off.",
+        )
+      }
       let out = await loop.run()
       // Autonomous mode: nobody can answer — tell the agent to proceed on its best assumption (once).
       if (out.status === "ask_user" && s.options.autoApprove) {
@@ -604,6 +658,14 @@ export class Pipeline {
         out = await loop.run()
       }
       s.runMessages = loop.messages
+      s.runUsed = { steps: used.steps + loop.steps, gateAttempts, judgeRounds }
+      // No model for the executor, or for the review after a passing gate: wait, then continue this conversation.
+      const parkedOn = out.status === "parked" ? { retryAt: out.retryAt, reason: out.reason, note: "continue" as const } : reviewParked ? { retryAt: (reviewParked as NoLaneAvailable).retryAt, reason: "No model available for the review", note: "finish_again" as const } : null
+      if (parkedOn) {
+        await sb.destroy()
+        sb = null
+        return this.park(s, "run", parkedOn.retryAt, parkedOn.reason, parkedOn.note)
+      }
 
       // Focused repair pass: after a long run the model tends to skip the last big step even when the
       // reviewer points at it. A fresh, short loop that sees only the unmet requirements does much better.
@@ -649,7 +711,7 @@ export class Pipeline {
           sb = null
           return this.cancelled(s)
         }
-        if (r.status === "failed") await this.emit(taskId, { type: "notice", level: "warn", message: `Repair pass stopped: ${r.reason}` })
+        if (r.status === "failed" || r.status === "parked") await this.emit(taskId, { type: "notice", level: "warn", message: `Repair pass stopped: ${r.reason}` })
         if (!s.gate?.ok) forcedReview = true
       }
       await sb.destroy()
@@ -684,7 +746,12 @@ export class Pipeline {
       if (!s.verdict) {
         const v = await review(patch)
         if (v) s.verdict = v
+        else if (reviewParked && out.status === "finished") {
+          await taskStore.savePatch(taskId, patch)
+          return this.park(s, "run", (reviewParked as NoLaneAvailable).retryAt, "No model available for the review", "finish_again")
+        }
       }
+      delete s.runUsed
       const good = !forcedReview && (s.gate?.ok ?? false) && (s.verdict?.success ?? false)
       s.costUsd = getSpendLedger().taskSpent(taskId)
       if (good && s.options.autoPublish) {

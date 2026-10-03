@@ -53,6 +53,9 @@ export type TaskEvent =
   | { type: "plan_ready"; plan: { summary: string; requirements?: string[]; steps: { title: string; files: string[] }[]; files: { path: string; new: boolean }[]; risks?: string; blocked?: string }; timestamp?: string }
   | { type: "plan_update"; steps: { title: string; status: string }[]; timestamp?: string }
   | { type: "question"; question: string; timestamp?: string }
+  /** Waiting for model quota (until = epoch ms) or for a key/credits (until = null). */
+  | { type: "parked"; stage: "plan" | "run"; until: number | null; reason: string; timestamp?: string }
+  | { type: "resumed"; stage: string; timestamp?: string }
   | { type: "user_message"; text: string; timestamp?: string }
   | { type: "notice"; level: "info" | "warn"; message: string; timestamp?: string }
   | { type: "gate_result"; ok: boolean; problems: string[]; warnings: string[]; verify: { cmd: string; before: number | null; after: number }[]; timestamp?: string }

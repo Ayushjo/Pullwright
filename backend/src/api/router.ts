@@ -13,7 +13,7 @@ import { getPrisma, isDatabaseEnabled } from "../db/prisma.js"
 import { countActiveTasksForUser, getStatsForUser, listTasksForUser, userOwnsTask, getMetricsFromDb, getTaskDetailFromDb } from "../repositories/taskRepository.js"
 import { RedisRateStore } from "./redisRateStore.js"
 import { flushLlmCalls, listCallsForTask } from "../repositories/llmCallRepository.js"
-import { createTask, enqueue } from "../agent/service.js"
+import { allocGen, createTask, enqueue } from "../agent/service.js"
 import { taskStore, TERMINAL, type TaskState } from "../agent/store.js"
 import { getSpendLedger } from "../agent/spend.js"
 import { getEntitlement } from "../billing/index.js"
@@ -314,6 +314,19 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     res.json({ ok: true })
   })
 
+  // Resume a parked task now (e.g. after adding a key). The new job's gen replaces the pending one, so the
+  // delayed resume that was scheduled earlier finds a different gen and does nothing.
+  router.post("/task/:taskId/resume", async (req, res) => {
+    const s = await load(req, res)
+    if (!s) return
+    if (s.status !== "parked" || !s.park) return res.status(409).json({ error: `Task is ${s.status}, not paused` })
+    const gen = await allocGen(s.taskId)
+    const next = await taskStore.transition(s.taskId, ["parked"], (cur) => ({ ...cur, park: { ...cur.park!, gen, until: Date.now() } }))
+    if (!next) return res.status(409).json({ error: "The task is no longer paused" })
+    await enqueue(next.park!.stage, s.taskId, { resume: true, gen })
+    res.json({ ok: true })
+  })
+
   // Issue images Pullwright downloaded (for the plan view); only the task's owner can read them.
   router.get("/task/:taskId/attachments/:n", async (req, res) => {
     const s = await load(req, res)
@@ -377,13 +390,14 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     if (TERMINAL.includes(s.status)) return res.status(409).json({ error: `Task is already ${s.status}` })
     await taskStore.cancel(s.taskId)
     // Idle tasks are cancelled right here; a running stage sees the flag and stops itself.
-    const idle = await taskStore.transition(s.taskId, ["awaiting_approval", "needs_input", "ready", "needs_review", "queued"], (cur) => ({
+    const idle = await taskStore.transition(s.taskId, ["awaiting_approval", "needs_input", "ready", "needs_review", "queued", "parked"], (cur) => ({
       ...cur,
       status: "cancelled",
       statusDetail: "Cancelled by user",
       finishedAt: new Date().toISOString(),
     }))
     if (idle) {
+      await taskStore.unmarkParked(s.taskId) // a pending resume job then finds the task cancelled and does nothing
       await eventBus.emit(s.taskId, { type: "status", status: "cancelled", detail: "Cancelled by user" })
       await taskStore.dropToken(s.taskId)
     }

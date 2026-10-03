@@ -120,6 +120,8 @@ const k = {
   rev: (id: string) => `pw:rev:${id}`,
 }
 
+const PARKED = "pw:parked"
+
 const IF_OWNER_PEXPIRE = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) end return 0`
 const IF_OWNER_DEL = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`
 
@@ -221,6 +223,16 @@ export const taskStore = {
   },
   async isCancelled(id: string): Promise<boolean> {
     return (await r().exists(k.cancel(id))) === 1
+  },
+  /** Parked-task index: resume time per task (+inf = waiting for a key or credits). Used by the sweeper. */
+  async markParked(id: string, until: number | null) {
+    await r().zadd(PARKED, until === null ? "+inf" : String(until), id)
+  },
+  async unmarkParked(id: string) {
+    await r().zrem(PARKED, id)
+  },
+  async parkedDue(before: number): Promise<string[]> {
+    return r().zrangebyscore(PARKED, "-inf", String(before))
   },
   async clearCancel(id: string) {
     await r().del(k.cancel(id))
