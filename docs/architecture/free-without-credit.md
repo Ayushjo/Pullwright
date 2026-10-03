@@ -64,3 +64,34 @@ Execution keeps Flash-Lite → Groq qwen (small prompts). The free step allowanc
    - (a) give the planner more read steps;
    - (b) plan on the best-measured single Flash model and keep the others for failover;
    - (c) be honest in the product: show "free plan quality: good for small/medium issues" and offer the Vercel credit as the one-click upgrade that is still free.
+
+## Results so far (10-03)
+
+### Reviewer without credit (same 30 items: all 14 known-bad + 16 known-good)
+
+| Reviewer | False approvals | False rejections | Judged |
+|---|---|---|---|
+| gpt-5-mini (credit, for reference) | 2 / 11 | 1 / 15 | 26 / 30 |
+| **Groq gpt-oss-120b** | **1 / 9** | 0 / 9 | 18 / 30 (8K cap on large patches, daily token cap) |
+| Gemini Flash pool | 4 / 14 | 2 / 12 | 26 / 30 (4 lost to the daily cap) |
+
+**Decision:** in no-credit mode Groq reviews first and the Flash pool is the fallback, which is what `lanes/free-nocredit.env` does. Flash is a weaker reviewer than either, but far better than Flash-Lite (8/11).
+
+### Facts learned from Google's own quota errors
+
+- The free limit is **20 requests per day per model per project** (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`, value 20), confirmed for the Flash models; `gemini-3-flash-preview` stops at the same point.
+- **The daily quota resets at 00:00 UTC, not Pacific midnight**: RetryInfo said 46,586 s at 11:03 UTC. The registry now uses UTC (`fb2a0c8`).
+- For the product: the free plan's "resets at" time shown to users is 00:00 UTC.
+
+### Ladder without credit (`--tag free-nocredit-v1`, in progress)
+
+| Item | Result | Planner models used |
+|---|---|---|
+| L01 | ❌ hidden test: wrote `"start": "node ."`. It works (`main` is `src/server.js`), but the test wants the literal `node src/server.js` | 3.6 Flash, 3-flash-preview |
+| L02 | ✅ | 3-flash-preview, 3.8 |
+| L03 | ✅ | 3.6, preview |
+| L04 | ✅ | 3.7, 3.8, 3.5 |
+| L05 | ✅ | 3.7, 3.8, 3.5 |
+| L06 … H10 | paused: the Flash pool's ~100 requests/day were used by today's probes, this replay and 6 tasks. The campaign resumes at 00:00 UTC and needs 2–3 days | |
+
+Each task used ≈ 8 Flash requests (spec check + planning), so a single user's 3 tasks/day need ≈ 25 of the ~100. The budget in the table above holds.
