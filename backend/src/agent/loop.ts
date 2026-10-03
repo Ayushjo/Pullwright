@@ -30,6 +30,8 @@ export type LoopHooks = {
   /** Called on `finish`; return a string to reject the finish and send feedback to the agent. */
   onFinish?: (summary: string) => Promise<string | null>
   onMutation?: (files: string[]) => void
+  /** After every completed step (model reply + all its tool results): persist the conversation so a crash or restart resumes here. */
+  onStep?: (messages: Msg[], steps: number) => Promise<void>
 }
 
 export type LoopOutcome =
@@ -167,6 +169,7 @@ export class AgentLoop {
         }
       }
 
+      if (this.hooks.onStep) await this.hooks.onStep(this.messages, this.steps).catch(() => {})
       const stuck = this.detectStuck()
       if (stuck) {
         this.stuckWarnings++

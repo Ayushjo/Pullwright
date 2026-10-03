@@ -74,6 +74,8 @@ export type TaskState = {
   park?: { stage: "plan" | "run"; until: number | null; reason: string; since: string; count: number; gen?: number; note?: "continue" | "finish_again" }
   /** Run-loop budget carried across parks so a task can't get a fresh step allowance each time it waits. */
   runUsed?: { steps: number; gateAttempts: number; judgeRounds: number }
+  /** Set while the run loop is mid-flight (persisted every step); found set at run start = the last worker died. */
+  runInFlight?: boolean
   baseline?: VerifyRun[]
   planMessage?: string
   plan?: SubmittedPlan

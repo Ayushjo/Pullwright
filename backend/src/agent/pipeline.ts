@@ -493,6 +493,9 @@ export class Pipeline {
       const sandbox = sb
       // Resuming after a park: carry the run's budget over so waiting never buys extra steps or rounds.
       const resumed = s.park?.stage === "run" ? s.park : undefined
+      // The previous worker died mid-run (crash, deploy, kill -9): continue its saved conversation.
+      const crashed = !resumed && s.runInFlight === true && Boolean(s.runMessages?.length)
+      if (crashed) await this.emit(taskId, { type: "notice", level: "warn", message: "The worker restarted mid-run; continuing from the last saved step" })
       delete s.park
       const used = s.runUsed ?? { steps: 0, gateAttempts: 0, judgeRounds: 0 }
       let gateAttempts = used.gateAttempts
@@ -602,6 +605,12 @@ export class Pipeline {
               })
               .catch(() => {})
           },
+          onStep: async (messages, steps) => {
+            s.runMessages = messages
+            s.runUsed = { steps: used.steps + steps, gateAttempts, judgeRounds }
+            s.runInFlight = true
+            await taskStore.patch(taskId, { runMessages: messages, runUsed: s.runUsed, runInFlight: true })
+          },
           onFinish: async (summary) => {
             gateAttempts++
             await this.setStatus(s, "validating", `Validating the change (attempt ${gateAttempts})`)
@@ -643,6 +652,7 @@ export class Pipeline {
         s.runMessages,
       )
 
+      if (crashed) loop.addUserMessage("The run was interrupted (the worker restarted) and has resumed from your last completed step. Check the current state of the files you were editing before changing them again, then continue.")
       if (resumed) {
         loop.addUserMessage(
           resumed.note === "finish_again"
@@ -659,6 +669,7 @@ export class Pipeline {
       }
       s.runMessages = loop.messages
       s.runUsed = { steps: used.steps + loop.steps, gateAttempts, judgeRounds }
+      s.runInFlight = false
       // No model for the executor, or for the review after a passing gate: wait, then continue this conversation.
       const parkedOn = out.status === "parked" ? { retryAt: out.retryAt, reason: out.reason, note: "continue" as const } : reviewParked ? { retryAt: (reviewParked as NoLaneAvailable).retryAt, reason: "No model available for the review", note: "finish_again" as const } : null
       if (parkedOn) {
