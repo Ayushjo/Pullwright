@@ -49,7 +49,6 @@ Check every item of the requirements checklist against the patch itself (not aga
 Reply with a JSON object only, compact: {"requirements": [{"id": "R1", "met": boolean, "evidence": "<= 20 words: file/function, or what is missing"}], "success": boolean, "confidence": "low"|"medium"|"high", "explanation": "<2-4 sentences for the pull request body>", "concerns": ["<= 25 words each, at most 5"]}
 success must be false if any requirement is not met.
 Test/type-check results in "Verification results" are real executions — trust them over speculation about runtime behaviour; only flag behaviour problems you can point to in the patch.
-If the issue states a function signature, return shape, field names or status codes, check the patch matches them exactly: a stated "array of rows" must stay a plain array (no extra properties attached, no wrapper objects), named exports and parameter lists must match. A contract mismatch is a failed requirement even if the agent's own tests pass.
 Mark success=false if: the patch is empty or partial, it misses an explicit requirement, it deletes/rewrites unrelated code, it changes files or fixes bugs the issue does not ask about (scope creep, even if the extra change looks harmless), it adds placeholder/stub logic, or it clearly breaks behaviour.`
 
 export function planTaskMessage(input: {
