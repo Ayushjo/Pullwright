@@ -165,7 +165,10 @@ describe("misc", () => {
     }
     expect(redact("Authorization: Bearer abcdefghijklmnop.qrstuvwx")).toBe("Authorization: Bearer [REDACTED]")
     expect(redact("AQ.short and gsk_x stay")).toBe("AQ.short and gsk_x stay") // too short to be keys
-    expect(redact("https://x-access-token:abc123@github.com")).toContain("[REDACTED]")
+    expect(redact("https://x-access-token:0123456789abcdef0123456789abcdef01234567@github.com")).toBe("https://x-access-token:[REDACTED]@github.com")
+    // Source code the agent must be able to edit stays intact (a template expression is not a token).
+    const code = "const repoUrl = `https://x-access-token:${pushToken}@github.com/${owner}/${repo}.git`"
+    expect(redact(code)).toBe(code)
     expect(redact("key sk-proj-abcdefghijklmnopqrstuv")).toBe("key [REDACTED]")
   })
   it("prices cached tokens and enforces caps", async () => {

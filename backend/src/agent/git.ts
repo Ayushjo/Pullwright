@@ -54,7 +54,9 @@ export async function git(cwd: string, args: string[], token?: string, input?: s
 export function redact(s: string): string {
   return s
     .replace(/(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/g, "[REDACTED]")
-    .replace(/x-access-token:[^@\s]+@/g, "x-access-token:[REDACTED]@")
+    // Real tokens only: source code like `x-access-token:${pushToken}@` must reach the model intact, or it
+    // can never write an edit that matches the file (H10 runs failed 15+ edits in a row on that line).
+    .replace(/x-access-token:[A-Za-z0-9_]{20,}@/g, "x-access-token:[REDACTED]@")
     .replace(/(sk-(proj-|ant-|or-)?[A-Za-z0-9_-]{16,})/g, "[REDACTED]")
     .replace(PROVIDER_KEY, "[REDACTED]")
     .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{16,}/g, "$1[REDACTED]")

@@ -229,6 +229,9 @@ export class AgentLoop {
     const out = result as ToolOutput
     if (out.ok) this.formatErrors = 0
     let safe = redact(out.output)
+    if (safe !== out.output && (name === "view" || name === "search")) {
+      safe += "\n\n[platform note] Values that look like secrets are shown as [REDACTED]; the file contains the real text. Never put [REDACTED] in old_str or patch context — anchor your edit on neighbouring lines instead."
+    }
     if (out.changedFiles?.length) this.explore.clear()
     else if (out.ok && (name === "view" || name === "search") && typeof (name === "view" ? args.path : args.pattern) === "string") {
       const key = `${name}:${String(name === "view" ? args.path : args.pattern)}`
