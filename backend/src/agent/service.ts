@@ -215,7 +215,30 @@ export function startPipelineWorker(bus: EventBus, registry: TaskRegistry) {
   worker.on("failed", (job, err) => logger.error(`Job ${job?.id} failed: ${err?.message}`))
   // Sweeper: a parked task whose resume time passed 5 minutes ago and is still parked lost its delayed job
   // (e.g. Redis was flushed); schedule a fresh one. The new gen fences any old job that shows up late.
+  // Orphans: an in-flight task with no lock, no queued/active job, and no update for 2 minutes lost its
+  // job — e.g. a crash between "status → running" and enqueueing the run stage. Re-queue the stage its
+  // status implies; extra jobs are harmless (stage lock + STAGE_FROM make them no-ops).
+  const STAGE_OF: Partial<Record<TaskStatus, StageName>> = { queued: "plan", preparing: "plan", planning: "plan", running: "run", validating: "run", publishing: "publish" }
+  const sweepOrphans = async () => {
+    const ids = await taskStore.inFlight()
+    if (!ids.length) return
+    const jobs = await pwQueue.getJobs(["active", "waiting", "delayed", "prioritized", "paused"])
+    const withJob = new Set(jobs.map((j) => (j?.data as { taskId?: string } | undefined)?.taskId).filter(Boolean))
+    for (const id of ids) {
+      const t = await taskStore.get(id)
+      const stage = t ? STAGE_OF[t.status] : undefined
+      if (!t || !stage) {
+        await taskStore.dropInFlight(id)
+        continue
+      }
+      if (Date.now() - Date.parse(t.updatedAt) < 2 * 60_000 || withJob.has(id) || (await taskStore.isLocked(id))) continue
+      await enqueue(stage, id)
+      logger.warn(`sweeper: task ${id} was ${t.status} with no job — re-queued its ${stage} stage`)
+    }
+  }
+  void taskStore.backfillInFlight().then(sweepOrphans).catch((e) => logger.warn(`orphan sweeper: ${(e as Error).message}`))
   const sweep = setInterval(() => {
+    void sweepOrphans().catch((e) => logger.warn(`orphan sweeper: ${(e as Error).message}`))
     void (async () => {
       for (const id of await taskStore.parkedDue(Date.now() - 5 * 60_000)) {
         const t = await taskStore.get(id)

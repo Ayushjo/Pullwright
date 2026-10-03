@@ -123,6 +123,9 @@ const k = {
 }
 
 const PARKED = "pw:parked"
+const IN_FLIGHT = "pw:inflight"
+/** Statuses in which some stage job must exist or be running; anything else waits on the user or is done. */
+export const IN_FLIGHT_STATUSES: TaskStatus[] = ["queued", "preparing", "planning", "running", "validating", "publishing"]
 
 const IF_OWNER_PEXPIRE = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) end return 0`
 const IF_OWNER_DEL = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`
@@ -149,8 +152,37 @@ export const taskStore = {
   },
   async put(s: TaskState): Promise<TaskState> {
     s.updatedAt = new Date().toISOString()
-    await r().multi().set(k.state(s.taskId), JSON.stringify(s), "EX", TTL).incr(k.rev(s.taskId)).expire(k.rev(s.taskId), TTL).exec()
+    const m = r().multi().set(k.state(s.taskId), JSON.stringify(s), "EX", TTL).incr(k.rev(s.taskId)).expire(k.rev(s.taskId), TTL)
+    // Index of tasks a worker should be moving forward (the orphan sweeper checks these).
+    if (IN_FLIGHT_STATUSES.includes(s.status)) m.sadd(IN_FLIGHT, s.taskId)
+    else m.srem(IN_FLIGHT, s.taskId)
+    await m.exec()
     return s
+  },
+  /** One-time rebuild of the in-flight index from stored tasks (startup; tasks expire after 7 days). */
+  async backfillInFlight(): Promise<number> {
+    let cursor = "0"
+    let n = 0
+    do {
+      const [next, keys] = await r().scan(cursor, "MATCH", "pw:task:*", "COUNT", 500)
+      cursor = next
+      for (const key of keys) {
+        const raw = await r().get(key)
+        if (!raw) continue
+        const t = JSON.parse(raw) as TaskState
+        if (IN_FLIGHT_STATUSES.includes(t.status)) {
+          await r().sadd(IN_FLIGHT, t.taskId)
+          n++
+        }
+      }
+    } while (cursor !== "0")
+    return n
+  },
+  async inFlight(): Promise<string[]> {
+    return r().smembers(IN_FLIGHT)
+  },
+  async dropInFlight(id: string) {
+    await r().srem(IN_FLIGHT, id)
   },
   /**
    * Atomic status transition for API requests: applies `mutate` only if the task is currently in one
