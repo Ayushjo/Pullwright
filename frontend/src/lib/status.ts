@@ -13,6 +13,8 @@ export const STATUS_META: Record<TaskStatus, { label: string; tone: Tone; active
   needs_input: { label: 'Needs your input', tone: 'primary', active: false, needsYou: true },
   ready: { label: 'Ready to publish', tone: 'success', active: false, needsYou: true },
   needs_review: { label: 'Needs review', tone: 'warning', active: false, needsYou: true },
+  // Waiting for model quota: not "active" (no work is running), and nothing is needed from the user.
+  parked: { label: 'Paused', tone: 'neutral', active: false },
   publishing: { label: 'Opening PR', tone: 'warning', active: true },
   published: { label: 'PR opened', tone: 'success', active: false },
   done: { label: 'Done', tone: 'success', active: false },

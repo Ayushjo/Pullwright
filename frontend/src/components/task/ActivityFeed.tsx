@@ -13,6 +13,8 @@ import {
   Info,
   ListChecks,
   Package,
+  PauseCircle,
+  PlayCircle,
   Scale,
   Search,
   ShieldCheck,
@@ -274,6 +276,21 @@ function EventItem({ ev }: { ev: TaskEvent }) {
       return (
         <div className="flex justify-end my-2">
           <p className="max-w-[80%] text-[13px] bg-primary text-primary-foreground rounded-2xl rounded-br-sm px-3 py-2 whitespace-pre-wrap">{ev.text}</p>
+        </div>
+      )
+    case 'parked':
+      return (
+        <div className="flex items-center gap-2 py-1 text-[12px] text-muted-foreground">
+          <PauseCircle className="w-3.5 h-3.5 shrink-0" />
+          {ev.until === null
+            ? `Paused: ${ev.reason}`
+            : `Paused for model quota — resumes about ${new Date(ev.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+        </div>
+      )
+    case 'resumed':
+      return (
+        <div className="flex items-center gap-2 py-1 text-[12px] text-muted-foreground">
+          <PlayCircle className="w-3.5 h-3.5 shrink-0" /> Resumed — continuing where it stopped
         </div>
       )
     case 'notice':

@@ -1,7 +1,7 @@
 export type TaskStatus =
   | 'queued' | 'planning' | 'running' | 'verifying' | 'done' | 'failed'
   | 'preparing' | 'awaiting_approval' | 'needs_input' | 'validating'
-  | 'ready' | 'needs_review' | 'publishing' | 'published' | 'cancelled'
+  | 'ready' | 'needs_review' | 'parked' | 'publishing' | 'published' | 'cancelled'
 
 export type StepStatus = 'pending' | 'running' | 'done' | 'failed'
 
@@ -61,6 +61,8 @@ export type TaskEvent =
   | { type: 'plan_ready'; plan: Plan; timestamp?: string }
   | { type: 'plan_update'; steps: ChecklistItem[]; timestamp?: string }
   | { type: 'question'; question: string; timestamp?: string }
+  | { type: 'parked'; stage: 'plan' | 'run'; until: number | null; reason: string; timestamp?: string }
+  | { type: 'resumed'; stage: string; timestamp?: string }
   | { type: 'user_message'; text: string; timestamp?: string }
   | { type: 'notice'; level: 'info' | 'warn'; message: string; timestamp?: string }
   | { type: 'gate_result'; ok: boolean; problems: string[]; warnings: string[]; verify: { cmd: string; before: number | null; after: number }[]; timestamp?: string }
@@ -130,6 +132,8 @@ export type TaskState = {
   plan?: Plan
   planChecklist?: ChecklistItem[]
   pendingQuestion?: string
+  /** Set while the task waits for model quota (until = epoch ms) or for a key/credits (until = null). */
+  park?: { stage: 'plan' | 'run'; until: number | null; reason: string; since: string; count: number }
   intake?: Intake
   summary?: string
   gate?: { ok: boolean; problems: string[]; warnings: string[]; verify: { cmd: string; before: number | null; after: number; output: string; newFailures: string[]; fixed: string[] }[] }

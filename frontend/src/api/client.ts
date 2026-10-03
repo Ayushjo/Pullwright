@@ -93,6 +93,8 @@ export const approvePlan = (taskId: string, body: { steps?: { title: string; fil
   post<{ ok: true }>(`/api/task/${taskId}/approve`, body)
 export const sendMessage = (taskId: string, text: string) => post<{ ok: true; resumed?: boolean }>(`/api/task/${taskId}/message`, { text })
 /** Send changed plan decisions back to the planner (the plan is rebuilt around them). */
+/** Resume a paused (parked) task now, e.g. after adding a key. */
+export const resumeTask = (taskId: string) => post<{ ok: true }>(`/api/task/${taskId}/resume`)
 export const replanTask = (taskId: string, text: string) => post<{ ok: true }>(`/api/task/${taskId}/replan`, { text })
 
 /** An issue image Pullwright downloaded, as an object URL (fetched with the session cookie). */

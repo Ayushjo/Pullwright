@@ -6,6 +6,7 @@ import ActivityFeed from '../components/task/ActivityFeed'
 import DiffView from '../components/task/DiffView'
 import PlanCard from '../components/task/PlanCard'
 import Attachments from '../components/task/Attachments'
+import ParkedBanner from '../components/task/ParkedBanner'
 import ReviewPanel from '../components/task/ReviewPanel'
 import Composer from '../components/task/Composer'
 import { Badge, Button, Tabs, useToast } from '../components/ui'
@@ -17,6 +18,7 @@ import {
   getDiff,
   publishTask,
   replanTask,
+  resumeTask,
   restoreCheckpoint,
   retryTask,
   sendMessage,
@@ -284,6 +286,14 @@ function TaskView({ taskId }: { taskId: string }) {
                     onCancel={() => void act('cancel', () => cancelTask(taskId), 'Task cancelled')}
                   />
                 </div>
+              )}
+              {status === 'parked' && state.park && (
+                <ParkedBanner
+                  park={state.park}
+                  busy={busy}
+                  onResume={() => void act('resume', () => resumeTask(taskId), 'Resuming')}
+                  onCancel={() => void act('cancel', () => cancelTask(taskId), 'Task cancelled')}
+                />
               )}
               {status === 'needs_input' && state.pendingQuestion && (
                 <div className="shrink-0 p-3 sm:p-4 border-b border-border bg-primary/5">
