@@ -19,9 +19,17 @@ import { Sandbox, WORKER_ID } from "./sandbox.js"
  * Jobs only ever carry {stage, taskId} — no secrets.
  */
 
-const QUEUE = "pullwright"
+/**
+ * Two queues with their own worker slots, so a burst of free tasks can never delay paid ones (BullMQ
+ * priorities can't preempt a running job; separate pools can). The free queue keeps the original name so
+ * jobs queued before the split still run.
+ */
+export type QueueClass = "free" | "paid"
+const QUEUES: Record<QueueClass, string> = { free: "pullwright", paid: "pullwright-paid" }
 const connection = getRedisOptions() as Record<string, unknown>
-export const pwQueue = new Queue(QUEUE, { connection })
+export const queues: Record<QueueClass, Queue> = { free: new Queue(QUEUES.free, { connection }), paid: new Queue(QUEUES.paid, { connection }) }
+/** @deprecated kept for callers that only need the free queue */
+export const pwQueue = queues.free
 
 let genRedis: Redis | null = null
 
@@ -40,7 +48,8 @@ export async function allocGen(taskId: string): Promise<number> {
 /** opts.gen: a generation already stored on the task (resume) — allocate it first, save it, then enqueue. */
 export async function enqueue(stage: StageName, taskId: string, opts: { delayMs?: number; resume?: boolean; gen?: number } = {}): Promise<number> {
   const gen = opts.gen ?? (await allocGen(taskId))
-  await pwQueue.add(stage, { stage, taskId, gen, ...(opts.resume ? { resume: true } : {}) }, {
+  const cls: QueueClass = (await taskStore.get(taskId))?.options.queueClass ?? "free"
+  await queues[cls].add(stage, { stage, taskId, gen, ...(opts.resume ? { resume: true } : {}) }, {
     jobId: `${taskId}:${stage}:${gen}`,
     // Resumes are fenced by gen instead (a manual "resume now" must not be swallowed by a pending delayed job).
     ...(opts.resume ? {} : { deduplication: { id: `${taskId}:${stage}`, ttl: 3000 } }),
@@ -137,6 +146,7 @@ export async function createTask(input: CreateTaskInput, registry: TaskRegistry)
       ...(input.options?.model ? { model: input.options.model } : {}),
       keyKind: input.options?.keyKind ?? "platform",
       ...(input.options?.keyProvider ? { keyProvider: input.options.keyProvider } : {}),
+      queueClass: input.options?.queueClass ?? "free",
     },
     rejectedFiles: [],
     checkpoints: [],
@@ -165,10 +175,7 @@ export async function createTask(input: CreateTaskInput, registry: TaskRegistry)
 
 export function startPipelineWorker(bus: EventBus, registry: TaskRegistry) {
   const pipeline = new Pipeline(bus, enqueue, makeStatusSink(registry))
-  const concurrency = Number(process.env.WORKER_CONCURRENCY ?? 1)
-  const worker = new Worker(
-    QUEUE,
-    async (job: Job<{ stage: StageName; taskId: string; gen?: number; resume?: boolean }>, token?: string) => {
+  const processor = async (job: Job<{ stage: StageName; taskId: string; gen?: number; resume?: boolean }>, token?: string) => {
       const { stage, taskId } = job.data
       // One stage per task at a time, across all workers.
       const owner = `${WORKER_ID}:${job.id}`
@@ -211,10 +218,13 @@ export function startPipelineWorker(bus: EventBus, registry: TaskRegistry) {
         clearInterval(renew)
         await taskStore.releaseLock(taskId, owner)
       }
-    },
-    { connection, concurrency, lockDuration: 60_000 },
-  )
-  worker.on("failed", (job, err) => logger.error(`Job ${job?.id} failed: ${err?.message}`))
+    }
+  // Reserved slots per class: WORKER_CONCURRENCY_FREE (default WORKER_CONCURRENCY or 1) and WORKER_CONCURRENCY_PAID (default 1).
+  const freeSlots = Number(process.env.WORKER_CONCURRENCY_FREE ?? process.env.WORKER_CONCURRENCY ?? 1)
+  const paidSlots = Number(process.env.WORKER_CONCURRENCY_PAID ?? 1)
+  const worker = new Worker(QUEUES.free, processor, { connection, concurrency: freeSlots, lockDuration: 60_000 })
+  const paidWorker = new Worker(QUEUES.paid, processor, { connection, concurrency: paidSlots, lockDuration: 60_000 })
+  for (const w of [worker, paidWorker]) w.on("failed", (job, err) => logger.error(`Job ${job?.id} failed: ${err?.message}`))
   // Sweeper: a parked task whose resume time passed 5 minutes ago and is still parked lost its delayed job
   // (e.g. Redis was flushed); schedule a fresh one. The new gen fences any old job that shows up late.
   // Orphans: an in-flight task with no lock, no queued/active job, and no update for 2 minutes lost its
@@ -224,7 +234,7 @@ export function startPipelineWorker(bus: EventBus, registry: TaskRegistry) {
   const sweepOrphans = async () => {
     const ids = await taskStore.inFlight()
     if (!ids.length) return
-    const jobs = await pwQueue.getJobs(["active", "waiting", "delayed", "prioritized", "paused"])
+    const jobs = (await Promise.all(Object.values(queues).map((q) => q.getJobs(["active", "waiting", "delayed", "prioritized", "paused"])))).flat()
     const withJob = new Set(jobs.map((j) => (j?.data as { taskId?: string } | undefined)?.taskId).filter(Boolean))
     for (const id of ids) {
       const t = await taskStore.get(id)
@@ -258,5 +268,10 @@ export function startPipelineWorker(bus: EventBus, registry: TaskRegistry) {
   sweep.unref()
   // Containers left over from a crash are reaped on start.
   void Sandbox.reapAll().then((n) => n && logger.info(`Reaped ${n} stale sandbox containers`)).catch(() => {})
-  return worker
+  return {
+    async close() {
+      clearInterval(sweep)
+      await Promise.all([worker.close(), paidWorker.close()])
+    },
+  }
 }
