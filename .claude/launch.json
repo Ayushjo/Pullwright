@@ -73,6 +73,18 @@
       ],
       "cwd": "backend",
       "port": 3500
+    },
+    {
+      "name": "pullwright-backend-scratch",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "tsx",
+        "--env-file=.env",
+        "--env-file=.tasks/scratch/lanes.env",
+        "src/index.ts"
+      ],
+      "cwd": "backend",
+      "port": 3500
     }
   ]
 }
