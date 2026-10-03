@@ -240,3 +240,32 @@ The credit makes it cheap: 26 tasks used ≈ $0.36, so a $5 grant covers ≈ 350
 Notes:
 - **H01 passed in free mode for the first time.** The open-questions change (§8) was active, so this clear issue planned without them, as P0 did.
 - The two misses are step-limit stops on the largest items (H07, H09), where Flash-Lite needs more turns (87–94 calls). The run-loop cap, not the model, ends them. A per-lane step allowance for the free executor is a candidate fix.
+
+### Step allowance for the free executor (`111d33a`)
+
+Both hard misses were run-loop step-limit stops, not wrong code. The free profile now sets `PW_RUN_STEP_FACTOR=1.5`: the run cap grows from 40–80 to 60–120 steps. Those calls cost only free quota; a 120-call task is ≈ 24% of one Flash-Lite model's 500 requests/day, so the free plan's 3 tasks/day still fit, with 3.1 Flash-Lite as a second pool.
+
+| Item | Before (cap 73–80) | With 1.5× (10-03) |
+|---|---|---|
+| H07 | ❌ step limit, 94 calls | ✅ hidden test passes (124 calls, $0.019); reviewer still flags it → needs review |
+| H09 | ⚠️ step limit, 87 calls | ✅ ready, pass (116 calls, $0.022) |
+
+**With the allowance, the free profile passes 10/10 hard hidden tests** (8 from the first run, H07/H09 from this re-run; one run each, so this is a second attempt for those two). Across the whole ladder: 26/26 correct outcomes except R05, which no model has solved.
+
+## Status of P2 (10-03)
+
+| Question | Answer | Where |
+|---|---|---|
+| Is free mode close to paid? | **Yes on this ladder**: 24/26 (= gpt-5-mini) first pass, 25/26 with the step allowance. Execution free, ≈ $0.012 of credit per task for planning and review | §9 |
+| Who reviews in free mode? | gpt-5-mini on the credit; Groq gpt-oss-120b as fallback; never Flash-Lite (8/11 false approvals) | §1 |
+| Was the gateway making hard tasks expensive? | No. A redaction bug made one source line un-editable; fixed; H10 3/3 ready at a median of $0.060 | §6 |
+| Do images help? | Yes when the fact is only in the image: 2/2 with, 0/2 without | §3 |
+| Do vague issues get rescued? | With a person reviewing decisions: 3/5 vs 1/5 | §4 |
+| Spec check on clear issues? | Removed from autonomous runs on issues rated 0–1 (H04 1/7 with it vs 5/7 without) | §8 |
+| gpt-5-mini replacement | gpt-5.4-nano is the candidate ($0.20/$1.25); full ladder **not run**: needs ≈ $0.7 of credit (resets ≈ Oct 29) | §2 |
+
+### Open
+- gpt-5.4-nano full ladder (credit).
+- Free mode **without** the Vercel credit: planning on Gemini Flash (20 req/day) and review on Groq. This is the fallback once a user's monthly credit is spent; not yet measured.
+- Private-repo attachments (needs a private test repo from the owner).
+- A second seed on the free ladder to firm up the n=1 numbers.
