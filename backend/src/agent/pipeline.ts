@@ -377,7 +377,11 @@ export class Pipeline {
       const n = spec.questions.length
       await this.emit(s.taskId, { type: "notice", level: spec.underspec >= 2 ? "warn" : "info", message: `Specification check: ${label} (${spec.underspec}/3)${n ? ` — ${n} open question${n === 1 ? "" : "s"}${d.action === "ask" ? " for you" : " for the planner to settle"}` : ""}` })
     }
-    const questions = d.action === "ask" ? d.questions : d.open
+    // Open questions help when someone reviews the plan's decisions (vague set with a simulated user: 3/5 vs
+    // 1/5). In autonomous runs on issues rated clear or mostly clear they showed no benefit and coincided
+    // with worse results on a well-specified hard item (H04: 1/7 passes with them, 5/7 without), so they're
+    // left out there (docs/architecture/qualification.md §8).
+    const questions = d.action === "ask" ? d.questions : spec && spec.underspec <= 1 && s.options.autoApprove ? [] : d.open
     return {
       attachmentsText,
       openQuestions: openQuestionsBlock(questions),
