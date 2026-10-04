@@ -252,12 +252,51 @@ Both hard misses were run-loop step-limit stops, not wrong code. The free profil
 
 **With the allowance, the free profile passes 10/10 hard hidden tests** (8 from the first run, H07/H09 from this re-run; one run each, so this is a second attempt for those two). Across the whole ladder: 26/26 correct outcomes except R05, which no model has solved.
 
+## 10. OpenRouter free models (10-04)
+
+A user added a free OpenRouter key and it was never used: routing only called OpenRouter on the paid tier, because no `:free` model had been qualified. Free OpenRouter models share **50 requests per day per account** (`free_model_daily_requests`, read from `/api/v1/key`). That budget drove the method: probe first, test roles on samples, and spend the rest on one end-to-end task.
+
+**Candidates.** 16 of OpenRouter's 17 free models list tool support. Six were shortlisted as plausible coding agents: Nemotron 3 Ultra 550B, Nemotron 3 Super 120B, Qwen 3.8 27B, Poolside Laguna S 2.1, Cohere North Mini Code and Gemma 4 31B. The rest were skipped: the 2.6B and "nano"-class models are too small, and the two Inkling models don't take forced `tool_choice`.
+
+**A bug found first.** The first capability probe failed on every model with a 404, "No endpoints found that can handle the requested parameters". We sent `parallel_tool_calls: true` together with `provider.require_parameters: true`. Free endpoints don't list `parallel_tool_calls`, so OpenRouter filtered every one of them out. One A/B call proved it: with the parameter, 404; without it, 200. **No OpenRouter free model could ever have been called before this fix** (`OpenRouter: don't send parallel_tool_calls`, regression test in `requestBody.test.ts`).
+
+**Capability probe** (`probe-lanes.mts`, after the fix):
+
+| Model | Forced tool call | Two-turn | Parallel calls | JSON mode | Latency |
+|---|---|---|---|---|---|
+| **Nemotron 3 Super 120B** | ✓ | ✓ | ✓ | ✓ | 0.6 s |
+| Qwen 3.8 27B | ✓ | ✓ | ✓ | ✗ (no endpoint) | 0.8 s |
+| Cohere North Mini Code | ✓ | ✓ | ✓ | ✗ (no endpoint) | 0.7 s |
+| Nemotron 3 Ultra 550B | ✗ answers in text | ? | ✗ | ✗ | 1.7 s |
+| Poolside Laguna S 2.1 | ✗ upstream 5xx | – | ✗ | ✗ | – |
+| Gemma 4 31B | ✗ rate-limited upstream | – | ✗ | ✗ | – |
+
+The reviewer, the spec check (on the planner lane) and screenshot reading all use JSON mode, so **only Nemotron 3 Super can fill the planner and reviewer roles**. Qwen and North could only execute, a role Flash-Lite (500/day) and Groq Qwen already cover.
+
+**Reviewer replay** (`probe-judge.mts --balanced 10 --label or-free-v1`: every known-bad item plus 10 good, one call each), compared with §1:
+
+| Reviewer lane | Judged | False approvals | False rejections | Cost | Latency |
+|---|---|---|---|---|---|
+| **Nemotron 3 Super (OpenRouter free)** | **24/24** | **2 / 14** (both H01) | **1 / 10** | $0 | 31 s |
+| gpt-5-mini (Vercel credit), §1 | 60/60 | 2 / 11 (both H01) | 5 / 49 | $0.0024 each | 19 s |
+| Groq gpt-oss-120b, §1 | 43/60 | 1 / 7 judged | 3 / 36 | $0 | 45 s |
+| Gemini Flash pool, §1/free-without-credit | – | 4 / 14 | – | $0 | – |
+| Flash-Lite, §1 | 60/60 | 8 / 11 | 1 / 49 | $0 | 5 s |
+
+Nemotron 3 Super is **as safe as gpt-5-mini**: its only false approvals are the two H01 persistence cases no reviewer catches (§1). It is less strict on good patches, and unlike Groq it judged every item, including the large-repo ones over Groq's 8K cap. The sample is small (24 items: 14 bad, 10 good).
+
+**Planner, end to end (inconclusive).** H03 ran with planning on Nemotron, execution on Flash-Lite and review on Groq (`--tag or-free-plan-v1`). The planner made 14 calls (spec check plus 13 planning steps) and was still reading code when the account's 50 free requests ran out (51/50). The task parked, then was cancelled so it wouldn't resume on the wrong backend profile. The P2 planners took a median of about 8 calls. **At ~10–14 calls per plan, 50 requests a day is 3–4 plans at most, shared with reviews.** So it is not wired as a planner until a plan completes and the hidden test passes.
+
+**Decision.** A free OpenRouter key now **reviews on Nemotron 3 Super**, ordered Vercel credit → Groq gpt-oss → **Nemotron** → Flash pool → paid keys (`wallet/routing.ts`, test in `routing.test.ts`). It sits behind Groq to save its small daily budget. Like Gemini free, it is kept off private repos unless the user allows it, because OpenRouter's free tier may train on prompts.
+
+**Open.** Rerun the H03 planner test after a reset (00:00 UTC) on its own day, so the campaign isn't sharing the backend profile; if it passes, add Nemotron as the planner fallback after the Gemini Flash pool. Retry Laguna S 2.1 and Gemma 4 31B when their upstreams are up. The two keys used may share one account's 50/day; one key's `free_model_daily_requests` is the only reliable gauge.
+
 ## Status of P2 (10-03)
 
 | Question | Answer | Where |
 |---|---|---|
 | Is free mode close to paid? | **Yes on this ladder**: 24/26 (= gpt-5-mini) first pass, 25/26 with the step allowance. Execution free, ≈ $0.012 of credit per task for planning and review | §9 |
-| Who reviews in free mode? | gpt-5-mini on the credit; Groq gpt-oss-120b as fallback; never Flash-Lite (8/11 false approvals) | §1 |
+| Who reviews in free mode? | gpt-5-mini on the credit; Groq gpt-oss-120b as fallback; then **OpenRouter Nemotron 3 Super** (2/14 false approvals, = gpt-5-mini); never Flash-Lite (8/11 false approvals) | §1, §10 |
 | Was the gateway making hard tasks expensive? | No. A redaction bug made one source line un-editable; fixed; H10 3/3 ready at a median of $0.060 | §6 |
 | Do images help? | Yes when the fact is only in the image: 2/2 with, 0/2 without | §3 |
 | Do vague issues get rescued? | With a person reviewing decisions: 3/5 vs 1/5 | §4 |

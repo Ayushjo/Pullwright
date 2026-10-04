@@ -96,3 +96,8 @@ Execution keeps Flash-Lite → Groq qwen (small prompts). The free step allowanc
 | L06 … H10 (10-04) | restarted 03:05 UTC; parked at once. Google already reported 20/20 on all five Flash models (`…PerDayPerProjectPerModel-FreeTier`, retry 75,068 s = 00:00 UTC). Our campaign wasn't running after the reset, so another user of the same Google project spent it. Resumes 10-05 00:00 UTC | |
 
 Each task used ≈ 8 Flash requests (spec check + planning), so a single user's 3 tasks/day need ≈ 25 of the ~100. The budget in the table above holds.
+
+## Update 10-04: a third free reviewer
+
+A free **OpenRouter** key adds a reviewer as safe as gpt-5-mini on the replay set: Nemotron 3 Super, 2/14 false approvals (both H01) and 1/10 false rejections. Groq gpt-oss had 1/9 false approvals and the Flash pool 4/14. It has no 8K request cap, so it also covers the large-repo patches Groq can't take. Only 50 free requests a day per OpenRouter account, so it sits after Groq in the review order. As a planner it is not yet measured: one H03 attempt ran out of daily quota after 14 calls, still planning. See qualification.md §10.
+
