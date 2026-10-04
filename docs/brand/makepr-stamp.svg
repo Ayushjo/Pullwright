@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="160" viewBox="0 0 640 160" role="img" aria-label="makePR logo: bold PR monogram">
+  <rect width="640" height="160" fill="#FFFFFF"/>
+  <g transform="translate(39 37)">
+    <path d="M8 86V5h43c18 0 29 10 29 25S69 55 51 55H8" fill="none" stroke="#2B7FFF" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M49 56 77 86" fill="none" stroke="#2B7FFF" stroke-width="11" stroke-linecap="round"/>
+    <path d="m63 73 13 13 19-25" fill="none" stroke="#2B7FFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="151" y="105" fill="#111318" font-family="Plus Jakarta Sans, Inter, Arial, sans-serif" font-size="65" font-weight="750" letter-spacing="-4">make<tspan fill="#2B7FFF">PR</tspan></text>
+</svg>

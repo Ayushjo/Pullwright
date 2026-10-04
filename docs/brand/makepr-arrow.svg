@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="160" viewBox="0 0 640 160" role="img" aria-label="makePR logo: issue becomes a PR">
+  <rect width="640" height="160" fill="#FFFFFF"/>
+  <g transform="translate(38 38)" fill="none" stroke="#2B7FFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="42" r="7" fill="#FFFFFF"/>
+    <path d="M20 42h55"/>
+    <path d="m63 30 13 12-13 12"/>
+    <path d="M48 42V19c0-7 5-12 12-12h21"/>
+    <circle cx="82" cy="7" r="5" fill="#FFFFFF"/>
+  </g>
+  <text x="151" y="105" fill="#111318" font-family="Plus Jakarta Sans, Inter, Arial, sans-serif" font-size="65" font-weight="750" letter-spacing="-4">make<tspan fill="#2B7FFF">PR</tspan></text>
+</svg>
