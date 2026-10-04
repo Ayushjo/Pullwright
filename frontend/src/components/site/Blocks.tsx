@@ -23,11 +23,13 @@ export function FeatureCard({
   size?: 'lg' | 'sm'
 }) {
   return (
-    <motion.div {...inView} className="flex flex-col min-w-0">
-      <div className={cn('rounded-lg overflow-hidden', size === 'lg' ? 'aspect-[16/11]' : 'aspect-[4/3]')}>{media}</div>
+    // Four subgrid rows (media, title, text, link) so cards in one row share heights and titles line up;
+    // the parent grid must not set a row gap (cards carry their own bottom spacing).
+    <motion.div {...inView} className="grid grid-rows-subgrid row-span-4 gap-y-0 min-w-0 pb-12 md:pb-14">
+      <div className={cn('rounded-lg overflow-hidden', size === 'lg' ? 'min-h-[280px]' : 'min-h-[220px]')}>{media}</div>
       <h3 className={cn('mt-5 font-normal text-foreground tracking-[-0.01em]', size === 'lg' ? 'text-[22px]' : 'text-[19px]')}>{title}</h3>
       <p className="mt-2 text-[15px] leading-relaxed text-muted-foreground max-w-[46ch]">{text}</p>
-      {link && <ArrowLink to={link.to} className="mt-3">{link.label}</ArrowLink>}
+      <div>{link && <ArrowLink to={link.to} className="mt-3">{link.label}</ArrowLink>}</div>
     </motion.div>
   )
 }
