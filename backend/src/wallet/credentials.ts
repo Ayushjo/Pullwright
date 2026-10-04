@@ -44,7 +44,7 @@ export const GUIDES: Record<WalletProvider, ProviderGuide> = {
     pattern: /^vck_[A-Za-z0-9]{20,}$/, placeholder: "vck_…",
   },
   openrouter: {
-    id: "openrouter", name: "OpenRouter", role: "One key for many models; free models included", free: true, cardNeeded: false,
+    id: "openrouter", name: "OpenRouter", role: "Reviews patches for free (Nemotron 3 Super); with credits, one key for many models", free: true, cardNeeded: false,
     keyUrl: "https://openrouter.ai/settings/keys",
     steps: ["Sign in at openrouter.ai", "Open Settings → Keys → Create key", "Copy it and paste it here"],
     pattern: /^sk-or-(v1-)?[A-Za-z0-9_-]{20,}$/, placeholder: "sk-or-v1-…",
