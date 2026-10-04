@@ -1,4 +1,4 @@
-import { CheckCircle2, CircleAlert, Scale, ShieldCheck, XCircle } from 'lucide-react'
+import { Check, CheckCircle2, CircleAlert, Minus, Scale, ShieldCheck, X, XCircle } from 'lucide-react'
 import type { TaskState } from '../../types/task'
 import { cn } from '../../lib/cn'
 
@@ -9,14 +9,14 @@ export default function ReviewPanel({ state }: { state: TaskState }) {
   return (
     <div className="space-y-4">
       {state.summary && (
-        <section className="rounded-xl border border-border bg-card p-4">
-          <p className="text-xs font-semibold text-foreground mb-1.5">What the agent did</p>
+        <section className="rounded-lg border border-hairline bg-card p-4">
+          <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground mb-2">What the agent did</p>
           <p className="text-[13px] text-foreground whitespace-pre-wrap leading-relaxed">{state.summary}</p>
         </section>
       )}
 
       {v && (
-        <section className={cn('rounded-xl border p-4', v.success ? 'border-green-200 bg-green-50/60' : 'border-amber-200 bg-amber-50/60')}>
+        <section className={cn('rounded-lg border p-4', v.success ? 'border-green-200 bg-green-50/60' : 'border-amber-200 bg-amber-50/60')}>
           <p className={cn('text-xs font-semibold flex items-center gap-1.5 mb-1', v.success ? 'text-success' : 'text-warning')}>
             <Scale className="w-3.5 h-3.5" /> Independent review — {v.success ? 'meets the issue' : 'needs attention'} ({v.confidence} confidence)
           </p>
@@ -43,7 +43,7 @@ export default function ReviewPanel({ state }: { state: TaskState }) {
       )}
 
       {g && (
-        <section className="rounded-xl border border-border bg-card p-4">
+        <section className="rounded-lg border border-hairline bg-card p-4">
           <p className={cn('text-xs font-semibold flex items-center gap-1.5 mb-2', g.ok ? 'text-success' : 'text-warning')}>
             <ShieldCheck className="w-3.5 h-3.5" /> Automated validation {g.ok ? 'passed' : 'did not pass'}
           </p>
@@ -58,14 +58,22 @@ export default function ReviewPanel({ state }: { state: TaskState }) {
               </thead>
               <tbody>
                 {g.verify.map((r) => (
-                  <tr key={r.cmd} className="border-t border-border">
+                  <tr key={r.cmd} className="border-t border-hairline">
                     <td className="py-1.5 font-mono text-[11px] text-foreground pr-2">
                       {r.cmd}
                       {r.newFailures.length > 0 && <p className="text-destructive font-sans mt-0.5">New failures: {r.newFailures.join('; ')}</p>}
                       {r.fixed.length > 0 && <p className="text-success font-sans mt-0.5">Now passing: {r.fixed.join('; ')}</p>}
                     </td>
-                    <td className="text-center">{r.before === null ? '—' : r.before === 0 ? '✅' : '❌'}</td>
-                    <td className="text-center">{r.after === 0 ? '✅' : '❌'}</td>
+                    <td className="text-center">
+                      <span className="inline-flex justify-center">
+                        {r.before === null ? <Minus className="w-3.5 h-3.5 text-faint" aria-label="Not run" /> : r.before === 0 ? <Check className="w-3.5 h-3.5 text-success" aria-label="Passed" /> : <X className="w-3.5 h-3.5 text-danger" aria-label="Failed" />}
+                      </span>
+                    </td>
+                    <td className="text-center">
+                      <span className="inline-flex justify-center">
+                        {r.after === 0 ? <Check className="w-3.5 h-3.5 text-success" aria-label="Passed" /> : <X className="w-3.5 h-3.5 text-danger" aria-label="Failed" />}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

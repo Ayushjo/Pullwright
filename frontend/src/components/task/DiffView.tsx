@@ -35,8 +35,8 @@ function FileBlock({
   const Icon = f.status === 'A' ? FilePlus2 : f.status === 'D' ? FileMinus2 : FilePen
   const rows = useMemo(() => hunkLineNumbers(f.lines), [f.lines])
   return (
-    <div className={cn('rounded-xl border border-border bg-card overflow-hidden', rejected && 'opacity-60')}>
-      <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b border-border">
+    <div className={cn('rounded-lg border border-hairline bg-card overflow-hidden', rejected && 'opacity-60')}>
+      <div className="flex items-center gap-2 px-3 py-2 bg-background/60 border-b border-hairline">
         <button type="button" onClick={() => setOpen((o) => !o)} className="flex items-center gap-2 min-w-0 flex-1 text-left">
           <ChevronRight className={cn('w-3.5 h-3.5 text-muted-foreground transition-transform shrink-0', open && 'rotate-90')} />
           <Icon className={cn('w-3.5 h-3.5 shrink-0', f.status === 'A' ? 'text-success' : f.status === 'D' ? 'text-destructive' : 'text-primary')} />

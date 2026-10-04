@@ -9,7 +9,7 @@ export default function Attachments({ taskId, intake }: { taskId: string; intake
   if (!items.length) return null
   return (
     <div>
-      <p className="text-xs font-semibold text-foreground mb-1.5">What Pullwright read in the issue’s attachments</p>
+      <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground mb-2">What Pullwright read in the issue’s attachments</p>
       <ul className="space-y-2">
         {items.map((a) => (
           <AttachmentRow key={a.n} taskId={taskId} a={a} />
@@ -39,14 +39,14 @@ function AttachmentRow({ taskId, a }: { taskId: string; a: IntakeAttachment }) {
 
   const Icon = a.kind === 'video' ? Film : a.kind === 'file' ? FileText : ImageOff
   return (
-    <li className="flex gap-3 rounded-lg border border-border p-2">
+    <li className="flex gap-3 rounded-lg border border-hairline p-2">
       {a.hasImage && src ? (
         <a href={src} target="_blank" rel="noreferrer" className="shrink-0">
-          <img src={src} alt={a.alt || `Attachment ${a.n}`} className="w-24 h-16 object-cover object-top rounded border border-border bg-muted" />
+          <img src={src} alt={a.alt || `Attachment ${a.n}`} className="w-24 h-16 object-cover object-top rounded border border-hairline bg-black/[.05]" />
         </a>
       ) : (
-        <div className="w-24 h-16 shrink-0 rounded bg-muted flex items-center justify-center text-muted-foreground">
-          {a.hasImage ? <span className="w-full h-full rounded bg-muted animate-pulse" /> : <Icon className="w-4 h-4" />}
+        <div className="w-24 h-16 shrink-0 rounded bg-black/[.05] flex items-center justify-center text-muted-foreground">
+          {a.hasImage ? <span className="w-full h-full rounded bg-black/[.05] animate-pulse" /> : <Icon className="w-4 h-4" />}
         </div>
       )}
       <div className="flex-1 min-w-0 text-[12px] leading-relaxed">

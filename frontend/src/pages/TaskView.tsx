@@ -39,6 +39,8 @@ function useElapsed(startIso?: string, endIso?: string) {
   }, [endIso])
   if (!startIso) return ''
   const secs = Math.max(0, Math.floor(((endIso ? Date.parse(endIso) : now) - Date.parse(startIso)) / 1000))
+  // m:ss under an hour; "16h 42m" beyond (a parked or long task showed "1002:49").
+  if (secs >= 3600) return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`
   return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`
 }
 
@@ -133,19 +135,19 @@ function TaskView({ taskId }: { taskId: string }) {
 
   return (
     <AppShell maxWidth="max-w-[1240px]">
-      <div className="rounded-xl border border-border bg-card overflow-hidden flex flex-col md:h-[calc(100vh-7rem)] md:min-h-[560px]">
+      <div className="rounded-lg border border-hairline bg-card overflow-hidden flex flex-col md:h-[calc(100vh-7.5rem)] md:min-h-[560px]">
         {/* Header */}
-        <div className="shrink-0 px-3 sm:px-5 py-3 sm:py-4 border-b border-border bg-muted/50">
+        <div className="shrink-0 px-3 sm:px-5 py-3 sm:py-4 border-b border-hairline">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-2.5 min-w-0">
-              <Link to="/dashboard" className="w-8 h-8 rounded-lg border border-border bg-card hover:bg-muted flex items-center justify-center text-muted-foreground shrink-0">
+              <Link to="/dashboard" aria-label="Back to dashboard" className="w-8 h-8 rounded-pill border border-black/10 bg-card hover:bg-black/[.04] flex items-center justify-center text-muted-foreground shrink-0">
                 <ArrowLeft className="w-4 h-4" />
               </Link>
               <div className="min-w-0">
-                <p className="text-xs text-muted-foreground truncate">
+                <p className="font-mono text-[11px] text-muted-foreground truncate">
                   {state.source ? repoName : <a href={state.issueUrl} target="_blank" rel="noreferrer" className="hover:underline">{repoName} #{state.issueNumber}</a>}
                 </p>
-                <h1 className="text-base sm:text-lg font-bold text-foreground leading-snug line-clamp-2">{state.title}</h1>
+                <h1 className="mt-0.5 text-[18px] sm:text-[21px] font-normal tracking-[-0.015em] text-foreground leading-snug line-clamp-2">{state.title}</h1>
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -156,21 +158,21 @@ function TaskView({ taskId }: { taskId: string }) {
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2 text-[11px] text-muted-foreground mr-auto" title="Model spend for this task (hard-capped)">
+            <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground mr-auto" title="Model spend for this task (hard-capped)">
               <span className="tabular-nums">${state.costUsd.toFixed(4)}</span>
-              <span className="w-16 h-1.5 rounded-full bg-border overflow-hidden">
+              <span className="w-16 h-1 rounded-full bg-black/[.07] overflow-hidden">
                 <span className={cn('block h-full rounded-full', costPct > 80 ? 'bg-warning' : 'bg-primary')} style={{ width: `${costPct}%` }} />
               </span>
               <span className="tabular-nums">of ${state.capUsd.toFixed(2)} cap · {state.llmCalls} model calls</span>
               {state.statusDetail && <span className="hidden md:inline truncate max-w-[320px]">· {state.statusDetail}</span>}
             </div>
             {meta.active && (
-              <Button size="sm" variant="secondary" loading={busy === 'cancel'} onClick={() => act('cancel', () => cancelTask(taskId), 'Cancelling…')}>
+              <Button size="sm" variant="outline" shape="pill" loading={busy === 'cancel'} onClick={() => act('cancel', () => cancelTask(taskId), 'Cancelling…')}>
                 <Square className="w-3 h-3" /> Stop
               </Button>
             )}
             {(status === 'failed' || status === 'cancelled') && (
-              <Button size="sm" variant="secondary" loading={busy === 'retry'} onClick={() => act('retry', () => retryTask(taskId), 'Retrying from scratch')}>
+              <Button size="sm" variant="outline" shape="pill" loading={busy === 'retry'} onClick={() => act('retry', () => retryTask(taskId), 'Retrying from scratch')}>
                 <RotateCcw className="w-3.5 h-3.5" /> Retry
               </Button>
             )}
@@ -178,6 +180,7 @@ function TaskView({ taskId }: { taskId: string }) {
               <Button
                 size="sm"
                 variant="ghost"
+                shape="pill"
                 loading={busy === 'share'}
                 onClick={() => act('share', async () => setIsPublic((await shareTask(taskId, !isPublic)).isPublic), isPublic ? 'Replay is private' : 'Public replay link enabled')}
               >
@@ -188,7 +191,7 @@ function TaskView({ taskId }: { taskId: string }) {
               <a href={`/r/${taskId}`} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">/r/{taskId.slice(0, 8)}</a>
             )}
             {state.prUrl && (
-              <a href={state.prUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary-foreground bg-primary px-3 py-1.5 rounded-button hover:brightness-95">
+              <a href={state.prUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs text-primary-foreground bg-primary px-3.5 py-1.5 rounded-pill hover:brightness-95">
                 <ExternalLink className="w-3.5 h-3.5" /> View PR
               </a>
             )}
@@ -198,9 +201,9 @@ function TaskView({ taskId }: { taskId: string }) {
         {/* Body */}
         <div className="flex flex-col md:flex-row flex-1 min-h-0">
           {/* Sidebar */}
-          <aside className="md:w-[270px] shrink-0 min-w-0 [overflow-wrap:anywhere] md:overflow-x-hidden border-b md:border-b-0 md:border-r border-border bg-muted/30 md:overflow-y-auto">
+          <aside className="md:w-[270px] shrink-0 min-w-0 [overflow-wrap:anywhere] md:overflow-x-hidden border-b md:border-b-0 md:border-r border-hairline bg-background/60 md:overflow-y-auto">
             <div className="px-4 py-3">
-              <p className="text-sm font-semibold text-foreground mb-2">Checklist</p>
+              <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground mb-2.5">Checklist</p>
               {checklist.length === 0 ? (
                 <p className="text-xs text-muted-foreground">{meta.active ? 'Waiting for the plan…' : 'No plan.'}</p>
               ) : (
@@ -221,8 +224,8 @@ function TaskView({ taskId }: { taskId: string }) {
               )}
             </div>
             {state.plan?.requirements && state.plan.requirements.length > 0 && (
-              <div className="px-4 py-3 border-t border-border hidden md:block">
-                <p className="text-xs font-semibold text-foreground mb-1.5">Requirements</p>
+              <div className="px-4 py-3 border-t border-hairline hidden md:block">
+                <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground mb-2">Requirements</p>
                 <ul className="space-y-1">
                   {state.plan.requirements.map((r, i) => {
                     const check = state.verdict?.requirements?.[i]
@@ -237,8 +240,8 @@ function TaskView({ taskId }: { taskId: string }) {
               </div>
             )}
             {state.checkpoints.length > 0 && reviewable && (
-              <div className="px-4 py-3 border-t border-border hidden md:block">
-                <p className="text-xs font-semibold text-foreground mb-1.5">Checkpoints</p>
+              <div className="px-4 py-3 border-t border-hairline hidden md:block">
+                <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground mb-2">Checkpoints</p>
                 <ul className="space-y-1">
                   {state.checkpoints.slice(-6).reverse().map((c) => (
                     <li key={c.sha} className="flex items-center justify-between text-[11.5px] text-muted-foreground">
@@ -259,7 +262,7 @@ function TaskView({ taskId }: { taskId: string }) {
 
           {/* Main */}
           <div className="flex-1 min-w-0 flex flex-col min-h-[420px]">
-            <div className="shrink-0 px-3 sm:px-5 py-2.5 border-b border-border flex items-center justify-between gap-2">
+            <div className="shrink-0 px-3 sm:px-5 pt-1.5 border-b border-hairline flex items-end justify-between gap-2">
               <Tabs<TabKey>
                 layoutId="task-tabs"
                 value={tab}
@@ -274,7 +277,7 @@ function TaskView({ taskId }: { taskId: string }) {
 
             <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
               {status === 'awaiting_approval' && state.plan && (
-                <div className="shrink-0 p-3 sm:p-4 border-b border-border max-h-[70%] overflow-y-auto">
+                <div className="shrink-0 p-3 sm:p-4 border-b border-hairline max-h-[70%] overflow-y-auto">
                   <PlanCard
                     key={JSON.stringify(state.plan.steps)}
                     taskId={taskId}
@@ -296,8 +299,8 @@ function TaskView({ taskId }: { taskId: string }) {
                 />
               )}
               {status === 'needs_input' && state.pendingQuestion && (
-                <div className="shrink-0 p-3 sm:p-4 border-b border-border bg-primary/5">
-                  <p className="text-xs font-semibold text-primary mb-1">The agent needs your input</p>
+                <div className="shrink-0 p-3 sm:p-4 border-b border-hairline bg-primary/5">
+                  <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-primary mb-1.5">The agent needs your input</p>
                   <p className="text-[13px] text-foreground mb-2 whitespace-pre-wrap">{state.pendingQuestion}</p>
                   {state.intake?.attachments.length ? (
                     <div className="mb-2">
@@ -329,7 +332,7 @@ function TaskView({ taskId }: { taskId: string }) {
 
               {/* Action bar */}
               {reviewable && (
-                <div className="shrink-0 border-t border-border p-3 sm:px-5 bg-muted/30 space-y-2">
+                <div className="shrink-0 border-t border-hairline p-3 sm:px-5 bg-background/60 space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-[12.5px] text-muted-foreground">
                       {state.stoppedEarly
@@ -339,12 +342,12 @@ function TaskView({ taskId }: { taskId: string }) {
                     </p>
                     <div className="flex items-center gap-2">
                       {state.stoppedEarly && (
-                        <Button size="sm" variant="secondary" loading={busy === 'extend'} onClick={() => act('extend', () => extendBudget(taskId, 0.1), 'Budget raised — continuing')}>
+                        <Button size="sm" variant="outline" shape="pill" loading={busy === 'extend'} onClick={() => act('extend', () => extendBudget(taskId, 0.1), 'Budget raised — continuing')}>
                           Continue (+$0.10)
                         </Button>
                       )}
                       {!state.source && (
-                        <Button size="sm" loading={busy === 'publish'} onClick={() => act('publish', () => publishTask(taskId), 'Opening the pull request…')}>
+                        <Button size="sm" shape="pill" className="px-4" loading={busy === 'publish'} onClick={() => act('publish', () => publishTask(taskId), 'Opening the pull request…')}>
                           <GitPullRequest className="w-3.5 h-3.5" /> Publish PR
                         </Button>
                       )}
@@ -354,7 +357,7 @@ function TaskView({ taskId }: { taskId: string }) {
                 </div>
               )}
               {(status === 'running' || status === 'validating') && (
-                <div className="shrink-0 border-t border-border p-3 sm:px-5">
+                <div className="shrink-0 border-t border-hairline p-3 sm:px-5">
                   <Composer placeholder="Send a note to the agent while it works…" onSend={(t) => act('note', () => sendMessage(taskId, t), 'Delivered on the agent’s next step')} />
                 </div>
               )}

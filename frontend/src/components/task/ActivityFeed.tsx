@@ -73,7 +73,7 @@ const str = (v: unknown) => (typeof v === 'string' ? v : v === undefined ? '' : 
 
 function toolSummary(t: ToolRow): { icon: React.ReactNode; label: React.ReactNode } {
   const a = t.args
-  const code = (s: string) => <code className="font-mono text-[11.5px] text-foreground bg-muted px-1 py-0.5 rounded">{s}</code>
+  const code = (s: string) => <code className="font-mono text-[11.5px] text-foreground bg-black/[.05] px-1 py-0.5 rounded">{s}</code>
   switch (t.tool) {
     case 'view': {
       const range = a.start_line ? `:${a.start_line}${a.end_line ? `–${a.end_line}` : ''}` : ''
@@ -166,10 +166,10 @@ function ToolItem({ t }: { t: ToolRow }) {
         {hasBody && <ChevronRight className={cn('w-3 h-3 ml-auto shrink-0 transition-transform', open && 'rotate-90')} />}
       </button>
       {open && (
-        <div className="ml-5 mb-2 rounded-lg border border-border bg-card overflow-hidden">
+        <div className="ml-5 mb-2 rounded-lg border border-hairline bg-card overflow-hidden">
           {isEdit && <EditPreview t={t} />}
           {t.result?.output && (!isEdit || failed) && (
-            <pre className="text-[11px] font-mono leading-[1.55] whitespace-pre-wrap break-words p-2.5 max-h-72 overflow-y-auto text-muted-foreground border-t border-border first:border-t-0">
+            <pre className="text-[11px] font-mono leading-[1.55] whitespace-pre-wrap break-words p-2.5 max-h-72 overflow-y-auto text-muted-foreground border-t border-hairline first:border-t-0">
               {t.result.output}
             </pre>
           )}
@@ -185,7 +185,7 @@ function EventItem({ ev }: { ev: TaskEvent }) {
       const m = statusMeta(ev.status)
       return (
         <div className="flex items-center gap-2 pt-3 pb-1">
-          <span className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">{m.label}</span>
+          <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground">{m.label}</span>
           {ev.detail && <span className="text-[11px] text-muted-foreground truncate">· {ev.detail}</span>}
           <span className="flex-1 h-px bg-border" />
         </div>
@@ -201,7 +201,7 @@ function EventItem({ ev }: { ev: TaskEvent }) {
     case 'plan_ready':
       return (
         <div className="my-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
-          <p className="text-xs font-semibold text-primary mb-1">Plan</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-primary mb-1.5">Plan</p>
           <p className="text-[13px] text-foreground">{ev.plan.summary}</p>
           <ol className="mt-2 space-y-0.5 list-decimal list-inside text-[12.5px] text-muted-foreground">
             {ev.plan.steps.map((s, i) => <li key={i}>{s.title}</li>)}
@@ -217,7 +217,7 @@ function EventItem({ ev }: { ev: TaskEvent }) {
           {ev.verify.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {ev.verify.map((v) => (
-                <span key={v.cmd} className="font-mono text-[10.5px] bg-card border border-border rounded px-1.5 py-0.5">
+                <span key={v.cmd} className="font-mono text-[10.5px] bg-card border border-hairline rounded px-1.5 py-0.5">
                   {v.after === 0 ? '✓' : v.before !== 0 && v.before !== null ? '•' : '✗'} {v.cmd.replace(/^cd \S+ && /, '')}
                 </span>
               ))}
@@ -384,7 +384,7 @@ export default function ActivityFeed({
             toBottom()
             setStick(true)
           }}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground shadow-md hover:bg-primary/90"
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-[12px] text-primary-foreground shadow-[0_6px_20px_-8px_rgba(43,127,255,0.6)] hover:brightness-95"
         >
           <ArrowDown className="w-3.5 h-3.5" /> {unseen} new {unseen === 1 ? 'step' : 'steps'}
         </button>
