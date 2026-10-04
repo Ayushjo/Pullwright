@@ -177,7 +177,7 @@ export function Safety() {
   return (
     <Section id="safety">
       <div className="grid gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-        <TwoToneHeading strong="Safe by default" muted="nothing ships without you" />
+        <TwoToneHeading strongFirst strong="Safe by default" muted="nothing ships without you" />
         <IconGrid
           cols={2}
           items={[

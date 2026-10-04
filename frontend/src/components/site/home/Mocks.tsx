@@ -310,7 +310,7 @@ export function PlanMock() {
 export function CodeMock() {
   return (
     <Window title="src/math.js · +12 −0">
-      <div className="font-mono text-[10.5px] leading-[1.7]">
+      <div className="font-mono text-[10.5px] leading-[1.7] [font-variant-ligatures:none]">
         {[
           ['  ', 'export function divide(a, b) {', ''],
           ['  ', "  if (b === 0) throw new RangeError('b is 0')", ''],
@@ -363,7 +363,7 @@ export function ReviewMock() {
 /** Issue → PR, side by side. */
 export function ShipMock() {
   return (
-    <div className="grid sm:grid-cols-[1fr_auto_1fr] items-center gap-3">
+    <div className="grid xl:grid-cols-[1fr_auto_1fr] items-center gap-3 max-w-[340px] xl:max-w-none mx-auto">
       <Window chrome={false} className="p-4">
         <div className="flex items-center gap-1.5 text-[11px] text-success">
           <CircleDot className="w-3.5 h-3.5" />
@@ -372,7 +372,7 @@ export function ShipMock() {
         <p className="mt-2 text-[14px] text-foreground leading-snug">Add a modulo(a, b) helper to math.js</p>
         <p className="mt-1 text-[11px] text-muted-foreground">Ayushjo/devin-test-app</p>
       </Window>
-      <span className="hidden sm:block font-mono text-faint text-lg">→</span>
+      <span className="font-mono text-faint text-lg text-center rotate-90 xl:rotate-0">→</span>
       <PrCard className="w-auto" />
     </div>
   )

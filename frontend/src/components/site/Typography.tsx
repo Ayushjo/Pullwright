@@ -12,19 +12,23 @@ export function TwoToneHeading({
   strong,
   as: Tag = 'h2',
   size = 'title',
+  strongFirst,
   className,
 }: {
   muted?: ReactNode
   strong?: ReactNode
   as?: ElementType
   size?: 'title' | 'display'
+  /** "Safe by default / nothing ships without you": the strong line leads, the grey one follows. */
+  strongFirst?: boolean
   className?: string
 }) {
+  const grey = muted && <span className="text-faint">{muted}</span>
   return (
     <Tag className={cn('font-normal text-foreground text-balance', size === 'display' ? 'text-display' : 'text-title', className)}>
-      {muted && <span className="text-faint">{muted}</span>}
+      {strongFirst ? strong : grey}
       {muted && strong && <br />}
-      {strong}
+      {strongFirst ? grey : strong}
     </Tag>
   )
 }
