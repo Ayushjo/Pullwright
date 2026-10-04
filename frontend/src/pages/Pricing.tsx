@@ -6,6 +6,7 @@ import { Badge } from '../components/ui'
 import { PullwrightIcon } from '../components/svgs/PullwrightMark'
 import { HandCircle, HandUnderline } from '../components/hand/Scribbles'
 import { useAuth } from '../context/AuthContext'
+import { startCheckout } from '../api/client'
 import { cn } from '../lib/cn'
 
 type WayId = 'free' | 'keys' | 'pro'
@@ -88,6 +89,15 @@ const spring = { type: 'spring' as const, stiffness: 320, damping: 30, mass: 0.8
 export default function Pricing() {
   const { user } = useAuth()
   const [selected, setSelected] = useState<WayId>('free')
+  const [checkout, setCheckout] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null })
+  const goPro = async () => {
+    setCheckout({ busy: true, error: null })
+    try {
+      window.location.href = (await startCheckout()).url
+    } catch (e) {
+      setCheckout({ busy: false, error: (e as Error).message })
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -199,14 +209,32 @@ export default function Pricing() {
                                   </motion.li>
                                 ))}
                               </ul>
-                              <Link
-                                to={user ? w.cta.to : `/login?returnTo=${encodeURIComponent(w.cta.to)}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="mt-4 inline-flex w-full sm:w-auto items-center justify-center gap-2 text-sm font-semibold rounded-button px-4 py-2.5 bg-primary text-primary-foreground hover:brightness-95"
-                              >
-                                {w.cta.label}
-                                <ArrowRight className="w-4 h-4" />
-                              </Link>
+                              {w.id === 'pro' && user ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={checkout.busy}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      void goPro()
+                                    }}
+                                    className="mt-4 inline-flex w-full sm:w-auto items-center justify-center gap-2 text-sm font-semibold rounded-button px-4 py-2.5 bg-primary text-primary-foreground hover:brightness-95 disabled:opacity-60"
+                                  >
+                                    {checkout.busy ? 'Opening checkout…' : w.cta.label}
+                                    {!checkout.busy && <ArrowRight className="w-4 h-4" />}
+                                  </button>
+                                  {checkout.error && <p className="mt-2 text-xs text-red-700">{checkout.error}</p>}
+                                </>
+                              ) : (
+                                <Link
+                                  to={user ? w.cta.to : `/login?returnTo=${encodeURIComponent(w.id === 'pro' ? '/pricing' : w.cta.to)}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="mt-4 inline-flex w-full sm:w-auto items-center justify-center gap-2 text-sm font-semibold rounded-button px-4 py-2.5 bg-primary text-primary-foreground hover:brightness-95"
+                                >
+                                  {w.cta.label}
+                                  <ArrowRight className="w-4 h-4" />
+                                </Link>
+                              )}
                             </motion.div>
                           )}
                         </AnimatePresence>

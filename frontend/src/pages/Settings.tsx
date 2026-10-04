@@ -4,7 +4,7 @@ import { ArrowRight, KeyRound, Sparkles } from 'lucide-react'
 import AppShell from '../components/AppShell'
 import { Badge, Button, useToast } from '../components/ui'
 import CapacityMeter from '../components/wallet/CapacityMeter'
-import { getBilling, getWallet, openBillingPortal, startCheckout, type BillingInfo, type WalletView } from '../api/client'
+import { getBilling, getWallet, openBillingPortal, startCheckout, syncBilling, type BillingInfo, type WalletView } from '../api/client'
 
 function Section({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -33,7 +33,28 @@ export default function Settings() {
       .then(setWallet)
       .catch(() => setWallet(null))
     const params = new URLSearchParams(window.location.search)
-    if (params.get('billing') === 'success') push('Thanks! Your Pro plan activates as soon as the payment is confirmed.', 'success')
+    if (params.get('billing') !== 'success') return
+    // Back from checkout: confirm with Dodo now (a few tries while the payment settles), then drop the flag.
+    window.history.replaceState(null, '', window.location.pathname)
+    let stop = false
+    void (async () => {
+      for (let i = 0; i < 8 && !stop; i++) {
+        const r = await syncBilling().catch(() => ({ status: 'error' }))
+        if (r.status === 'active') {
+          if (!stop) {
+            setInfo(await getBilling())
+            push('Welcome to Pro — your plan is active.', 'success')
+          }
+          return
+        }
+        if (['failed', 'cancelled', 'expired', 'none'].includes(r.status)) break
+        await new Promise((res) => setTimeout(res, 2500))
+      }
+      if (!stop) push('Payment received — your Pro plan activates as soon as it is confirmed.', 'info')
+    })()
+    return () => {
+      stop = true
+    }
   }, [push])
 
   const run = async (key: string, fn: () => Promise<void>) => {
@@ -73,7 +94,7 @@ export default function Settings() {
                   </Button>
                 ) : info?.paymentsEnabled ? (
                   <Button size="sm" loading={busy === 'checkout'} onClick={() => run('checkout', async () => void (window.location.href = (await startCheckout()).url))}>
-                    Upgrade to Pro
+                    Upgrade to Pro — $8/mo
                   </Button>
                 ) : (
                   <Link to="/pricing" className="text-sm text-primary hover:underline">See plans</Link>

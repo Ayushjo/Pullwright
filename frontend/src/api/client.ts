@@ -202,6 +202,8 @@ export const saveApiKey = (provider: KeyProvider, key: string, model?: string) =
 export const deleteApiKey = (provider: KeyProvider) => request<{ keys: BillingInfo['keys'] }>(`/api/keys/${provider}`, { method: 'DELETE' })
 export const startCheckout = () => post<{ url: string }>('/api/billing/checkout')
 export const openBillingPortal = () => post<{ url: string }>('/api/billing/portal')
+/** After checkout: ask the server to confirm the subscription with Dodo (doesn't wait for the webhook). */
+export const syncBilling = () => post<{ status: string }>('/api/billing/sync')
 
 /* ── Wallet (free and paid model keys) ── */
 export type WalletProvider = 'gemini' | 'groq' | 'vercel' | 'openrouter' | 'openai'
