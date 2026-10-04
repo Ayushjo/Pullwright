@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="180" viewBox="0 0 700 180" role="img" aria-label="makePR wordmark with the PR branch built into the P">
+  <rect width="700" height="180" fill="#FFFFFF"/>
+  <text x="47" y="122" fill="#111318" font-family="Plus Jakarta Sans, Inter, Arial, sans-serif" font-size="75" font-weight="750" letter-spacing="-4">make</text>
+  <g transform="translate(251 51)" fill="none" stroke="#2B7FFF" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 73V13"/>
+    <path d="M9 13h30c16 0 24 9 24 22s-8 22-24 22H9"/>
+    <circle cx="9" cy="13" r="4.5" fill="#FFFFFF" stroke-width="5"/>
+    <circle cx="9" cy="73" r="4.5" fill="#FFFFFF" stroke-width="5"/>
+    <path d="M9 55c13 0 21 5 28 16" stroke-width="5"/>
+  </g>
+  <text x="326" y="122" fill="#2B7FFF" font-family="Plus Jakarta Sans, Inter, Arial, sans-serif" font-size="75" font-weight="750" letter-spacing="-4">R</text>
+</svg>
