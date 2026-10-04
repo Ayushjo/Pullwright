@@ -3,19 +3,10 @@ import { useNavigate, Link } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowLeft, ArrowRight, CircleDot, GitBranch, Box, GitPullRequest, ShieldAlert } from 'lucide-react'
 import AppShell from '../components/AppShell'
-import {
-  Badge,
-  BentoCard,
-  BentoContent,
-  Button,
-  Input,
-  Separator,
-  useToast,
-} from '../components/ui'
+import { BentoCard, BentoContent, Button, Input, useToast } from '../components/ui'
 import { ApiError, createTask } from '../api/client'
 import { fadeUp, stagger } from '../lib/motion'
 import CapacityMeter from '../components/wallet/CapacityMeter'
-import GithubMark from '../components/svgs/GithubMark'
 
 const STEPS = [
   { icon: GitBranch, label: 'You approve the plan' },
@@ -77,22 +68,18 @@ export default function NewTask() {
         <motion.div variants={fadeUp}>
           <BentoCard interactive={false}>
             <BentoContent className="p-6 sm:p-7">
-              <div className="mb-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
-                    <GithubMark className="w-5 h-5 text-primary" />
-                  </div>
-                  <Badge tone="primary" dot>New task</Badge>
-                </div>
-                <h1 className="text-xl font-bold text-foreground">Submit a GitHub issue</h1>
-                <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
-                  Paste the issue URL — Pullwright takes it from there.
-                </p>
+              <div className="mb-7">
+                <span className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+                  <span aria-hidden className="w-1.5 h-1.5 bg-primary" />
+                  New task
+                </span>
+                <h1 className="mt-3 text-[28px] font-normal leading-tight tracking-[-0.02em] text-foreground">Submit a GitHub issue</h1>
+                <p className="text-[15px] text-muted-foreground mt-1.5 leading-relaxed">Paste the issue URL — Pullwright takes it from there.</p>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-[10px] font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
+                  <label className="block font-mono text-[11px] text-muted-foreground mb-2 uppercase tracking-[0.08em]">
                     GitHub issue URL
                   </label>
                   <Input
@@ -162,7 +149,8 @@ export default function NewTask() {
                 <Button
                   type="submit"
                   size="lg"
-                  className="w-full rounded-lg justify-center"
+                  shape="pill"
+                  className="w-full h-12 justify-center"
                   disabled={!url || (consent !== null && !allowTraining)}
                   loading={loading}
                 >
@@ -171,28 +159,19 @@ export default function NewTask() {
                 </Button>
               </form>
 
-              <Separator className="my-6" />
-
-              <div>
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-4">
-                  What happens next
-                </p>
-                <div className="grid gap-3 sm:grid-cols-3 sm:items-stretch">
+              <div className="mt-8 pt-6 border-t border-hairline">
+                <p className="font-mono text-[11px] text-muted-foreground uppercase tracking-[0.08em] mb-3">What happens next</p>
+                <ol className="grid sm:grid-cols-3 border border-hairline rounded-md overflow-hidden">
                   {STEPS.map(({ icon: Icon, label }, i) => (
-                    <div
-                      key={label}
-                      className="flex items-center gap-3 rounded-lg border border-border bg-muted p-3.5 h-full min-h-[72px]"
-                    >
-                      <span className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
-                        <Icon className="w-4 h-4 text-primary" strokeWidth={1.75} />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[10px] font-mono text-muted-foreground leading-none mb-1">0{i + 1}</p>
-                        <p className="text-xs font-medium text-foreground leading-snug">{label}</p>
+                    <li key={label} className="p-3.5 min-w-0 border-hairline [&:not(:first-child)]:border-t sm:[&:not(:first-child)]:border-t-0 sm:[&:not(:first-child)]:border-l">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[11px] text-faint">0{i + 1}</span>
+                        <Icon className="w-4 h-4 text-foreground/50" strokeWidth={1.75} />
                       </div>
-                    </div>
+                      <p className="mt-3 text-[13px] text-foreground leading-snug">{label}</p>
+                    </li>
                   ))}
-                </div>
+                </ol>
               </div>
             </BentoContent>
           </BentoCard>
