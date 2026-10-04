@@ -166,7 +166,7 @@ export default function Pricing() {
                             {w.id === 'free' ? (
                               <span className="relative inline-block px-1.5 text-2xl font-bold">
                                 {w.price}
-                                <HandCircle className="text-primary/70" delay={0.6} />
+                                <HandCircle className="text-primary/70 -inset-x-3 -inset-y-2.5 w-[calc(100%+1.5rem)] h-[calc(100%+1.25rem)]" delay={0.6} />
                               </span>
                             ) : (
                               <span className={cn('font-bold', w.per ? 'text-2xl' : 'text-sm text-muted-foreground')}>{w.price}</span>
