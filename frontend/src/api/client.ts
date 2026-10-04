@@ -9,9 +9,12 @@ export const API_BASE = BASE
 /** Error carrying the server's own message (never a generic "is the backend running?"). */
 export class ApiError extends Error {
   readonly status: number
-  constructor(message: string, status: number) {
+  /** Machine-readable reason from the server, e.g. "daily_limit", "private_repo_training". */
+  readonly code?: string
+  constructor(message: string, status: number, code?: string) {
     super(message)
     this.status = status
+    this.code = code
   }
 }
 
@@ -41,14 +44,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       (data && typeof data === 'object' && 'error' in data && typeof (data as { error: unknown }).error === 'string'
         ? (data as { error: string }).error
         : null) ?? (res.status === 401 ? 'Please sign in again.' : `Request failed (${res.status})`)
-    throw new ApiError(msg, res.status)
+    const code = data && typeof data === 'object' && 'code' in data && typeof (data as { code: unknown }).code === 'string' ? (data as { code: string }).code : undefined
+    throw new ApiError(msg, res.status, code)
   }
   return data as T
 }
 
 const post = <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) })
 
-export type CreateTaskOptions = { autoApprove?: boolean; autoPublish?: boolean; draft?: boolean }
+export type CreateTaskOptions = { autoApprove?: boolean; autoPublish?: boolean; draft?: boolean; allowTraining?: boolean }
 
 export function createTask(issueUrl: string, options: CreateTaskOptions = {}) {
   return post<{ taskId: string; status: string }>('/api/task', { issueUrl, ...options })

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { ArrowLeft, ArrowRight, CircleDot, GitBranch, Box, GitPullRequest } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { ArrowLeft, ArrowRight, CircleDot, GitBranch, Box, GitPullRequest, ShieldAlert } from 'lucide-react'
 import AppShell from '../components/AppShell'
 import {
   Badge,
@@ -12,7 +12,7 @@ import {
   Separator,
   useToast,
 } from '../components/ui'
-import { createTask } from '../api/client'
+import { ApiError, createTask } from '../api/client'
 import { fadeUp, stagger } from '../lib/motion'
 import CapacityMeter from '../components/wallet/CapacityMeter'
 
@@ -35,6 +35,9 @@ export default function NewTask() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [approvePlan, setApprovePlan] = useState(true)
+  // Private repo + keys that may train on prompts: asked once, per task (server answers 409 private_repo_training).
+  const [consent, setConsent] = useState<{ message: string } | null>(null)
+  const [allowTraining, setAllowTraining] = useState(false)
   const navigate = useNavigate()
   const { push: pushToast } = useToast()
 
@@ -49,10 +52,15 @@ export default function NewTask() {
     setLoading(true)
     setError('')
     try {
-      const { taskId } = await createTask(url.trim(), { autoApprove: !approvePlan })
+      const { taskId } = await createTask(url.trim(), { autoApprove: !approvePlan, ...(allowTraining ? { allowTraining: true } : {}) })
       navigate(`/tasks/${taskId}`)
     } catch (err) {
       const msg = (err as Error).message
+      if (err instanceof ApiError && err.code === 'private_repo_training') {
+        setConsent({ message: msg })
+        setLoading(false)
+        return
+      }
       pushToast(msg, 'error')
       setError(msg)
       setLoading(false)
@@ -99,6 +107,8 @@ export default function NewTask() {
                     onChange={(e) => {
                       setUrl(e.target.value)
                       setError('')
+                      setConsent(null)
+                      setAllowTraining(false)
                     }}
                     placeholder="https://github.com/owner/repo/issues/42"
                     autoFocus
@@ -126,13 +136,40 @@ export default function NewTask() {
                   </span>
                 </label>
 
+                <AnimatePresence initial={false}>
+                  {consent && (
+                    <motion.div
+                      key="consent"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+                      className="overflow-hidden"
+                    >
+                      <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3.5" role="alert">
+                        <p className="flex items-start gap-2 text-[13px] text-amber-900">
+                          <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" strokeWidth={1.75} />
+                          {consent.message}
+                        </p>
+                        <label className="mt-3 flex items-start gap-2.5 text-[13px] text-foreground cursor-pointer select-none">
+                          <input type="checkbox" checked={allowTraining} onChange={(e) => setAllowTraining(e.target.checked)} className="mt-0.5 accent-[var(--primary)]" />
+                          <span>Allow it for this task only</span>
+                        </label>
+                        <Link to="/wallet" className="mt-2 inline-block text-xs font-medium text-primary hover:underline underline-offset-2">
+                          Or add a key that doesn't train →
+                        </Link>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 <CapacityMeter />
 
                 <Button
                   type="submit"
                   size="lg"
                   className="w-full rounded-lg justify-center"
-                  disabled={!url}
+                  disabled={!url || (consent !== null && !allowTraining)}
                   loading={loading}
                 >
                   {loading ? 'Starting…' : 'Start agent'}
