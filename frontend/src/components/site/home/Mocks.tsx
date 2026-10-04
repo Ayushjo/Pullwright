@@ -42,7 +42,12 @@ function FeedLine({ line, i, animate }: { line: (typeof FEED)[number]; i: number
     )
   if (!animate) return body
   return (
-    <motion.div initial={{ opacity: 0, y: 4 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.35 + i * 0.22, duration: 0.25 }}>
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ delay: 0.35 + i * 0.22, duration: 0.25 }}
+    >
       {body}
     </motion.div>
   )
@@ -63,7 +68,12 @@ export function PrCard({ className }: { className?: string }) {
       </p>
       <div className="mt-3 grid grid-cols-3 gap-2 border-t border-hairline pt-3">
         {[
-          ['Diff', <><span className="text-success">+15</span> <span className="text-danger">−1</span></>],
+          [
+            'Diff',
+            <>
+              <span className="text-success">+15</span> <span className="text-danger">−1</span>
+            </>,
+          ],
           ['Review', '5/5 met'],
           ['Cost', '$0.047'],
         ].map(([k, v]) => (
@@ -79,7 +89,7 @@ export function PrCard({ className }: { className?: string }) {
 }
 
 /** Hero: the task screen (checklist + live activity) with the PR card floating on the right. */
-export function HeroMock() {
+export function HeroMock({ floatingPr = true }: { floatingPr?: boolean }) {
   const reduce = useReducedMotion()
   return (
     <div className="relative">
@@ -114,15 +124,17 @@ export function HeroMock() {
           </div>
         </div>
       </Window>
-      <motion.div
-        initial={reduce ? false : { opacity: 0, x: 24 }}
-        whileInView={{ opacity: 1, x: 0 }}
-        viewport={{ once: true }}
-        transition={{ delay: reduce ? 0 : 2.3, type: 'spring', stiffness: 220, damping: 26 }}
-        className="hidden lg:block absolute right-0 top-10"
-      >
-        <PrCard />
-      </motion.div>
+      {floatingPr && (
+        <motion.div
+          initial={reduce ? false : { opacity: 0, x: 24 }}
+          whileInView={{ opacity: 1, x: 0 }}
+          viewport={{ once: true }}
+          transition={{ delay: reduce ? 0 : 2.3, type: 'spring', stiffness: 220, damping: 26 }}
+          className="hidden lg:block absolute right-0 top-10"
+        >
+          <PrCard />
+        </motion.div>
+      )}
     </div>
   )
 }
@@ -264,8 +276,16 @@ export function AssumptionsMock() {
           ['Paginate with ?page & ?limit', true],
           ['Drop fields from each book', false],
         ].map(([t, on]) => (
-          <div key={t as string} className={cn('flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-[11.5px]', on ? 'border-primary/40 bg-primary/5 text-foreground' : 'border-hairline text-muted-foreground')}>
-            <span className={cn('w-3 h-3 rounded-full border flex items-center justify-center', on ? 'border-primary' : 'border-neutral-300')}>{on && <span className="w-1.5 h-1.5 rounded-full bg-primary" />}</span>
+          <div
+            key={t as string}
+            className={cn(
+              'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-[11.5px]',
+              on ? 'border-primary/40 bg-primary/5 text-foreground' : 'border-hairline text-muted-foreground',
+            )}
+          >
+            <span className={cn('w-3 h-3 rounded-full border flex items-center justify-center', on ? 'border-primary' : 'border-neutral-300')}>
+              {on && <span className="w-1.5 h-1.5 rounded-full bg-primary" />}
+            </span>
             {t as string}
           </div>
         ))}
@@ -285,16 +305,20 @@ export function PlanMock() {
           <span className="rounded-pill bg-black/[.05] text-[10.5px] px-2 py-0.5">Clear issue</span>
         </div>
         <ol className="mt-3 space-y-2">
-          {['Add modulo(a, b) next to the other helpers', 'Throw a RangeError when b is 0, like divide()', 'Export it and add tests for both cases'].map((s, i) => (
-            <li key={s} className="flex gap-2.5 text-[12px] text-foreground/85">
-              <span className="font-mono text-[10.5px] text-muted-foreground mt-px">{String(i + 1).padStart(2, '0')}</span>
-              {s}
-            </li>
-          ))}
+          {['Add modulo(a, b) next to the other helpers', 'Throw a RangeError when b is 0, like divide()', 'Export it and add tests for both cases'].map(
+            (s, i) => (
+              <li key={s} className="flex gap-2.5 text-[12px] text-foreground/85">
+                <span className="font-mono text-[10.5px] text-muted-foreground mt-px">{String(i + 1).padStart(2, '0')}</span>
+                {s}
+              </li>
+            ),
+          )}
         </ol>
         <div className="mt-3 flex flex-wrap gap-1.5">
           {['src/math.js', 'test/math.test.js'].map((f) => (
-            <span key={f} className="font-mono text-[10.5px] rounded bg-black/[.04] px-1.5 py-0.5 text-foreground/70">{f}</span>
+            <span key={f} className="font-mono text-[10.5px] rounded bg-black/[.04] px-1.5 py-0.5 text-foreground/70">
+              {f}
+            </span>
           ))}
         </div>
         <div className="mt-4 flex gap-2">
