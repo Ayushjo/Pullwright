@@ -48,10 +48,10 @@ function NavLink({
         aria-label={label}
         aria-current={active ? 'page' : undefined}
         className={cn(
-          'flex items-center justify-center w-9 h-9 rounded-md transition-colors duration-micro',
+          'flex items-center justify-center w-9 h-9 rounded-pill transition-colors duration-micro',
           active
-            ? 'text-primary bg-primary/10'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted',
+            ? 'text-foreground bg-black/[.06]'
+            : 'text-muted-foreground hover:text-foreground hover:bg-black/[.04]',
         )}
       >
         <Icon className="w-5 h-5" strokeWidth={1.75} />
@@ -64,10 +64,10 @@ function NavLink({
       to={to}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-md transition-colors duration-micro',
+        'flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-pill transition-colors duration-micro',
         active
-          ? 'text-foreground bg-muted'
-          : 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
+          ? 'text-foreground bg-black/[.05]'
+          : 'text-foreground/70 hover:text-foreground hover:bg-black/[.04]',
       )}
     >
       <Icon className="w-4 h-4" strokeWidth={1.75} />
@@ -156,7 +156,7 @@ function MobileBottomNav() {
 
   return (
     <nav
-      className="md:hidden fixed bottom-0 inset-x-0 z-nav border-t border-border bg-card"
+      className="md:hidden fixed bottom-0 inset-x-0 z-nav border-t border-hairline bg-background/90 backdrop-blur-md"
       aria-label="Mobile navigation"
     >
       <div className="grid grid-cols-4 h-14 max-w-lg mx-auto">
@@ -172,18 +172,14 @@ function MobileBottomNav() {
               aria-current={active ? 'page' : undefined}
               className={cn(
                 'flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
-                active
-                  ? accent
-                    ? 'text-primary'
-                    : 'text-primary'
-                  : 'text-muted-foreground',
+                active ? (accent ? 'text-primary' : 'text-foreground') : 'text-muted-foreground',
               )}
             >
               <span
                 className={cn(
                   'flex items-center justify-center w-8 h-8 rounded-lg',
                   accent && 'bg-primary text-primary-foreground',
-                  active && !accent && 'bg-primary/10',
+                  active && !accent && 'bg-black/[.06]',
                 )}
               >
                 <Icon className="w-[18px] h-[18px]" strokeWidth={accent ? 2 : 1.75} />
@@ -203,12 +199,11 @@ export function TopNav() {
   const { pathname } = useLocation()
 
   return (
-    <header className="sticky top-0 z-nav bg-card border-b border-border">
-      <div className="max-w-6xl mx-auto px-gutter h-14 flex items-center gap-2">
-        <Logo height={32} className="shrink-0" />
+    <header className="sticky top-0 z-nav bg-background/80 backdrop-blur-md border-b border-hairline">
+      <div className="max-w-frame mx-auto px-gutter md:px-8 h-[52px] flex items-center gap-2">
+        <Logo height={28} className="shrink-0 mr-4" />
 
-        {/* Desktop — centered links */}
-        <nav className="hidden md:flex flex-1 items-center justify-center gap-1" aria-label="Main">
+        <nav className="hidden md:flex flex-1 items-center gap-0.5" aria-label="Main">
           {NAV.map(({ to, label, icon }) => (
             <NavLink
               key={to}
@@ -231,9 +226,9 @@ export function TopNav() {
 
         <div className="flex items-center gap-2 shrink-0">
           <Link to="/tasks/new" className="hidden md:block">
-            <Button size="sm" className="gap-1.5">
+            <Button variant="solid" shape="pill" size="sm" className="gap-1.5 px-4" tabIndex={-1}>
               <Plus className="w-4 h-4" />
-              New Task
+              New task
             </Button>
           </Link>
           <UserMenu />
@@ -253,7 +248,7 @@ export default function AppShell({
   return (
     <div className="min-h-screen bg-background">
       <TopNav />
-      <main className={cn('mx-auto px-gutter pt-4 pb-24 md:pt-8 md:pb-16', maxWidth)}>{children}</main>
+      <main className={cn('mx-auto px-gutter pt-6 pb-24 md:pt-10 md:pb-16', maxWidth)}>{children}</main>
       <MobileBottomNav />
     </div>
   )
