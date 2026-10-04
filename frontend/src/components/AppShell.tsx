@@ -228,30 +228,11 @@ export function TopNav() {
 
         <div className="flex-1 md:hidden" />
 
-        {/* Mobile — header icon shortcuts */}
+        {/* Mobile — only what the bottom bar doesn't already have */}
         <nav className="flex md:hidden items-center gap-0.5" aria-label="Main">
-          {NAV.map(({ to, label, icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              label={label}
-              icon={icon}
-              active={pathname.startsWith(to)}
-              compact
-            />
+          {NAV.filter((n) => !MOBILE_BOTTOM_NAV.some((b) => b.to === n.to)).map(({ to, label, icon }) => (
+            <NavLink key={to} to={to} label={label} icon={icon} active={pathname.startsWith(to)} compact />
           ))}
-          <Link
-            to="/tasks/new"
-            aria-label="New task"
-            className={cn(
-              'flex items-center justify-center w-9 h-9 rounded-md transition-colors duration-micro',
-              pathname === '/tasks/new'
-                ? 'text-primary bg-primary/10'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted',
-            )}
-          >
-            <Plus className="w-5 h-5" strokeWidth={1.75} />
-          </Link>
         </nav>
 
         <div className="flex items-center gap-2 shrink-0">
