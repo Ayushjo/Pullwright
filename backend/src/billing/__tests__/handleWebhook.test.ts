@@ -26,6 +26,7 @@ const db = {
     findUnique: async ({ where }: { where: Row }) => plans.find((p) => p.tier === where.tier) ?? null,
   },
   subscription: {
+    findFirst: async ({ where }: { where: Row }) => [...subs.values()].find((s) => s.providerCustomerId === where.providerCustomerId) ?? null,
     findUnique: async ({ where }: { where: Row }) =>
       [...subs.values()].find((s) => s.providerSubscriptionId === where.providerSubscriptionId) ?? null,
     upsert: async ({ where, create, update }: { where: { userId: string }; create: Row; update: Row }) => {
@@ -79,5 +80,12 @@ describe("Dodo webhook processing", () => {
     await handleWebhook("e5", ev("prod_pro"))
     expect(await handleWebhook("e6", { type: "subscription.renewed", data: { subscription_id: "sub_1" } })).toBe("processed")
     expect(subs.get("u1")?.planId).toBe("plan-pro")
+  })
+
+  it("identifies the user by the linked customer when a subscription event has no metadata", async () => {
+    await handleWebhook("e7", { type: "subscription.active", data: { subscription_id: "sub_1", product_id: "prod_pro", customer: { customer_id: "cus_1" }, metadata: { user_id: "u1" } } })
+    expect(await handleWebhook("e8", { type: "subscription.cancelled", data: { subscription_id: "sub_2", customer: { customer_id: "cus_1" } } })).toBe("processed")
+    expect(subs.get("u1")?.status).toBe("canceled")
+    expect(await handleWebhook("e9", { type: "subscription.active", data: { subscription_id: "sub_3", product_id: "prod_pro", customer: { customer_id: "cus_unknown" } } })).toBe("ignored")
   })
 })

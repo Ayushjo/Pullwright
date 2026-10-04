@@ -10,6 +10,7 @@ import {
   deleteKey,
   getEntitlement,
   handleWebhook,
+  syncCheckout,
   listKeys,
   saveKey,
   validateKey,
@@ -57,6 +58,17 @@ export function createBillingRouter() {
     try {
       const user = await getPrisma().user.findUniqueOrThrow({ where: { id: userId } })
       res.json({ url: await createCheckout({ id: user.id, login: user.login, email: user.email, name: user.name }) })
+    } catch (err) {
+      res.status(400).json({ error: (err as Error).message })
+    }
+  })
+
+  // The return page after checkout: confirm with Dodo directly instead of waiting for the webhook.
+  router.post("/billing/sync", async (req, res) => {
+    const userId = needUser(req, res)
+    if (!userId) return
+    try {
+      res.json(await syncCheckout(userId))
     } catch (err) {
       res.status(400).json({ error: (err as Error).message })
     }

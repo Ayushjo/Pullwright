@@ -4,6 +4,8 @@ import crypto from "crypto"
 import { getPrisma, isDatabaseEnabled } from "../db/prisma.js"
 import { decrypt, encrypt } from "../auth/session.js"
 import logger from "../logger.js"
+import { createRedisClient } from "../config/redis.js"
+import type { Redis } from "ioredis"
 
 /**
  * Plans, entitlements, bring-your-own-key and Dodo Payments.
@@ -161,20 +163,66 @@ async function dodo<T>(path: string, init: RequestInit = {}): Promise<T> {
   return JSON.parse(text) as T
 }
 
+// The last checkout each user opened, so the return page can confirm it without waiting for a webhook
+// (webhooks can't reach a local backend, and in production they may simply arrive late).
+let redis: Redis | null = null
+const checkoutKey = (userId: string) => `pw:billing:checkout:${userId}`
+function billingRedis() {
+  return (redis ??= createRedisClient())
+}
+
 export async function createCheckout(user: { id: string; login: string; email?: string | null; name?: string | null }) {
   const productId = process.env.DODO_PRO_PRODUCT_ID
   if (!productId) throw new Error("Payments are not configured yet (DODO_PRO_PRODUCT_ID missing).")
   const frontend = process.env.FRONTEND_URL ?? "http://localhost:5173"
-  const out = await dodo<{ checkout_url: string; session_id?: string }>("/checkouts", {
+  const out = await dodo<{ checkout_url?: string | null; session_id: string }>("/checkouts", {
     method: "POST",
     body: JSON.stringify({
       product_cart: [{ product_id: productId, quantity: 1 }],
       customer: { email: user.email ?? `${user.login}@users.noreply.github.com`, name: user.name ?? user.login },
       return_url: `${frontend}/settings?billing=success`,
+      cancel_url: `${frontend}/pricing`,
       metadata: { user_id: user.id, github_login: user.login },
     }),
   })
+  if (!out.checkout_url) throw new Error("The payment provider didn't return a checkout page. Please try again.")
+  await billingRedis().set(checkoutKey(user.id), out.session_id, "EX", 24 * 3600)
   return out.checkout_url
+}
+
+type DodoSubscription = {
+  subscription_id: string
+  status: string
+  product_id: string
+  next_billing_date?: string
+  cancel_at_next_billing_date?: boolean
+  customer?: { customer_id?: string; email?: string }
+  metadata?: Record<string, string>
+}
+
+/**
+ * Confirm the user's last checkout straight from Dodo (checkout → payment → subscription) and apply it
+ * exactly like the matching webhook would. Safe to call repeatedly; the subscription must belong to this
+ * user (its metadata, or the checkout we stored for them).
+ */
+export async function syncCheckout(userId: string): Promise<{ status: string }> {
+  const sessionId = await billingRedis().get(checkoutKey(userId))
+  if (!sessionId) return { status: "none" }
+  const session = await dodo<{ payment_id?: string | null; payment_status?: string | null }>(`/checkouts/${encodeURIComponent(sessionId)}`)
+  if (!session.payment_id) return { status: session.payment_status ?? "pending" }
+  const payment = await dodo<{ subscription_id?: string | null; status?: string | null; metadata?: Record<string, string> }>(
+    `/payments/${encodeURIComponent(session.payment_id)}`,
+  )
+  if (!payment.subscription_id) return { status: payment.status ?? "pending" }
+  const sub = await dodo<DodoSubscription>(`/subscriptions/${encodeURIComponent(payment.subscription_id)}`)
+  const owner = sub.metadata?.user_id ?? payment.metadata?.user_id
+  if (owner && owner !== userId) throw new Error("That subscription belongs to another account.")
+  if (sub.status === "pending") return { status: "pending" }
+  await applyEvent(getPrisma(), {
+    type: `subscription.${sub.status}`,
+    data: { ...sub, metadata: { ...(sub.metadata ?? {}), user_id: userId } },
+  })
+  return { status: sub.status }
 }
 
 export async function createPortalLink(userId: string) {
@@ -277,7 +325,11 @@ async function applyEvent(db: ReturnType<typeof getPrisma>, ev: DodoEvent): Prom
   if (!status && ev.type !== "subscription.updated") return { result: "ignored" }
   const d = ev.data
   let userId = d.metadata?.user_id
-  const existing = d.subscription_id ? await db.subscription.findUnique({ where: { providerSubscriptionId: d.subscription_id } }) : null
+  // Checkout metadata is attached to the payment; if a subscription event arrives without it, the
+  // customer we already linked (from an earlier event or a return-page sync) identifies the user.
+  const existing =
+    (d.subscription_id ? await db.subscription.findUnique({ where: { providerSubscriptionId: d.subscription_id } }) : null) ??
+    (d.customer?.customer_id ? await db.subscription.findFirst({ where: { providerCustomerId: d.customer.customer_id } }) : null)
   if (!userId) userId = existing?.userId
   if (!userId) return { result: "ignored", note: "no user_id in metadata" }
   // The product decides the plan. An unknown product grants nothing (a credit pack must never
