@@ -4,7 +4,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: 'var(--background)',
+        background: 'rgb(var(--background-rgb) / <alpha-value>)',
         foreground: 'var(--foreground)',
         card: {
           DEFAULT: 'var(--card)',

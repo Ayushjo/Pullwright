@@ -8,6 +8,7 @@
   :root {
     /* Off-white canvas; cards stay white so they lift slightly off it. */
     --background: #f7f7f6;
+    --background-rgb: 247 247 246;
     --foreground: #191919;
     --card: #ffffff;
     --card-foreground: #191919;
