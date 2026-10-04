@@ -39,6 +39,8 @@ All checks ran in the app's browser against the local backend, at 1280 px and 37
 4. **Only one "Remove" button rendered** when two keys were saved: `UndoDelete` used a fixed `layoutId`, so framer-motion treated every instance as one element. It now uses a per-instance id.
 5. **Dashboard numbers disagreed** (39 total vs 60 in the "All" tab): the cards counted Postgres rows, the tabs counted the task list, which includes local eval tasks. The cards now count the same list as the tabs.
 6. React lint: the "open steps when this becomes the start card" logic moved out of an effect into a render-time state adjustment.
+7. **Cancelling an idle task never reached the task list or Postgres.** `POST /task/:id/cancel` changed the task but skipped the status sink, so a cancelled task kept showing "Review plan" or "Paused" in lists. 18 of 166 list entries were stale; they inflated "Needs you" from 48 to 55. Cancel now runs the sink, and `scripts/pw/resync-registry.mts --apply` repaired the old entries (a dry run afterwards reports 0 stale).
+8. History used its own status labels and showed raw `parked`. It now uses the shared labels ("Paused", "Review plan", …).
 
 ## Found along the way
 
