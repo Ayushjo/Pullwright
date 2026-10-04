@@ -1,22 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { KeyRound, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
+import { ArrowRight, KeyRound, Sparkles } from 'lucide-react'
 import AppShell from '../components/AppShell'
-import { Badge, Button, Input, useToast } from '../components/ui'
-import {
-  deleteApiKey,
-  getBilling,
-  openBillingPortal,
-  saveApiKey,
-  startCheckout,
-  type BillingInfo,
-  type KeyProvider,
-} from '../api/client'
-
-const PROVIDERS: { id: KeyProvider; name: string; hint: string; placeholder: string }[] = [
-  { id: 'openai', name: 'OpenAI', hint: 'Uses gpt-5-mini by default — typically a few cents per task.', placeholder: 'sk-…' },
-  { id: 'openrouter', name: 'OpenRouter', hint: 'One key for many models (default openai/gpt-5-mini).', placeholder: 'sk-or-…' },
-]
+import { Badge, Button, useToast } from '../components/ui'
+import CapacityMeter from '../components/wallet/CapacityMeter'
+import { getBilling, getWallet, openBillingPortal, startCheckout, type BillingInfo, type WalletView } from '../api/client'
 
 function Section({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -34,13 +22,16 @@ export default function Settings() {
   const { push } = useToast()
   const [info, setInfo] = useState<BillingInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [drafts, setDrafts] = useState<Record<KeyProvider, string>>({ openai: '', openrouter: '' })
+  const [wallet, setWallet] = useState<WalletView | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
   useEffect(() => {
     getBilling()
       .then(setInfo)
       .catch((e: Error) => setError(e.message))
+    getWallet()
+      .then(setWallet)
+      .catch(() => setWallet(null))
     const params = new URLSearchParams(window.location.search)
     if (params.get('billing') === 'success') push('Thanks! Your Pro plan activates as soon as the payment is confirmed.', 'success')
   }, [push])
@@ -82,102 +73,51 @@ export default function Settings() {
                   </Button>
                 ) : info?.paymentsEnabled ? (
                   <Button size="sm" loading={busy === 'checkout'} onClick={() => run('checkout', async () => void (window.location.href = (await startCheckout()).url))}>
-                    Upgrade to Pro — $12/mo
+                    Upgrade to Pro
                   </Button>
                 ) : (
                   <Link to="/pricing" className="text-sm text-primary hover:underline">See plans</Link>
                 )}
               </div>
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div className="rounded-lg border border-border p-3">
-                  <p className="text-xs text-muted-foreground">Runs this month</p>
-                  <p className="text-lg font-semibold tabular-nums">{ent.runsUsed} <span className="text-sm text-muted-foreground font-normal">/ {ent.runsIncluded}</span></p>
+              <CapacityMeter className="w-fit max-w-full" />
+              {pro && (
+                <div className="rounded-lg border border-border p-3 sm:max-w-xs">
+                  <p className="text-xs text-muted-foreground">Included model usage this month</p>
+                  <p className="text-lg font-semibold tabular-nums">
+                    ${ent.hostedSpentUsd.toFixed(2)} <span className="text-sm text-muted-foreground font-normal">/ ${ent.hostedAllowanceUsd.toFixed(2)}</span>
+                  </p>
                   <div className="h-1.5 rounded-full bg-border mt-2 overflow-hidden">
-                    <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(100, (ent.runsUsed / Math.max(1, ent.runsIncluded)) * 100)}%` }} />
+                    <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(100, (ent.hostedSpentUsd / Math.max(0.01, ent.hostedAllowanceUsd)) * 100)}%` }} />
                   </div>
                 </div>
-                <div className="rounded-lg border border-border p-3">
-                  <p className="text-xs text-muted-foreground">{pro ? 'Included model usage' : 'Model usage'}</p>
-                  {pro ? (
-                    <p className="text-lg font-semibold tabular-nums">${ent.hostedSpentUsd.toFixed(2)} <span className="text-sm text-muted-foreground font-normal">/ ${ent.hostedAllowanceUsd.toFixed(2)}</span></p>
-                  ) : (
-                    <p className="text-sm text-foreground mt-1">Billed to your own key — Pullwright adds no markup.</p>
-                  )}
-                </div>
-              </div>
+              )}
               <p className="text-xs text-muted-foreground">
                 {ent.key
-                  ? ent.key.kind === 'byok'
-                    ? `New tasks use your ${ent.key.provider === 'openai' ? 'OpenAI' : 'OpenRouter'} key.`
-                    : 'New tasks use your included Pro model usage.'
-                  : ent.reason?.replace(' in Settings', ' below')}
+                  ? ent.key.kind === 'wallet'
+                    ? ent.key.allFree
+                      ? 'New tasks run on your free keys.'
+                      : 'New tasks run on your keys — free ones first.'
+                    : ent.key.kind === 'byok'
+                      ? `New tasks use your ${ent.key.provider === 'openai' ? 'OpenAI' : 'OpenRouter'} key.`
+                      : 'New tasks use your included Pro model usage.'
+                  : ent.reason}
               </p>
             </div>
           )}
         </Section>
 
-        <Section title="Your API keys" icon={<KeyRound className="w-4 h-4 text-primary" />}>
-          <p className="text-[13px] text-muted-foreground mb-4 flex items-start gap-1.5">
-            <ShieldCheck className="w-4 h-4 text-success shrink-0" />
-            Keys are verified with the provider, encrypted at rest (AES-256-GCM), used only by the worker for your tasks, and never shown or logged.
-          </p>
-          <div className="space-y-4">
-            {PROVIDERS.map((p) => {
-              const saved = info?.keys.find((k) => k.provider === p.id)
-              return (
-                <div key={p.id} className="rounded-lg border border-border p-3.5">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <p className="text-sm font-semibold text-foreground">{p.name}</p>
-                    {saved && (
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-muted-foreground">•••• {saved.last4}</span>
-                        <button
-                          type="button"
-                          title="Remove key"
-                          className="p-1 text-muted-foreground hover:text-destructive"
-                          onClick={() => run(`del-${p.id}`, async () => {
-                            const r = await deleteApiKey(p.id)
-                            setInfo((i) => (i ? { ...i, keys: r.keys } : i))
-                            setInfo(await getBilling())
-                            push('Key removed', 'success')
-                          })}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground mb-2.5">{p.hint}</p>
-                  <form
-                    className="flex gap-2"
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      const key = drafts[p.id].trim()
-                      if (!key) return
-                      void run(`save-${p.id}`, async () => {
-                        await saveApiKey(p.id, key)
-                        setDrafts((d) => ({ ...d, [p.id]: '' }))
-                        setInfo(await getBilling())
-                        push(`${p.name} key saved`, 'success')
-                      })
-                    }}
-                  >
-                    <div className="flex-1 min-w-0">
-                    <Input
-                      type="password"
-                      autoComplete="off"
-                      placeholder={saved ? 'Replace key…' : p.placeholder}
-                      value={drafts[p.id]}
-                      onChange={(e) => setDrafts((d) => ({ ...d, [p.id]: e.target.value }))}
-                    />
-                    </div>
-                    <Button type="submit" size="md" variant="secondary" loading={busy === `save-${p.id}`} disabled={!drafts[p.id].trim()}>
-                      {saved ? 'Replace' : 'Save'}
-                    </Button>
-                  </form>
-                </div>
-              )
-            })}
+        <Section title="Model keys" icon={<KeyRound className="w-4 h-4 text-primary" />}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              {wallet === null
+                ? 'Free and paid model keys live in your Wallet.'
+                : wallet.keys.length === 0
+                  ? 'No keys yet — a free Gemini key is all you need to start.'
+                  : `${wallet.keys.length} key${wallet.keys.length > 1 ? 's' : ''} saved${wallet.capability.canRun ? '' : ' — ' + (wallet.capability.missing ?? '')}`}
+            </p>
+            <Link to="/wallet" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline underline-offset-2">
+              Open Wallet <ArrowRight className="w-4 h-4" />
+            </Link>
           </div>
         </Section>
       </div>

@@ -6,7 +6,7 @@ import { cn } from '../../lib/cn'
 const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 /** One line: "2 of 3 free tasks left today", with a dot per task (filled = still available). */
-export function capacityText(c: Capacity): { line: string; note: string | null; blocked: boolean } {
+function capacityText(c: Capacity): { line: string; note: string | null; blocked: boolean } {
   const plan = c.tier === 'pro' ? '' : 'free '
   if (c.left === 0)
     return { line: `No ${plan}tasks left today`, note: c.nextSlotAt ? `Next one frees up at ${time(c.nextSlotAt)}` : null, blocked: true }

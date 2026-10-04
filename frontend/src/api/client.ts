@@ -185,7 +185,7 @@ export type BillingInfo = {
     runsUsed: number
     hostedAllowanceUsd: number
     hostedSpentUsd: number
-    key: { kind: 'byok'; provider: KeyProvider } | { kind: 'platform' } | null
+    key: { kind: 'byok'; provider: KeyProvider } | { kind: 'platform' } | { kind: 'wallet'; allFree: boolean } | null
     reason?: string
   }
   keys: { provider: KeyProvider; last4: string; model: string | null; createdAt: string; lastUsedAt: string | null }[]

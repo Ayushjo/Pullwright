@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowUpRight, ChevronDown, RefreshCw } from 'lucide-react'
 import type { WalletGuide, WalletKey } from '../../api/client'
@@ -78,9 +78,12 @@ export default function ProviderCard({
 }) {
   const [open, setOpen] = useState(Boolean(startHere))
   const [checking, setChecking] = useState(false)
-  useEffect(() => {
+  // Open the steps when this card becomes the starting point (adjusting state during render, not in an effect).
+  const [wasStart, setWasStart] = useState(startHere)
+  if (startHere !== wasStart) {
+    setWasStart(startHere)
     if (startHere) setOpen(true)
-  }, [startHere])
+  }
   const pointer = startHere && !saved
 
   return (
