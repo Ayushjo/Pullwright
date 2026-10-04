@@ -124,7 +124,7 @@ export default function Wallet() {
                 key={g.id}
                 guide={g}
                 saved={savedBy.get(g.id)}
-                startHere={empty && g.id === 'gemini'}
+                startHere={!view.capability.canRun && g.id === 'gemini'}
                 onAddClick={() => {
                   setHint(g.id)
                   setFocus((n) => n + 1)
