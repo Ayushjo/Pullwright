@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { ExternalLink, Pause, Play, RotateCcw } from 'lucide-react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { ArrowUpRight, Pause, Play, RotateCcw } from 'lucide-react'
 import ActivityFeed from '../components/task/ActivityFeed'
 import DiffView from '../components/task/DiffView'
 import { Badge, Button, Tabs } from '../components/ui'
 import { getPublicEvents, getPublicTask } from '../api/client'
 import type { TaskEvent } from '../types/task'
 import { statusMeta } from '../lib/status'
-import { PullwrightIcon } from '../components/svgs/PullwrightMark'
+import { cn } from '../lib/cn'
+import { useAuth } from '../context/AuthContext'
+import SiteNav from '../components/site/SiteNav'
+import SiteFooter from '../components/site/SiteFooter'
+import { Frame, Section } from '../components/site/Layout'
+import { MonoLabel, TwoToneHeading } from '../components/site/Typography'
 
 type PublicTask = {
   title: string
@@ -39,6 +44,8 @@ export default function Replay() {
   const [speed, setSpeed] = useState(20)
   const [tab, setTab] = useState<'activity' | 'changes'>('activity')
   const [error, setError] = useState<string | null>(null)
+  const { user, login } = useAuth()
+  const navigate = useNavigate()
 
   useEffect(() => {
     if (!id) return
@@ -76,86 +83,111 @@ export default function Replay() {
 
   if (error) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-background">
-        <p className="text-muted-foreground">{error}</p>
-        <Link to="/" className="text-sm text-primary hover:underline">Go to Pullwright →</Link>
+      <div className="min-h-screen bg-background text-foreground">
+        <SiteNav />
+        <Frame>
+          <Section divider={false} inner="py-28 text-center">
+            <MonoLabel>Replay</MonoLabel>
+            <p className="mt-4 text-2xl tracking-[-0.02em]">{error}</p>
+            <Link to="/" className="mt-4 inline-block text-primary hover:underline underline-offset-4">
+              Go to Pullwright →
+            </Link>
+          </Section>
+        </Frame>
       </div>
     )
   }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border bg-card">
-        <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2 font-semibold text-sm">
-            <PullwrightIcon className="w-6 h-6" /> Pullwright
-          </Link>
-          <Link to="/login" className="text-xs font-medium text-primary hover:underline">Try it on your repo →</Link>
-        </div>
-      </header>
+      <SiteNav />
+      <Frame>
+        {/* Title */}
+        <section className="px-gutter md:px-12 pt-12 md:pt-16 pb-8">
+          <MonoLabel dot>Live replay · sped up · no model is called</MonoLabel>
+          <h1 className="mt-4 text-[30px] sm:text-[40px] font-normal leading-[1.1] tracking-[-0.025em] text-foreground max-w-4xl">{task?.title ?? 'Loading…'}</h1>
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
+            <a href={task?.issueUrl} target="_blank" rel="noreferrer" className="font-mono text-[13px] hover:text-foreground">
+              {task?.repo} #{task?.issueNumber}
+            </a>
+            <Badge tone={meta.tone} dot>
+              {meta.label}
+            </Badge>
+          </div>
+        </section>
 
-      <main className="max-w-5xl mx-auto px-4 py-6">
-        <div className="rounded-xl border border-border bg-card overflow-hidden">
-          <div className="px-4 sm:px-5 py-4 border-b border-border bg-muted/50">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground">
-                  Replay of a real run ·{' '}
-                  <a href={task?.issueUrl} target="_blank" rel="noreferrer" className="hover:underline">
-                    {task?.repo} #{task?.issueNumber}
-                  </a>
-                </p>
-                <h1 className="text-lg font-bold leading-snug">{task?.title ?? 'Loading…'}</h1>
-              </div>
-              <Badge tone={meta.tone} dot>{meta.label}</Badge>
+        {/* Player */}
+        <section className="px-gutter md:px-12 pb-16">
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <Button variant="primary" shape="pill" size="sm" className="px-4" onClick={() => (done ? (setShown(0), setPlaying(true)) : setPlaying((p) => !p))}>
+              {done ? <RotateCcw className="w-3.5 h-3.5" /> : playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+              {done ? 'Replay' : playing ? 'Pause' : 'Play'}
+            </Button>
+            <div className="inline-flex rounded-pill border border-black/15 p-0.5" role="group" aria-label="Playback speed">
+              {SPEEDS.map((sp) => (
+                <button
+                  key={sp}
+                  type="button"
+                  onClick={() => setSpeed(sp)}
+                  aria-pressed={speed === sp}
+                  className={cn('px-2.5 py-1 rounded-pill font-mono text-[11px] transition-colors', speed === sp ? 'bg-foreground text-white' : 'text-muted-foreground hover:text-foreground')}
+                >
+                  {sp}×
+                </button>
+              ))}
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Button size="sm" variant="secondary" onClick={() => (done ? (setShown(0), setPlaying(true)) : setPlaying((p) => !p))}>
-                {done ? <RotateCcw className="w-3.5 h-3.5" /> : playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                {done ? 'Replay' : playing ? 'Pause' : 'Play'}
-              </Button>
-              <div className="inline-flex rounded-lg border border-border overflow-hidden">
-                {SPEEDS.map((s) => (
-                  <button key={s} type="button" onClick={() => setSpeed(s)} className={`px-2.5 py-1 text-xs ${speed === s ? 'bg-muted text-foreground font-semibold' : 'text-muted-foreground'}`}>
-                    {s}×
-                  </button>
-                ))}
-              </div>
-              <span className="text-xs text-muted-foreground ml-auto tabular-nums">
-                {shown}/{events.length} events{typeof task?.costUsd === 'number' ? ` · run cost $${task.costUsd.toFixed(4)}` : ''}
-              </span>
-              {task?.prUrl && (
-                <a href={task.prUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
-                  <ExternalLink className="w-3.5 h-3.5" /> Pull request
-                </a>
+            <MonoLabel className="ml-auto tabular-nums">
+              {shown}/{events.length} events{typeof task?.costUsd === 'number' ? ` · run cost $${task.costUsd.toFixed(4)}` : ''}
+            </MonoLabel>
+            {task?.prUrl && (
+              <a href={task.prUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-pill border border-black/15 px-3 py-1 text-xs text-foreground hover:bg-black/[.04]">
+                Pull request <ArrowUpRight className="w-3.5 h-3.5" />
+              </a>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-hairline bg-card overflow-hidden">
+            <div className="px-4 sm:px-5 py-2.5 border-b border-hairline">
+              <Tabs<'activity' | 'changes'>
+                layoutId="replay-tabs"
+                value={tab}
+                onChange={setTab}
+                items={[
+                  { key: 'activity', label: 'Activity' },
+                  { key: 'changes', label: 'Final diff' },
+                ]}
+              />
+            </div>
+            <div className="h-[65vh]">
+              {tab === 'activity' ? (
+                <ActivityFeed events={visible} live={!done && playing} />
+              ) : (
+                <div className="p-4 sm:p-5 h-full overflow-y-auto">
+                  <DiffView patch={task?.patch ?? ''} rejected={[]} editable={false} />
+                </div>
               )}
             </div>
           </div>
-          <div className="px-4 sm:px-5 py-2.5 border-b border-border">
-            <Tabs<'activity' | 'changes'>
-              layoutId="replay-tabs"
-              value={tab}
-              onChange={setTab}
-              items={[
-                { key: 'activity', label: 'Activity' },
-                { key: 'changes', label: 'Final diff' },
-              ]}
-            />
+          <p className="mt-4 text-sm text-muted-foreground">
+            Every step above really happened: plan → sandboxed edits → tests → independent review → pull request.
+          </p>
+        </section>
+
+        <Section inner="py-20 md:py-28 text-center">
+          <TwoToneHeading muted="Seen enough?" strong="Run it on your own issue." className="mx-auto max-w-2xl" />
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+            <Button variant="primary" shape="pill" size="lg" onClick={() => (user ? navigate('/tasks/new') : login('/wallet'))}>
+              Start free
+            </Button>
+            <Link to="/pricing">
+              <Button variant="outline" shape="pill" size="lg" tabIndex={-1}>
+                See pricing
+              </Button>
+            </Link>
           </div>
-          <div className="h-[65vh]">
-            {tab === 'activity' ? (
-              <ActivityFeed events={visible} live={!done && playing} />
-            ) : (
-              <div className="p-4 sm:p-5 h-full overflow-y-auto">
-                <DiffView patch={task?.patch ?? ''} rejected={[]} editable={false} />
-              </div>
-            )}
-          </div>
-        </div>
-        <p className="text-center text-xs text-muted-foreground mt-4">
-          Every step above really happened: plan → sandboxed edits → tests → independent review → pull request.
-        </p>
-      </main>
+        </Section>
+        <SiteFooter />
+      </Frame>
     </div>
   )
 }
