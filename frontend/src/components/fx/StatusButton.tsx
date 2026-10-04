@@ -35,7 +35,7 @@ export default function StatusButton({
         className={cn(
           'relative inline-flex items-center justify-center rounded-button text-sm font-medium px-4 py-2 min-w-[118px] transition-colors duration-300 focus-ring',
           busy ? 'bg-muted text-muted-foreground cursor-default' : 'bg-primary text-primary-foreground hover:brightness-95',
-          status === 'error' && 'bg-destructive text-destructive-foreground',
+          status === 'error' && 'bg-red-600 text-white',
           'disabled:cursor-not-allowed',
           disabled && !busy && 'opacity-50',
           className,
@@ -54,7 +54,7 @@ export default function StatusButton({
               transition={{ type: 'spring', stiffness: 300, damping: 20 }}
               className={cn(
                 'relative flex items-center justify-center w-5 h-5 rounded-full ring-2 ring-background',
-                status === 'success' ? 'bg-primary text-primary-foreground' : status === 'error' ? 'bg-destructive text-destructive-foreground' : 'bg-muted text-muted-foreground',
+                status === 'success' ? 'bg-primary text-primary-foreground' : status === 'error' ? 'bg-red-600 text-white' : 'bg-muted text-muted-foreground',
               )}
             >
               {status === 'loading' && (
