@@ -22,13 +22,11 @@ export const PROVIDER_NAMES: Record<WalletProvider, string> = {
   openai: 'OpenAI',
 }
 
-/** Brand-ish accent per provider (used only for the small monogram tile). */
+/** Logo colour per provider (Gemini's mark carries its own gradient). */
 export const PROVIDER_TINT: Record<WalletProvider, string> = {
-  gemini: 'bg-sky-50 text-sky-700 border-sky-200',
-  groq: 'bg-orange-50 text-orange-700 border-orange-200',
-  vercel: 'bg-neutral-100 text-neutral-900 border-neutral-300',
-  openrouter: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  openai: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  gemini: 'text-[#3186FF]',
+  groq: 'text-[#F55036]',
+  vercel: 'text-foreground',
+  openrouter: 'text-[#6467F2]',
+  openai: 'text-foreground',
 }
-
-export const PROVIDER_MONO: Record<WalletProvider, string> = { gemini: 'G', groq: 'Gq', vercel: '▲', openrouter: 'OR', openai: 'AI' }

@@ -5,7 +5,8 @@ import type { WalletGuide, WalletKey } from '../../api/client'
 import Badge from '../ui/Badge'
 import UndoDelete from '../fx/UndoDelete'
 import { HandArrow, HandUnderline } from '../hand/Scribbles'
-import { PROVIDER_MONO, PROVIDER_TINT } from './detect'
+import { PROVIDER_TINT } from './detect'
+import ProviderLogo from '../svgs/ProviderLogo'
 import { cn } from '../../lib/cn'
 
 const usd = (n: number) => (n < 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(2).replace(/\.00$/, '')}`)
@@ -109,8 +110,8 @@ export default function ProviderCard({
         )}
       >
         <div className="flex items-start gap-3">
-          <div className={cn('w-10 h-10 shrink-0 rounded-lg border flex items-center justify-center text-sm font-bold', PROVIDER_TINT[guide.id])}>
-            {PROVIDER_MONO[guide.id]}
+          <div className="w-10 h-10 shrink-0 rounded-lg border border-hairline bg-background/60 flex items-center justify-center">
+            <ProviderLogo id={guide.id} className={cn('w-[22px] h-[22px]', PROVIDER_TINT[guide.id])} />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

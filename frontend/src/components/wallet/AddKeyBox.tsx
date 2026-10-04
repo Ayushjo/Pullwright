@@ -3,7 +3,8 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { ClipboardPaste, Eye, EyeOff, Lock } from 'lucide-react'
 import type { WalletProvider } from '../../api/client'
 import StatusButton, { type ButtonStatus } from '../fx/StatusButton'
-import { detectProvider, PROVIDER_NAMES } from './detect'
+import { detectProvider, PROVIDER_NAMES, PROVIDER_TINT } from './detect'
+import ProviderLogo from '../svgs/ProviderLogo'
 import { cn } from '../../lib/cn'
 
 /**
@@ -69,7 +70,7 @@ export default function AddKeyBox({
       <div className="flex flex-col sm:flex-row gap-2">
         <div
           className={cn(
-            'relative flex-1 min-w-0 flex items-center rounded-input border bg-background transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15',
+            'relative flex-1 min-w-0 h-11 flex items-center rounded-md border bg-background transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15',
             error ? 'border-red-300' : 'border-black/15',
           )}
         >
@@ -86,7 +87,7 @@ export default function AddKeyBox({
             spellCheck={false}
             aria-label="API key"
             placeholder="Paste a key — AIza…, gsk_…, vck_…, sk-or-…"
-            className="flex-1 min-w-0 bg-transparent px-2.5 py-2.5 text-sm font-mono outline-none placeholder:font-sans placeholder:text-muted-foreground/80"
+            className="flex-1 min-w-0 h-full bg-transparent px-2.5 text-sm font-mono outline-none placeholder:font-sans placeholder:text-muted-foreground/80"
           />
           <AnimatePresence>
             {detected && (
@@ -95,8 +96,9 @@ export default function AddKeyBox({
                 animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
                 exit={{ opacity: 0, scale: 0.8, filter: 'blur(3px)' }}
                 transition={{ type: 'spring', stiffness: 400, damping: 26 }}
-                className="hidden min-[380px]:inline-flex shrink-0 items-center rounded-full bg-primary/10 text-primary text-[11px] font-semibold px-2 py-0.5 mr-1 whitespace-nowrap"
+                className="hidden min-[380px]:inline-flex shrink-0 items-center gap-1.5 rounded-full border border-hairline bg-card text-foreground text-[11px] px-2 py-0.5 mr-1 whitespace-nowrap"
               >
+                <ProviderLogo id={detected} className={cn('w-3.5 h-3.5', PROVIDER_TINT[detected])} />
                 {PROVIDER_NAMES[detected]}
               </motion.span>
             )}
@@ -117,7 +119,8 @@ export default function AddKeyBox({
           status={status}
           disabled={!value.trim()}
           labels={{ idle: 'Add key', loading: 'Checking', success: 'Saved', error: 'Try again' }}
-          className="w-full sm:w-auto py-2.5"
+          shape="rect"
+          className="w-full sm:w-auto h-11 py-0"
         />
       </div>
       <AnimatePresence initial={false} mode="wait">
