@@ -52,6 +52,7 @@ export default {
       fontFamily: {
         sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'Menlo', 'monospace'],
+        hand: ['Caveat', '"Comic Sans MS"', 'cursive'],
       },
       borderRadius: {
         lg: '12px',
