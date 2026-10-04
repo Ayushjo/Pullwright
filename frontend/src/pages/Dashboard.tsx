@@ -8,6 +8,7 @@ import TaskCard from '../components/TaskCard'
 import type { StoredTask } from '../store/taskStore'
 import { statusMeta } from '../lib/status'
 import { listTasks, getStats, type StatsResponse } from '../api/client'
+import CapacityMeter from '../components/wallet/CapacityMeter'
 import { useAuth } from '../context/AuthContext'
 import type { TaskStatus, TaskRegistryEntry } from '../types/task'
 import { fadeUp, stagger } from '../lib/motion'
@@ -167,10 +168,13 @@ export default function Dashboard() {
 
   const filtered = allTasks.filter((t) => matches(filter, t.status))
 
-  const totalVal = stats?.total ?? allTasks.length
-  const needsYouVal = stats?.needsYou ?? allTasks.filter((t) => statusMeta(t.status).needsYou).length
-  const runningVal = stats?.running ?? allTasks.filter((t) => statusMeta(t.status).active).length
-  const doneVal = stats?.done ?? allTasks.filter((t) => matches('done', t.status)).length
+  // Count from the same list the tabs filter, so the cards and tab badges always agree; the stats
+  // endpoint (Postgres only) is the fallback when the list is empty or failed to load.
+  const fromList = allTasks.length > 0
+  const totalVal = fromList ? allTasks.length : (stats?.total ?? 0)
+  const needsYouVal = fromList ? allTasks.filter((t) => matches('needs_you', t.status)).length : (stats?.needsYou ?? 0)
+  const runningVal = fromList ? allTasks.filter((t) => matches('active', t.status)).length : (stats?.running ?? 0)
+  const doneVal = fromList ? allTasks.filter((t) => matches('done', t.status)).length : (stats?.done ?? 0)
 
   const statCards: StatCardProps[] = [
     { label: 'Total Tasks', value: totalVal, icon: <TrendingUp className="w-5 h-5" />, color: '#000000', bgColor: '#F2F2F2' },
@@ -202,6 +206,8 @@ export default function Dashboard() {
           New Task
         </Link>
       </motion.div>
+
+      <CapacityMeter className="-mt-4 mb-6 sm:max-w-md" />
 
       {/* Stats strip */}
       {loading ? (
