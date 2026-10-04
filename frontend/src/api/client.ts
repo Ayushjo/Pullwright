@@ -198,3 +198,35 @@ export const saveApiKey = (provider: KeyProvider, key: string, model?: string) =
 export const deleteApiKey = (provider: KeyProvider) => request<{ keys: BillingInfo['keys'] }>(`/api/keys/${provider}`, { method: 'DELETE' })
 export const startCheckout = () => post<{ url: string }>('/api/billing/checkout')
 export const openBillingPortal = () => post<{ url: string }>('/api/billing/portal')
+
+/* ── Wallet (free and paid model keys) ── */
+export type WalletProvider = 'gemini' | 'groq' | 'vercel' | 'openrouter' | 'openai'
+export type WalletKey = {
+  provider: WalletProvider
+  last4: string
+  tier: 'free' | 'paid' | 'free_credit' | 'unknown' | string
+  status: 'active' | 'revoked' | 'out_of_funds' | string
+  dataPolicy: 'trains' | 'no_train' | 'unknown' | string
+  meta: {
+    balanceUsd?: number | null
+    usedUsd?: number | null
+    limitRemainingUsd?: number | null
+    freeRequestsToday?: { used: number; limit: number; remaining: number }
+  } | null
+  createdAt: string
+  lastUsedAt: string | null
+  lastCheckedAt: string | null
+}
+export type WalletGuide = { id: WalletProvider; name: string; role: string; free: boolean; cardNeeded: boolean; keyUrl: string; steps: string[]; placeholder: string }
+export type WalletCapability = { canRun: boolean; canReview: boolean; canReadImages: boolean; allFree: boolean; missing: string | null }
+export type WalletView = { keys: WalletKey[]; capability: WalletCapability; providers: WalletGuide[] }
+
+export const getWallet = () => request<WalletView>('/api/wallet')
+export const addWalletKey = (key: string, provider?: WalletProvider) =>
+  post<WalletView & { added: WalletProvider }>('/api/wallet/keys', { key, ...(provider ? { provider } : {}) })
+export const checkWalletKey = (provider: WalletProvider) => post<WalletView>(`/api/wallet/keys/${provider}/check`)
+export const deleteWalletKey = (provider: WalletProvider) => request<WalletView>(`/api/wallet/keys/${provider}`, { method: 'DELETE' })
+
+/* ── Capacity (free plan: 3 starts per rolling 24 h) ── */
+export type Capacity = { tier: 'free' | 'pro'; tasksPerDay: number; used: number; left: number; nextSlotAt: number | null; maxActive: number; active: number }
+export const getCapacity = () => request<Capacity>('/api/capacity')
