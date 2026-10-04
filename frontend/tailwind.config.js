@@ -5,7 +5,7 @@ export default {
     extend: {
       colors: {
         background: 'rgb(var(--background-rgb) / <alpha-value>)',
-        foreground: 'var(--foreground)',
+        foreground: 'rgb(var(--foreground-rgb) / <alpha-value>)',
         card: {
           DEFAULT: 'var(--card)',
           foreground: 'var(--card-foreground)',

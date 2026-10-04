@@ -1,96 +1,103 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { AnimatePresence, LayoutGroup, motion } from 'framer-motion'
-import { ArrowRight, Check } from 'lucide-react'
-import { Badge } from '../components/ui'
-import { PullwrightIcon } from '../components/svgs/PullwrightMark'
-import { HandCircle, HandUnderline } from '../components/hand/Scribbles'
+import { Fragment, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { AnimatePresence, motion } from 'framer-motion'
+import { Check, Minus, Plus } from 'lucide-react'
+import { Button } from '../components/ui'
+import { HandCircle } from '../components/hand/Scribbles'
 import { useAuth } from '../context/AuthContext'
 import { startCheckout } from '../api/client'
 import { cn } from '../lib/cn'
+import { fadeUp, stagger } from '../lib/motion'
+import SiteNav from '../components/site/SiteNav'
+import SiteFooter from '../components/site/SiteFooter'
+import { Frame, Section } from '../components/site/Layout'
+import { ArrowLink, MonoLabel, TwoToneHeading } from '../components/site/Typography'
+import { COMPARE, FAQ, WAYS, type Way } from '../content/plans'
 
-type WayId = 'free' | 'keys' | 'pro'
+function PlanColumn({ way, onCta, busy }: { way: Way; onCta: (w: Way) => void; busy: boolean }) {
+  const solid = way.id !== 'keys'
+  return (
+    <motion.div variants={fadeUp} className="flex flex-col rounded-lg border border-hairline bg-card p-6 sm:p-7 min-w-0">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[26px] font-normal tracking-[-0.02em] text-foreground leading-tight">{way.name}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{way.who}</p>
+        </div>
+        {way.tag && <MonoLabel className="shrink-0 rounded bg-primary/10 text-primary px-2 py-1">{way.tag}</MonoLabel>}
+      </div>
 
-// Limits mirror backend/src/entitlements/admission.ts (free 3/day, 1 at a time; Pro 25/day, 3 at a time)
-// and the Pro plan in docs (hosted credit $3/month).
-const WAYS: {
-  id: WayId
-  name: string
-  who: string
-  price: string
-  per?: string
-  blurb: string
-  features: string[]
-  cta: { label: string; to: string }
-}[] = [
-  {
-    id: 'free',
-    name: 'Free keys',
-    who: 'Most people start here',
-    price: '$0',
-    blurb: 'Paste a free Google Gemini key (a minute, no card). Add Groq, Vercel or OpenRouter free keys to make it faster and sharper.',
-    features: [
-      '3 tasks a day, one at a time',
-      'Planning, sandboxed run, tests and an independent review on every task',
-      'Pauses when a free quota runs out and picks up when it resets — nothing lost',
-      'Private repos only go to providers that don’t train on your code',
-    ],
-    cta: { label: 'Add a free key', to: '/wallet' },
-  },
-  {
-    id: 'keys',
-    name: 'Your paid keys',
-    who: 'You already pay OpenAI or OpenRouter',
-    price: 'Provider rates',
-    blurb: 'Add your own paid key alongside the free ones. Free keys are always used first; your key only covers what they can’t.',
-    features: [
-      'Same 3 tasks a day on the free plan',
-      'You pay your provider directly — a typical task is a few cents',
-      'Keys are checked on save, stored encrypted, never shown again',
-      'Remove a key any time',
-    ],
-    cta: { label: 'Add a key', to: '/wallet' },
-  },
-  {
-    id: 'pro',
-    name: 'Pro',
-    who: 'No keys to manage',
-    price: '$8',
-    per: '/month',
-    blurb: 'Runs on our models with $3 of model usage included every month. Your free keys still go first, so the credit lasts longer.',
-    features: [
-      '25 tasks a day, three at once',
-      'Priority queue — never waits behind free tasks',
-      '$3 of model usage each month (≈35 hard tasks)',
-      'Everything in Free keys',
-    ],
-    cta: { label: 'Go Pro', to: '/settings' },
-  },
-]
+      <div className="mt-7 flex flex-wrap items-end gap-x-3 gap-y-1 min-h-[64px]">
+        {way.id === 'free' ? (
+          <span className="relative inline-block px-1 text-[56px] leading-none tracking-[-0.03em] text-foreground">
+            {way.price}
+            <HandCircle className="text-primary/70 -inset-x-3 -inset-y-2.5 w-[calc(100%+1.5rem)] h-[calc(100%+1.25rem)]" delay={0.6} />
+          </span>
+        ) : (
+          <span className={cn('leading-none tracking-[-0.03em] text-foreground', way.price.startsWith('$') ? 'text-[56px]' : 'text-[34px] pb-1 whitespace-nowrap')}>{way.price}</span>
+        )}
+        <MonoLabel className="pb-1.5">{way.per}</MonoLabel>
+      </div>
 
-const FAQ = [
-  [
-    'Is the free way really free?',
-    'Yes. Google, Groq, Vercel and OpenRouter all offer free API keys without a card. Pullwright only uses the free tiers of those keys, and never charges you on the free plan.',
-  ],
-  [
-    'What happens when a free quota runs out mid-task?',
-    'The task pauses and shows when it will continue — usually at the provider’s daily reset. It resumes on its own from where it stopped, or you can add another key to continue now.',
-  ],
-  [
-    'Is my code safe?',
-    'Each task runs in a throwaway sandbox with no network access after dependencies install and no credentials inside. Your GitHub token only lives in the worker that opens the PR, and no PR is opened without your click.',
-  ],
-  ['Can I cancel Pro?', 'Yes — manage or cancel any time from Settings. Payments are handled by Dodo Payments.'],
-]
+      <p className="mt-5 text-[15px] leading-relaxed text-muted-foreground">{way.blurb}</p>
 
-const spring = { type: 'spring' as const, stiffness: 320, damping: 30, mass: 0.8 }
+      <Button variant={solid ? 'primary' : 'outline'} className="mt-6 w-full h-11 rounded-md text-[15px]" loading={busy} onClick={() => onCta(way)}>
+        {busy ? 'Opening checkout…' : way.cta.label}
+      </Button>
+
+      <div className="mt-7 border-t border-hairline pt-5">
+        <MonoLabel>{way.includes}</MonoLabel>
+        <ul className="mt-3 divide-y divide-hairline">
+          {way.features.map((f) => (
+            <li key={f} className="flex gap-3 py-3 text-[15px] text-foreground leading-snug">
+              <Check className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+              {f}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </motion.div>
+  )
+}
+
+function Cell({ v }: { v: string | boolean }) {
+  if (v === true) return <Check className="w-4 h-4 text-primary" aria-label="Included" />
+  if (v === false) return <Minus className="w-4 h-4 text-faint" aria-label="Not needed" />
+  return <span>{v}</span>
+}
+
+function FaqItem({ q, a }: { q: string; a: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <li className="border-b border-hairline">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="w-full flex items-center justify-between gap-6 py-5 text-left focus-ring rounded-sm">
+        <span className="text-[17px] sm:text-lg text-foreground tracking-[-0.01em]">{q}</span>
+        <Plus className={cn('w-5 h-5 text-muted-foreground shrink-0 transition-transform duration-200', open && 'rotate-45')} />
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+            className="overflow-hidden"
+          >
+            <p className="pb-5 pr-10 text-[15px] leading-relaxed text-muted-foreground max-w-3xl">{a}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </li>
+  )
+}
 
 export default function Pricing() {
   const { user } = useAuth()
-  const [selected, setSelected] = useState<WayId>('free')
+  const navigate = useNavigate()
   const [checkout, setCheckout] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null })
-  const goPro = async () => {
+
+  const onCta = async (w: Way) => {
+    if (!user) return navigate(`/login?returnTo=${encodeURIComponent(w.id === 'pro' ? '/pricing' : w.cta.to)}`)
+    if (w.id !== 'pro') return navigate(w.cta.to)
     setCheckout({ busy: true, error: null })
     try {
       window.location.href = (await startCheckout()).url
@@ -101,166 +108,109 @@ export default function Pricing() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border bg-card">
-        <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2 font-semibold text-sm">
-            <PullwrightIcon className="w-6 h-6" /> Pullwright
-          </Link>
-          <Link to={user ? '/dashboard' : '/login'} className="text-sm font-medium text-primary hover:underline">
-            {user ? 'Dashboard' : 'Sign in'} →
-          </Link>
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto px-4 py-10 sm:py-14">
-        <div className="text-center mb-10">
-          <Badge tone="primary" dot>
-            Pricing
-          </Badge>
-          <h1 className="text-3xl sm:text-4xl font-bold mt-4 tracking-tight">
-            Three ways to use it.{' '}
-            <span className="relative inline-block whitespace-nowrap">
-              One is free.
-              <HandUnderline className="text-primary/70 -bottom-2 h-3" strokeWidth={3.5} delay={0.4} duration={0.8} />
-            </span>
-          </h1>
-          <p className="text-muted-foreground mt-4 max-w-xl mx-auto">Every way gets the same agent: a plan you approve, a sandboxed run, tests, an independent review, and a PR only when you say so.</p>
-        </div>
-
-        <LayoutGroup>
-          <div className="max-w-xl mx-auto flex flex-col gap-3" role="radiogroup" aria-label="Ways to use Pullwright">
-            {WAYS.map((w) => {
-              const on = selected === w.id
-              return (
-                <motion.div
-                  key={w.id}
-                  layout
-                  transition={spring}
-                  role="radio"
-                  aria-checked={on}
-                  tabIndex={0}
-                  onClick={() => setSelected(w.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      setSelected(w.id)
-                    }
-                  }}
-                  className={cn(
-                    'relative cursor-pointer rounded-2xl border bg-card text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-                    on ? 'border-primary shadow-[0_0_0_3px_rgba(43,127,255,0.12)]' : 'border-border hover:border-neutral-300',
-                  )}
-                >
-                  <div className="p-4 sm:p-5">
-                    <div className="flex items-start gap-3.5">
-                      <span className={cn('mt-1 w-5 h-5 shrink-0 rounded-full border-2 flex items-center justify-center transition-colors duration-300', on ? 'border-primary' : 'border-neutral-300')}>
-                        <AnimatePresence initial={false}>
-                          {on && (
-                            <motion.span
-                              initial={{ scale: 0 }}
-                              animate={{ scale: 1 }}
-                              exit={{ scale: 0 }}
-                              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                              className="w-2.5 h-2.5 rounded-full bg-primary"
-                            />
-                          )}
-                        </AnimatePresence>
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <h2 className="text-base font-semibold leading-tight">{w.name}</h2>
-                            <p className="text-xs text-muted-foreground mt-0.5">{w.who}</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            {w.id === 'free' ? (
-                              <span className="relative inline-block px-1.5 text-2xl font-bold">
-                                {w.price}
-                                <HandCircle className="text-primary/70 -inset-x-3 -inset-y-2.5 w-[calc(100%+1.5rem)] h-[calc(100%+1.25rem)]" delay={0.6} />
-                              </span>
-                            ) : (
-                              <span className={cn('font-bold', w.per ? 'text-2xl' : 'text-sm text-muted-foreground')}>{w.price}</span>
-                            )}
-                            {w.per && <span className="text-sm text-muted-foreground">{w.per}</span>}
-                          </div>
-                        </div>
-
-                        <AnimatePresence initial={false}>
-                          {on && (
-                            <motion.div
-                              key="details"
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              transition={{ height: spring, opacity: { duration: 0.2 } }}
-                              className="overflow-hidden"
-                            >
-                              <p className="text-sm text-muted-foreground mt-3">{w.blurb}</p>
-                              <ul className="mt-3 space-y-2">
-                                {w.features.map((f, i) => (
-                                  <motion.li
-                                    key={f}
-                                    initial={{ opacity: 0, x: -4 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    transition={{ delay: 0.08 + i * 0.05 }}
-                                    className="flex gap-2 text-sm"
-                                  >
-                                    <Check className="w-4 h-4 text-success shrink-0 mt-0.5" /> {f}
-                                  </motion.li>
-                                ))}
-                              </ul>
-                              {w.id === 'pro' && user ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    disabled={checkout.busy}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      void goPro()
-                                    }}
-                                    className="mt-4 inline-flex w-full sm:w-auto items-center justify-center gap-2 text-sm font-semibold rounded-button px-4 py-2.5 bg-primary text-primary-foreground hover:brightness-95 disabled:opacity-60"
-                                  >
-                                    {checkout.busy ? 'Opening checkout…' : w.cta.label}
-                                    {!checkout.busy && <ArrowRight className="w-4 h-4" />}
-                                  </button>
-                                  {checkout.error && <p className="mt-2 text-xs text-red-700">{checkout.error}</p>}
-                                </>
-                              ) : (
-                                <Link
-                                  to={user ? w.cta.to : `/login?returnTo=${encodeURIComponent(w.id === 'pro' ? '/pricing' : w.cta.to)}`}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="mt-4 inline-flex w-full sm:w-auto items-center justify-center gap-2 text-sm font-semibold rounded-button px-4 py-2.5 bg-primary text-primary-foreground hover:brightness-95"
-                                >
-                                  {w.cta.label}
-                                  <ArrowRight className="w-4 h-4" />
-                                </Link>
-                              )}
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              )
-            })}
+      <SiteNav />
+      <Frame>
+        {/* Header */}
+        <section className="px-gutter md:px-12 pt-14 md:pt-24 pb-10 md:pb-14 grid gap-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <TwoToneHeading as="h1" size="display" muted="Pullwright" strong="Plans and pricing" />
+          <div className="md:text-right md:pb-2">
+            <p className="text-[15px] text-muted-foreground">Free to run with your own keys.</p>
+            <Link to="/wallet" className="mt-1.5 inline-block font-mono text-[12px] uppercase tracking-[0.06em] text-primary underline underline-offset-4">
+              Add a free Gemini key in a minute →
+            </Link>
           </div>
-        </LayoutGroup>
+        </section>
 
-        <div className="max-w-xl mx-auto mt-14">
-          <h2 className="text-xl font-bold mb-4">Questions</h2>
-          <div className="divide-y divide-border rounded-xl border border-border bg-card">
-            {FAQ.map(([q, a]) => (
-              <details key={q} className="group px-5 py-4">
-                <summary className="cursor-pointer text-sm font-semibold list-none flex justify-between gap-4">
-                  {q} <span className="text-muted-foreground group-open:rotate-45 transition-transform">+</span>
-                </summary>
-                <p className="text-sm text-muted-foreground mt-2 leading-relaxed">{a}</p>
-              </details>
+        {/* Plans */}
+        <section className="px-gutter md:px-12 pb-16 md:pb-24">
+          <MonoLabel>Three ways to use it</MonoLabel>
+          <motion.div variants={stagger(0.07)} initial="hidden" animate="show" className="mt-4 grid gap-4 lg:grid-cols-3">
+            {WAYS.map((w) => (
+              <PlanColumn key={w.id} way={w} onCta={onCta} busy={w.id === 'pro' && checkout.busy} />
             ))}
+          </motion.div>
+          {checkout.error && (
+            <p className="mt-3 text-sm text-destructive" role="alert">
+              {checkout.error}
+            </p>
+          )}
+        </section>
+
+        {/* Compare */}
+        <Section id="compare">
+          <TwoToneHeading muted="Compare" strong="side by side" />
+          <div className="mt-10 -mx-gutter md:mx-0 overflow-x-auto">
+            <table className="w-full min-w-[640px] text-left border-collapse">
+              <thead>
+                <tr className="border-b border-hairline">
+                  <th className="sticky left-0 z-[1] bg-background py-4 pl-gutter md:pl-0 pr-4 w-[34%]" />
+                  {WAYS.map((w) => (
+                    <th key={w.id} scope="col" className="py-4 pr-4 align-bottom">
+                      <span className="block text-[17px] font-normal text-foreground">{w.name}</span>
+                      <span className="block text-sm font-normal text-muted-foreground">{w.id === 'keys' ? 'Your rates' : `${w.price} / month`}</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {COMPARE.map((r) => (
+                  <Fragment key={r.label}>
+                    {r.group && (
+                      <tr>
+                        <td className="sticky left-0 z-[1] bg-background pt-8 pb-2 pl-gutter md:pl-0">
+                          <MonoLabel>{r.group}</MonoLabel>
+                        </td>
+                        <td colSpan={3} />
+                      </tr>
+                    )}
+                    <tr className="border-b border-hairline">
+                      <th scope="row" className="sticky left-0 z-[1] bg-background py-3.5 pl-gutter md:pl-0 pr-4 text-[15px] font-normal text-foreground">
+                        {r.label}
+                      </th>
+                      {r.values.map((v, i) => (
+                        <td key={i} className="py-3.5 pr-4 text-[15px] text-muted-foreground">
+                          <Cell v={v} />
+                        </td>
+                      ))}
+                    </tr>
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
-      </main>
+        </Section>
+
+        {/* Providers */}
+        <Section inner="py-14 md:py-16">
+          <div className="grid gap-8 md:grid-cols-2 md:items-center">
+            <ul className="flex flex-wrap gap-x-7 gap-y-2 text-lg text-foreground/45 order-2 md:order-1">
+              {['Google Gemini', 'Groq', 'Vercel AI Gateway', 'OpenRouter', 'OpenAI'].map((n) => (
+                <li key={n}>{n}</li>
+              ))}
+            </ul>
+            <TwoToneHeading muted="Works with every" strong="major model provider" className="order-1 md:order-2 md:text-right" />
+          </div>
+        </Section>
+
+        {/* FAQ */}
+        <Section id="faq">
+          <div className="grid gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+            <div>
+              <TwoToneHeading muted="Questions," strong="answered" />
+              <ArrowLink to="/#how" className="mt-5">
+                How it works
+              </ArrowLink>
+            </div>
+            <ul className="border-t border-hairline">
+              {FAQ.map(([q, a]) => (
+                <FaqItem key={q} q={q} a={a} />
+              ))}
+            </ul>
+          </div>
+        </Section>
+
+        <SiteFooter />
+      </Frame>
     </div>
   )
 }
