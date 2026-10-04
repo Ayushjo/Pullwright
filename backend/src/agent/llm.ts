@@ -136,7 +136,9 @@ export function buildRequestBody(spec: ModelSpec, opts: CallOptions): OpenAI.Cha
       ? {
           tools: opts.tools,
           tool_choice: opts.toolChoice === "required" && !params.toolChoiceRequired ? "auto" : (opts.toolChoice ?? "auto"),
-          ...(params.parallelToolCalls ? { parallel_tool_calls: true } : {}),
+          // Not to OpenRouter: free endpoints don't list parallel_tool_calls, and with require_parameters every
+          // one was filtered out (404 "No endpoints found…", measured 2026-10-04). Parallel calls are the default there.
+          ...(params.parallelToolCalls && spec.provider !== "openrouter" ? { parallel_tool_calls: true } : {}),
         }
       : {}),
     // temperature 0 only where it was tested (OpenAI non-reasoning); other providers keep their default.

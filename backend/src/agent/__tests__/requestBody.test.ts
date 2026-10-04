@@ -34,6 +34,8 @@ describe("buildRequestBody: only what each provider accepts", () => {
     expect(b.session_id).toBe("pw-t1")
     expect(b.provider).toEqual({ require_parameters: true })
     expect(b.models).toBeUndefined() // no gateway-side model fallback
+    // With require_parameters, parallel_tool_calls filtered out every :free endpoint (404).
+    expect(b.parallel_tool_calls).toBeUndefined()
   })
 
   it("temperature 0 only for OpenAI non-reasoning models", () => {
