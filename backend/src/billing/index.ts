@@ -1,3 +1,5 @@
+import { loadWallet } from "../wallet/credentials.js"
+import { walletCapability } from "../wallet/routing.js"
 import crypto from "crypto"
 import { getPrisma, isDatabaseEnabled } from "../db/prisma.js"
 import { decrypt, encrypt } from "../auth/session.js"
@@ -20,7 +22,7 @@ export type Entitlement = {
   hostedAllowanceUsd: number
   hostedSpentUsd: number
   /** Which key a new task will use, or null when the user must add a key / upgrade. */
-  key: { kind: "byok"; provider: KeyProvider } | { kind: "platform" } | null
+  key: { kind: "byok"; provider: KeyProvider } | { kind: "platform" } | { kind: "wallet"; allFree: boolean } | null
   reason?: string
 }
 
@@ -50,13 +52,17 @@ export async function getEntitlement(userId: string): Promise<Entitlement> {
   const byok = KEY_PROVIDERS.find((p) => keys.some((k) => k.provider === p))
 
   const base = { tier, runsIncluded, runsUsed, hostedAllowanceUsd, hostedSpentUsd }
+  // The wallet (P4): tasks on the user's own keys. Daily admission limits apply; the monthly run count
+  // only governs usage paid by us (hosted credits).
+  const wallet = walletCapability(await loadWallet(userId))
+  if (wallet.canRun) return { ...base, key: { kind: "wallet", allFree: wallet.allFree } }
   if (runsUsed >= runsIncluded) return { ...base, key: null, reason: `You've used all ${runsIncluded} runs included this month.` }
   if (byok) return { ...base, key: { kind: "byok", provider: byok } }
   if (tier === "pro" && hostedSpentUsd < hostedAllowanceUsd) return { ...base, key: { kind: "platform" } }
   return {
     ...base,
     key: null,
-    reason: tier === "pro" ? "Your included model usage for this month is used up — add your own key to keep going." : "Add your OpenAI or OpenRouter API key in Settings (your key, encrypted, never logged) — or upgrade to Pro.",
+    reason: wallet.missing && keys.length ? wallet.missing : tier === "pro" ? "Your included model usage for this month is used up — add your own key to keep going." : "Add a free Gemini key in your Wallet (2 minutes, no card) — or upgrade to Pro.",
   }
 }
 

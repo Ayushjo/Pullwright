@@ -35,12 +35,14 @@ export type TaskOptions = {
   draft: boolean
   model?: string
   /** Which API key pays for this task: the operator's platform key, or the user's own. */
-  keyKind?: "platform" | "byok"
+  keyKind?: "platform" | "byok" | "wallet"
   keyProvider?: "openai" | "openrouter"
   /** Per-task spend cap in USD (defaults from TASK_BUDGET_USD, scaled by plan size, raisable by the user). */
   capUsd?: number
   /** Eval A/B only: "direct" bypasses the gateway (P0 transport); "unpaced" keeps the gateway but drops free-tier pacing seeds. */
   transport?: "direct" | "unpaced"
+  /** Private repo: the user agreed that models which may train on prompts can see this task. */
+  allowTraining?: boolean
   /** Which worker pool runs the task: paid work (Pro plan, the user's own paid key) never queues behind free work. */
   queueClass?: "free" | "paid"
   /** Eval A/B only: skip the specification check (intake still reads attachments). */

@@ -12,6 +12,8 @@ import { Sandbox } from "./sandbox.js"
 import { buildRepoMap, outline } from "./repoMap.js"
 import { chatVia, laneFromSpec, parseLanes, type ChatFn } from "../llm/lanes.js"
 import { NoLaneAvailable } from "../llm/gateway.js"
+import { loadWallet } from "../wallet/credentials.js"
+import { walletLanes } from "../wallet/routing.js"
 import { detectRepoConfig } from "./repoConfig.js"
 import { cacheableInstall, depKey, restoreDeps, saveDeps } from "./depCache.js"
 import { planTools, runTools } from "./tools/index.js"
@@ -69,6 +71,12 @@ async function modelSpec(s: TaskState, role: "plan" | "run" | "judge"): Promise<
  *   or today's single configured model when no list is set.
  */
 async function llmFor(s: TaskState, role: "plan" | "run" | "judge"): Promise<ChatFn> {
+  // Wallet tasks: the user's own keys, free first (wallet/routing.ts). No usable lane → the call raises
+  // NoLaneAvailable(null), which parks the task until the user adds a key.
+  if (s.options.keyKind === "wallet" && s.userId) {
+    const lanes = walletLanes(s.userId, await loadWallet(s.userId), role, { privateRepo: Boolean(s.repoPrivate), allowTraining: Boolean(s.options.allowTraining) })
+    return chatVia(lanes)
+  }
   const base = await modelSpec(s, role)
   // PW_GATEWAY=off: the P0 transport (direct chat, 3 attempts, 120 s) for A/B runs against the gateway.
   if (process.env.PW_GATEWAY === "off" || s.options.transport === "direct") return (o) => chat(base, o)
@@ -86,6 +94,10 @@ async function llmFor(s: TaskState, role: "plan" | "run" | "judge"): Promise<Cha
 /** Lanes that read issue images: measured vision models only; private repos skip lanes that train on data. */
 const DEFAULT_VISION_LANES = "groq:qwen/qwen3.8-27b,gemini:gemini-3.5-flash-lite,vercel:openai/gpt-5-mini"
 async function visionChat(s: TaskState): Promise<ChatFn | null> {
+  if (s.options.keyKind === "wallet" && s.userId) {
+    const lanes = walletLanes(s.userId, await loadWallet(s.userId), "vision", { privateRepo: Boolean(s.repoPrivate), allowTraining: Boolean(s.options.allowTraining) })
+    return lanes.length ? chatVia(lanes) : null
+  }
   const base = await modelSpec(s, "plan")
   if (base.apiKey) return supportsVision(base.provider, base.model) ? chatVia([laneFromSpec(base, s.userId ?? null)]) : null
   const lanes = parseLanes(process.env.PW_LANES_VISION ?? DEFAULT_VISION_LANES, "low").filter(

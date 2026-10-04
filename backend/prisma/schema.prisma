@@ -290,6 +290,15 @@ model ApiKey {
   encryptedKey String    @map("encrypted_key")
   last4        String
   model        String?
+  /// free | paid | free_credit | unknown — what the provider told us at check time
+  tier          String    @default("unknown")
+  /// active | revoked | out_of_funds
+  status        String    @default("active")
+  /// trains | no_train | unknown (private repos never go to "trains" without consent)
+  dataPolicy    String    @default("unknown") @map("data_policy")
+  /// provider-reported details (credit balance, free requests left, models)
+  meta          Json?
+  lastCheckedAt DateTime? @map("last_checked_at") @db.Timestamptz(6)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   lastUsedAt   DateTime? @map("last_used_at") @db.Timestamptz(6)
 

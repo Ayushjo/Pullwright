@@ -148,7 +148,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
       return res.status(401).json({ error: "Sign in again to create tasks" })
     }
     try {
-      let keyChoice: { keyKind: "platform" | "byok"; keyProvider?: "openai" | "openrouter" } = { keyKind: "platform" }
+      let keyChoice: { keyKind: "platform" | "byok" | "wallet"; keyProvider?: "openai" | "openrouter" } = { keyKind: "platform" }
       let tier: "free" | "pro" = "free"
       let queueClass: "free" | "paid" = "free"
       const owners = (process.env.OPERATOR_GITHUB_LOGINS ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean)
@@ -157,9 +157,9 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
         const ent = await getEntitlement(req.session.userId)
         tier = ent.tier
         if (!ent.key) return res.status(402).json({ error: ent.reason ?? "Add an API key or upgrade to run tasks.", code: "needs_key_or_plan" })
-        keyChoice = ent.key.kind === "byok" ? { keyKind: "byok", keyProvider: ent.key.provider } : { keyKind: "platform" }
-        // Paid work gets the reserved paid workers: a Pro plan, or the user's own (paid) key.
-        if (tier === "pro" || ent.key.kind === "byok") queueClass = "paid"
+        keyChoice = ent.key.kind === "byok" ? { keyKind: "byok", keyProvider: ent.key.provider } : ent.key.kind === "wallet" ? { keyKind: "wallet" } : { keyKind: "platform" }
+        // Paid work gets the reserved paid workers: a Pro plan, or a paid key of the user's own.
+        if (tier === "pro" || ent.key.kind === "byok" || (ent.key.kind === "wallet" && !ent.key.allFree)) queueClass = "paid"
       }
       // Count-then-create must not interleave for one user (two quick submits would both pass the
       // active-task check), so admission is serialized per user with a short owner-checked lock.

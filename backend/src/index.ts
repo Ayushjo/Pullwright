@@ -10,6 +10,7 @@ import { createRouter } from './api/router.js';
 import { createPublicRouter } from './api/publicRouter.js';
 import { createOAuthRouter } from './api/oauth.js';
 import { createBillingRouter, dodoWebhook } from './api/billingRouter.js';
+import { createWalletRouter } from './api/walletRouter.js';
 import { attachSession } from './api/auth.js';
 import { SessionStore } from './auth/session.js';
 import { TaskRegistry } from './store/taskRegistry.js';
@@ -59,6 +60,7 @@ if (MODE !== "worker") {
   app.use("/api", attachSession(sessionStore));
   app.use("/api/auth", createOAuthRouter(sessionStore));
   app.use("/api", createBillingRouter());
+  app.use("/api", createWalletRouter());
   app.use("/api", createRouter(eventBus, taskRegistry, eventLog));
 }
 
