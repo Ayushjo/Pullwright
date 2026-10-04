@@ -14,6 +14,7 @@ import {
 } from '../components/ui'
 import { createTask } from '../api/client'
 import { fadeUp, stagger } from '../lib/motion'
+import CapacityMeter from '../components/wallet/CapacityMeter'
 
 const STEPS = [
   { icon: GitBranch, label: 'You approve the plan' },
@@ -108,7 +109,11 @@ export default function NewTask() {
                   {error && (
                     <p className="text-danger text-xs mt-2">
                       {error}{' '}
-                      {/key|upgrade|runs/i.test(error) && <Link to="/settings" className="text-primary underline">Open settings</Link>}
+                      {/key|wallet/i.test(error) ? (
+                        <Link to="/wallet" className="text-primary underline">Add a key</Link>
+                      ) : /upgrade|limit|runs|tasks/i.test(error) ? (
+                        <Link to="/pricing" className="text-primary underline">See plans</Link>
+                      ) : null}
                     </p>
                   )}
                 </div>
@@ -120,6 +125,8 @@ export default function NewTask() {
                     <span className="block text-xs text-muted-foreground">Recommended. Nothing is changed and no PR is opened without your review.</span>
                   </span>
                 </label>
+
+                <CapacityMeter />
 
                 <Button
                   type="submit"
