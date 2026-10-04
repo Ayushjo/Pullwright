@@ -116,7 +116,7 @@ export default function Wallet() {
         )}
       </div>
 
-      <div className={empty ? 'space-y-3 pt-10' : 'space-y-3'}>
+      <div className="space-y-3">
         {view === null
           ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-xl" />)
           : providers.map((g) => (
