@@ -33,53 +33,51 @@ export default function TaskCard({ task }: { task: Task }) {
   const total = task.steps.length
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
 
-  const progressColor =
-    task.status === 'failed' ? '#CF222E' : task.status === 'done' || task.status === 'published' ? '#1A7F37' : '#2B7FFF'
+  const progressColor = task.status === 'failed' ? 'bg-danger' : task.status === 'done' || task.status === 'published' ? 'bg-success' : 'bg-primary'
+  const live = statusMeta(task.status).active
 
   return (
     <Link
       to={`/tasks/${task.id}`}
       className={cn(
-        'block bg-card rounded-xl border border-border p-4 group',
-        'hover:border-primary/40 transition-colors duration-micro',
+        'block bg-card rounded-lg border border-hairline p-4 sm:px-5 group',
+        'hover:border-black/15 hover:shadow-[0_4px_16px_-10px_rgba(0,0,0,0.15)] transition-[border-color,box-shadow] duration-micro',
       )}
     >
       <div className="flex items-center gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-2">
-            <Badge tone={statusTone(task.status)} dot>
+            {/* Live tasks show the pulsing dot instead of the badge's static one. */}
+            <Badge tone={statusTone(task.status)} dot={!live}>
               <StatusDot status={task.status} />
               {statusLabel(task.status)}
             </Badge>
-            <span className="text-muted-foreground text-xs">{timeAgo(task.createdAt)}</span>
+            <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-muted-foreground">{timeAgo(task.createdAt)}</span>
           </div>
 
-          <p className="text-foreground text-sm font-semibold leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+          <p className="text-foreground text-[15px] font-medium leading-snug line-clamp-2 group-hover:text-primary transition-colors">
             {task.issueNumber > 0 ? `#${task.issueNumber} — ` : ''}
             {task.issueTitle}
           </p>
 
           <div className="flex flex-wrap items-center gap-2 mt-2.5">
             <span
-              className="font-mono text-[10.5px] text-primary bg-primary/5 px-2 py-0.5 rounded-md border border-primary/15 truncate max-w-[200px]"
+              className="font-mono text-[10.5px] text-foreground/70 bg-black/[.04] px-1.5 py-0.5 rounded border border-black/[.06] truncate max-w-[200px]"
               title={task.branchName}
             >
               {task.branchName}
             </span>
-            <span className="text-muted-foreground text-xs truncate">{task.repoName}</span>
+            <span className="font-mono text-[11px] text-muted-foreground truncate">{task.repoName}</span>
           </div>
         </div>
 
         {total > 0 && (
           <div className="shrink-0 w-[92px] flex flex-col justify-center items-end self-stretch py-0.5">
-            <p className="text-xs font-medium text-muted-foreground tabular-nums mb-2">
+            <p className="font-mono text-[11px] text-muted-foreground tabular-nums mb-2">
               {done}/{total} steps
             </p>
-            <div className="w-full h-1.5 bg-border rounded-full overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-200"
-                style={{ width: `${pct}%`, background: progressColor }}
-              />
+            <div className="w-full h-1 bg-black/[.06] rounded-full overflow-hidden">
+              <div className={cn('h-full rounded-full transition-all duration-200', progressColor)} style={{ width: `${pct}%` }} />
             </div>
           </div>
         )}

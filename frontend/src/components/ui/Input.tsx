@@ -14,17 +14,17 @@ const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   return (
     <div
       className={cn(
-        'relative flex items-center rounded-sm border bg-card transition-colors duration-micro',
+        'relative flex items-center rounded-md border bg-card transition-[border-color,box-shadow] duration-micro',
         invalid
-          ? 'border-danger focus-within:ring-2 focus-within:ring-danger/30'
-          : 'border-border focus-within:ring-2 focus-within:ring-[rgba(43,127,255,0.3)]',
+          ? 'border-danger focus-within:ring-4 focus-within:ring-danger/15'
+          : 'border-black/15 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10',
       )}
     >
       {icon && <span className="absolute left-3 text-muted-foreground pointer-events-none flex">{icon}</span>}
       <input
         ref={ref}
         className={cn(
-          'w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none rounded-sm py-2',
+          'w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none rounded-md py-2.5',
           icon ? 'pl-9' : 'pl-3',
           trailing ? 'pr-9' : 'pr-3',
           className,

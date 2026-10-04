@@ -9,8 +9,8 @@ function BentoCard({ className, interactive = true, children, ...props }: BentoC
   return (
     <div
       className={cn(
-        'group relative flex flex-col rounded-xl border border-border bg-card overflow-hidden',
-        interactive && 'transition-colors duration-micro hover:border-primary/40',
+        'group relative flex flex-col rounded-lg border border-hairline bg-card overflow-hidden',
+        interactive && 'transition-colors duration-micro hover:border-black/15',
         className,
       )}
       {...props}
@@ -32,7 +32,7 @@ function BentoHeader({
   return (
     <div
       className={cn(
-        'flex items-center justify-between gap-3 px-5 py-3.5 border-b border-border bg-muted shrink-0',
+        'flex items-center justify-between gap-3 px-5 py-3.5 border-b border-hairline bg-card shrink-0',
         className,
       )}
     >
