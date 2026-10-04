@@ -72,7 +72,7 @@ export default function Home() {
 
               <motion.form variants={fadeUp} onSubmit={handleSubmit} className="mt-8 max-w-xl">
                 <div className="flex flex-col sm:flex-row gap-2">
-                  <label className="flex-1 min-w-0 flex items-center gap-2 rounded-pill border border-black/15 bg-card pl-4 pr-1.5 h-12 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition">
+                  <label className="w-full sm:w-auto sm:flex-1 min-w-0 flex items-center gap-2 rounded-pill border border-black/15 bg-card pl-4 pr-1.5 h-12 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition">
                     <CircleDot className="w-4 h-4 text-muted-foreground shrink-0" />
                     <input
                       type="url"
