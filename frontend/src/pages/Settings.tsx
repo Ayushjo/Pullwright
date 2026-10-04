@@ -75,11 +75,11 @@ export default function Settings() {
   const pro = ent?.tier === 'pro'
 
   return (
-    <AppShell maxWidth="max-w-3xl">
+    <AppShell>
       <PageHeader title="Settings" description="Your plan, usage and model keys." />
       {error && <p className="text-sm text-destructive mb-4">{error}</p>}
 
-      <div className="space-y-5">
+      <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
         <Section title="Plan & usage">
           {!ent ? (
             <p className="text-sm text-muted-foreground">Loading…</p>

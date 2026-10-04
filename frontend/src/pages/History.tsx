@@ -279,22 +279,23 @@ export default function History() {
     <AppShell>
       <PageHeader title="History" description="All your agent runs, grouped by day." />
 
-      {/* Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-6 border-b border-hairline pb-0 sm:pb-0">
-        <div className="flex-1 max-w-sm pb-3">
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by title or repo…"
-            icon={<Search className="w-4 h-4" />}
-          />
-        </div>
+      {/* Controls: tabs sit on the hairline; search on the same row at the right (above the tabs on phones). */}
+      <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 border-b border-hairline">
         <Tabs
           items={FILTER_TABS.map((f) => ({ ...f, count: tasks.filter((t) => matches(f.key, t.status as TaskStatus)).length }))}
           value={filter}
           onChange={setFilter}
           layoutId="history-tabs"
         />
+        <div className="w-full sm:w-72 sm:py-1.5">
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by title or repo…"
+            icon={<Search className="w-4 h-4" />}
+            className="py-1.5"
+          />
+        </div>
       </div>
 
       {/* Content */}
