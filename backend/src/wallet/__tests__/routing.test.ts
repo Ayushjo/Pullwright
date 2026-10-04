@@ -47,4 +47,13 @@ describe("walletLanes", () => {
     expect(walletCapability([k("gemini"), k("vercel", "free_credit", { balanceUsd: 4 })], { privateRepo: true }).canRun).toBe(true)
     expect(walletCapability([k("gemini")]).canRun).toBe(true) // public repos are unaffected
   })
+
+  it("a free OpenRouter key reviews on Nemotron Super after Groq, and stays off private repos without consent", () => {
+    const keys = [k("gemini"), k("groq"), k("openrouter", "free")]
+    const judge = names(walletLanes("u", keys, "judge"))
+    expect(judge.slice(0, 2)).toEqual(["groq:openai/gpt-oss-120b", "openrouter:nvidia/nemotron-3-super-120b-a12b:free"])
+    expect(names(walletLanes("u", keys, "judge", { privateRepo: true })).some((n) => n.startsWith("openrouter:"))).toBe(false)
+    expect(names(walletLanes("u", [k("openrouter", "paid")], "judge"))).toEqual(["openrouter:openai/gpt-5-mini"])
+  })
 })
+

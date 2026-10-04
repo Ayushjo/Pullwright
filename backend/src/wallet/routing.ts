@@ -16,6 +16,12 @@ type Key = { provider: WalletProvider; key: string; tier: string; meta: Record<s
 
 const FLASH_POOL = ["gemini-3.6-flash", "gemini-3-flash-preview", "gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.7-flash"]
 const LITE_POOL = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+/**
+ * The one free OpenRouter model that passed tools + two-turn + parallel + JSON (2026-10-04 probe) and
+ * reviews as safely as gpt-5-mini (replay: 2/14 false approvals, both H01; 1/10 false rejections).
+ * OpenRouter's free models share 50 requests/day per account, so it sits behind the lanes with more room.
+ */
+const OR_FREE = "nvidia/nemotron-3-super-120b-a12b:free"
 
 /** Lanes that may use prompts for training: only allowed on private repos with the user's consent. */
 const TRAINS = (k: Key) => k.provider === "gemini" || (k.provider === "openrouter" && k.tier === "free")
@@ -39,6 +45,7 @@ export function walletLanes(userId: string, keys: Key[], role: Role, opts: { pri
   const groq = by("groq")
   const openrouter = by("openrouter")
   const openrouterPaid = openrouter && openrouter.tier === "paid" ? openrouter : undefined
+  const openrouterFree = openrouter && openrouter.tier !== "paid" ? openrouter : undefined
   const openai = by("openai")
 
   const out: Lane[] = []
@@ -62,6 +69,7 @@ export function walletLanes(userId: string, keys: Key[], role: Role, opts: { pri
     case "judge":
       add(credit, ["openai/gpt-5-mini"], "free_credit")
       add(groq, ["openai/gpt-oss-120b"], "free")
+      add(openrouterFree, [OR_FREE], "free")
       add(gemini, FLASH_POOL.slice(0, 3), "free")
       add(openrouterPaid, ["openai/gpt-5-mini"], "byok")
       add(openai, ["gpt-5-mini"], "byok")
