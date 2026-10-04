@@ -47,7 +47,31 @@ All checks ran in the app's browser against the local backend, at 1280 px and 37
 - **Gemini's free quota is per Google project, and today's was gone 3 hours after the reset.** A probe at 03:09 UTC got `GenerateRequestsPerDayPerProjectPerModel-FreeTier`, limit 20, `retryDelay` 75,068 s, which is exactly 00:00 UTC. That confirms the UTC-midnight reset. All five Flash models were already at 20/20, and our no-credit campaign was not running then (it had stopped with the app). Something else is using the same Google project. The campaign (`--tag free-nocredit-v1`, L06–H10) was restarted detached and parks until the next reset.
 - The browser pane throttles animation frames while it isn't painting, so screenshots sometimes catch entrance animations halfway. Final states were confirmed by reading `stroke-dasharray` and opacity in the DOM, not only from pictures.
 
+## Payments (Dodo, test mode) — 10-04
+
+**Set up:** test API key in `backend/.env` (`DODO_ENV=test_mode`). Product **Pullwright Pro**, `pdt_0NoytVS52YxhkUyW9CeWo`: $8/month, tax category SaaS, created through the API. The Pro plan row now says $8 and links that product, so the webhook maps it to Pro. Request shapes were checked against Dodo's official SDK types (`dodopayments` 2.52.0): prices in cents, `recurring_price`, `/checkouts`, `GET /webhooks/{id}/secret`, and the subscription event names, which match `billing/index.ts`.
+
+**Added:**
+- **Confirm on return.** `POST /api/billing/sync` follows the user's last checkout through Dodo (checkout → payment → subscription) and applies it with the same code a webhook uses. Settings calls it after checkout and retries while the payment settles. Pro therefore activates without a webhook, which matters because webhooks can't reach a local backend. In production it also covers late webhooks.
+- **Webhook fallback.** A subscription event without our metadata is matched to the user through the customer we already linked. Unit-tested.
+- **Checkout entry point.** "Go Pro" on Pricing opens checkout directly. A cancel URL returns to Pricing.
+- **Setup script.** `scripts/pw/dodo-setup.mts` (`product` / `webhook <https-url>`) prints the env lines.
+
+**Live test (in the app's browser, Dodo test mode, Dodo's own "Autofill" test card):**
+
+| Step | Result |
+|---|---|
+| Pricing → Go Pro | Dodo test checkout: "Pullwright Pro $8.00 / Month" (shown in INR plus GST for an Indian address; $8.00 with no tax for a US test address) |
+| Pay with the test success card | Redirected to `/settings?billing=success` |
+| Sync | `POST /api/billing/sync` → 200; `/api/billing` → Pro, active, renews 2026-11-04; the meter switched to Pro limits (25/day) |
+| UI | First showed "Free": the page's first billing request resolved after the post-sync one. Fixed so only the newest response is shown; after reload: Pro, Manage billing, $0.00 of $3.00 included |
+| Manage billing | Dodo customer portal: subscription $8/month, card •••• 4242, one successful $8.00 payment |
+| Subscription metadata | Dodo copies the checkout `metadata` (`user_id`, `github_login`) onto the subscription, so production webhooks resolve the user directly |
+| Cancel (API, test) → sync | `cancelled` → our row `canceled`, tier back to Free |
+
+**To go live:** deploy the backend. Then run `dodo-setup.mts webhook https://<backend>` in test mode and set `DODO_WEBHOOK_SECRET`. When ready, switch to a live API key with `DODO_ENV=live_mode`, run `dodo-setup.mts product` and `webhook` again, and set the printed IDs. The plan row's `providerProductId` must then hold the live product ID; `DODO_PRO_PRODUCT_ID` also maps it.
+
 ## Still open in P4
 
-- Dodo: no Pro product is configured (`DODO_PRO_PRODUCT_ID` is unset), so "Go Pro" lands on Settings, which shows "See plans" until payments exist. Also open: the credits ledger, the trial, and BYOK spending caps in the UI.
+- Dodo webhooks: need a deployed HTTPS backend (see above). Also open: the credits ledger (credit packs), the trial, and BYOK spending caps in the UI.
 - Admission 429s (`daily_limit`, `active_limit`) have unit tests and a P3 live test; a GUI pass as a regular user is still to do. It costs real free quota, so it waits for the next reset.
