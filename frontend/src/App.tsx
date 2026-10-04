@@ -7,6 +7,7 @@ import TaskView from './pages/TaskView'
 import History from './pages/History'
 import Replay from './pages/Replay'
 import Settings from './pages/Settings'
+import Wallet from './pages/Wallet'
 import Pricing from './pages/Pricing'
 import { AuthProvider } from './context/AuthContext'
 import { ToastProvider } from './components/ui'
@@ -27,6 +28,7 @@ export default function App() {
             <Route path="/r/:id"     element={<Replay />} />
             <Route path="/pricing"   element={<Pricing />} />
             <Route path="/settings"  element={<RouteGuard><Settings /></RouteGuard>} />
+            <Route path="/wallet"    element={<RouteGuard><Wallet /></RouteGuard>} />
             <Route path="*"          element={<Navigate to="/" replace />} />
           </Routes>
         </ToastProvider>
