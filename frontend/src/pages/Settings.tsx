@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight, KeyRound, Sparkles } from 'lucide-react'
 import AppShell from '../components/AppShell'
@@ -24,11 +24,16 @@ export default function Settings() {
   const [error, setError] = useState<string | null>(null)
   const [wallet, setWallet] = useState<WalletView | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  // Only the newest billing response is shown: the first load can resolve after the post-checkout refresh.
+  const billingSeq = useRef(0)
+  const loadBilling = async () => {
+    const seq = ++billingSeq.current
+    const b = await getBilling()
+    if (seq === billingSeq.current) setInfo(b)
+  }
 
   useEffect(() => {
-    getBilling()
-      .then(setInfo)
-      .catch((e: Error) => setError(e.message))
+    loadBilling().catch((e: Error) => setError(e.message))
     getWallet()
       .then(setWallet)
       .catch(() => setWallet(null))
@@ -42,7 +47,7 @@ export default function Settings() {
         const r = await syncBilling().catch(() => ({ status: 'error' }))
         if (r.status === 'active') {
           if (!stop) {
-            setInfo(await getBilling())
+            await loadBilling()
             push('Welcome to Pro — your plan is active.', 'success')
           }
           return
