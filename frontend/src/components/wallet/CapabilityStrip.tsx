@@ -12,7 +12,7 @@ export default function CapabilityStrip({ cap }: { cap: WalletCapability }) {
     { on: cap.canReadImages, label: 'Read screenshots', icon: Eye },
   ]
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+    <div className="grid grid-cols-1 sm:grid-cols-3 border border-hairline rounded-md overflow-hidden">
       {items.map((it, i) => (
         <motion.div
           key={it.label}
@@ -20,14 +20,15 @@ export default function CapabilityStrip({ cap }: { cap: WalletCapability }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: i * 0.06, duration: 0.25 }}
           className={cn(
-            'flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm transition-colors',
-            it.on ? 'border-primary/25 bg-primary/5 text-foreground' : 'border-dashed border-border text-muted-foreground',
+            // One hairline box, three cells: stacked on phones, side by side from sm.
+            'flex items-center gap-2.5 px-3.5 py-3 text-sm transition-colors border-hairline [&:not(:first-child)]:border-t sm:[&:not(:first-child)]:border-t-0 sm:[&:not(:first-child)]:border-l',
+            it.on ? 'bg-primary/[.04] text-foreground' : 'text-muted-foreground',
           )}
         >
           <it.icon className={cn('w-4 h-4 shrink-0', it.on ? 'text-primary' : 'text-muted-foreground/70')} strokeWidth={1.75} />
-          <span className="font-medium truncate">{it.label}</span>
+          <span className="truncate">{it.label}</span>
           <span className="ml-auto shrink-0">
-            {it.on ? <HandCheck className="w-5 h-5 text-primary" delay={0.15 + i * 0.1} /> : <span className="text-xs">not yet</span>}
+            {it.on ? <HandCheck className="w-5 h-5 text-primary" delay={0.15 + i * 0.1} /> : <span className="font-mono text-[10.5px] uppercase tracking-[0.06em]">not yet</span>}
           </span>
         </motion.div>
       ))}

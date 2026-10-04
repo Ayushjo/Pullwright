@@ -1,18 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, KeyRound, Sparkles } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import AppShell from '../components/AppShell'
-import { Badge, Button, useToast } from '../components/ui'
+import { Badge, Button, PageHeader, useToast } from '../components/ui'
 import CapacityMeter from '../components/wallet/CapacityMeter'
 import { getBilling, getWallet, openBillingPortal, startCheckout, syncBilling, type BillingInfo, type WalletView } from '../api/client'
 
-function Section({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+/** White card with a mono title over a hairline. */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-border bg-card overflow-hidden">
-      <div className="px-5 py-3.5 border-b border-border bg-muted/40 flex items-center gap-2">
-        {icon}
-        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-      </div>
+    <section className="rounded-lg border border-hairline bg-card overflow-hidden">
+      <h2 className="px-5 py-3.5 border-b border-hairline font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">{title}</h2>
       <div className="p-5">{children}</div>
     </section>
   )
@@ -78,12 +76,11 @@ export default function Settings() {
 
   return (
     <AppShell maxWidth="max-w-3xl">
-      <h1 className="text-2xl font-bold text-foreground mb-1">Settings</h1>
-      <p className="text-sm text-muted-foreground mb-6">Your plan, usage and model keys.</p>
+      <PageHeader title="Settings" description="Your plan, usage and model keys." />
       {error && <p className="text-sm text-destructive mb-4">{error}</p>}
 
       <div className="space-y-5">
-        <Section title="Plan & usage" icon={<Sparkles className="w-4 h-4 text-primary" />}>
+        <Section title="Plan & usage">
           {!ent ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : (
@@ -94,11 +91,11 @@ export default function Settings() {
                   {info?.subscription?.cancelAtPeriodEnd && <span className="text-xs text-warning">Cancels at period end</span>}
                 </div>
                 {pro ? (
-                  <Button size="sm" variant="secondary" loading={busy === 'portal'} onClick={() => run('portal', async () => void (window.location.href = (await openBillingPortal()).url))}>
+                  <Button size="sm" variant="outline" shape="pill" className="px-4" loading={busy === 'portal'} onClick={() => run('portal', async () => void (window.location.href = (await openBillingPortal()).url))}>
                     Manage billing
                   </Button>
                 ) : info?.paymentsEnabled ? (
-                  <Button size="sm" loading={busy === 'checkout'} onClick={() => run('checkout', async () => void (window.location.href = (await startCheckout()).url))}>
+                  <Button size="sm" shape="pill" className="px-4" loading={busy === 'checkout'} onClick={() => run('checkout', async () => void (window.location.href = (await startCheckout()).url))}>
                     Upgrade to Pro — $8/mo
                   </Button>
                 ) : (
@@ -107,17 +104,17 @@ export default function Settings() {
               </div>
               <CapacityMeter className="w-fit max-w-full" />
               {pro && (
-                <div className="rounded-lg border border-border p-3 sm:max-w-xs">
-                  <p className="text-xs text-muted-foreground">Included model usage this month</p>
-                  <p className="text-lg font-semibold tabular-nums">
+                <div className="rounded-md border border-hairline p-4 sm:max-w-xs">
+                  <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Included usage this month</p>
+                  <p className="mt-2 text-[26px] leading-none tracking-[-0.02em] tabular-nums">
                     ${ent.hostedSpentUsd.toFixed(2)} <span className="text-sm text-muted-foreground font-normal">/ ${ent.hostedAllowanceUsd.toFixed(2)}</span>
                   </p>
-                  <div className="h-1.5 rounded-full bg-border mt-2 overflow-hidden">
+                  <div className="h-1 rounded-full bg-black/[.07] mt-3 overflow-hidden">
                     <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(100, (ent.hostedSpentUsd / Math.max(0.01, ent.hostedAllowanceUsd)) * 100)}%` }} />
                   </div>
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 {ent.key
                   ? ent.key.kind === 'wallet'
                     ? ent.key.allFree
@@ -132,7 +129,7 @@ export default function Settings() {
           )}
         </Section>
 
-        <Section title="Model keys" icon={<KeyRound className="w-4 h-4 text-primary" />}>
+        <Section title="Model keys">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">
               {wallet === null
@@ -142,7 +139,7 @@ export default function Settings() {
                   : `${wallet.keys.length} key${wallet.keys.length > 1 ? 's' : ''} saved${wallet.capability.allFree ? ', all free' : ''}.`}
             </p>
             <Link to="/wallet" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline underline-offset-2">
-              Open Wallet <ArrowRight className="w-4 h-4" />
+              Manage keys <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
         </Section>

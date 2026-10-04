@@ -36,7 +36,7 @@ export default function CapacityMeter({ className, onLoad }: { className?: strin
     <motion.div
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
-      className={cn('flex items-start gap-3 rounded-lg border px-3 py-2.5', blocked ? 'border-amber-200 bg-amber-50/60' : 'border-border bg-card', className)}
+      className={cn('flex items-start gap-3 rounded-md border px-3 py-2.5', blocked ? 'border-amber-200 bg-amber-50/60' : 'border-hairline bg-card', className)}
       role="status"
     >
       {dots ? (

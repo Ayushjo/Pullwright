@@ -103,8 +103,8 @@ export default function ProviderCard({
           duration: 0.25,
         }}
         className={cn(
-          'relative rounded-xl border bg-card p-4 transition-shadow',
-          saved ? 'border-border' : 'border-border hover:shadow-[0_2px_12px_rgba(0,0,0,0.05)]',
+          'relative rounded-lg border bg-card p-4 transition-shadow',
+          saved ? 'border-hairline' : 'border-hairline hover:border-black/15',
           pointer && 'border-primary/40 ring-4 ring-primary/5',
         )}
       >
@@ -114,7 +114,7 @@ export default function ProviderCard({
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <h3 className="text-[15px] font-semibold text-foreground">{guide.name}</h3>
+              <h3 className="text-[15px] font-medium text-foreground">{guide.name}</h3>
               {saved ? <TierBadge k={saved} /> : guide.free ? <Badge tone="success">Free · no card</Badge> : <Badge>Paid</Badge>}
               {saved?.dataPolicy === 'trains' && (
                 <Badge tone="warning" className="!py-0.5">
@@ -189,7 +189,7 @@ export default function ProviderCard({
               transition={{ duration: 0.28, ease: [0.4, 0, 0.2, 1] }}
               className="overflow-hidden"
             >
-              <ol className="mt-3 space-y-0 border-l border-dashed border-border ml-3.5">
+              <ol className="mt-3 space-y-0 border-l border-dashed border-hairline ml-3.5">
                 {guide.steps.map((s, i) => (
                   <motion.li
                     key={s}
@@ -198,7 +198,7 @@ export default function ProviderCard({
                     transition={{ delay: 0.05 + i * 0.07 }}
                     className="relative pl-6 py-1.5 text-sm text-foreground"
                   >
-                    <span className="absolute -left-[11px] top-1.5 w-[22px] h-[22px] rounded-full bg-card border border-border text-[11px] font-semibold text-muted-foreground flex items-center justify-center">
+                    <span className="absolute -left-[11px] top-1.5 w-[22px] h-[22px] rounded-full bg-card border border-hairline text-[11px] font-semibold text-muted-foreground flex items-center justify-center">
                       {i + 1}
                     </span>
                     {i === guide.steps.length - 1 ? (

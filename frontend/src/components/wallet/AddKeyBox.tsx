@@ -70,7 +70,7 @@ export default function AddKeyBox({
         <div
           className={cn(
             'relative flex-1 min-w-0 flex items-center rounded-input border bg-background transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15',
-            error ? 'border-red-300' : 'border-border',
+            error ? 'border-red-300' : 'border-black/15',
           )}
         >
           <Lock className="w-4 h-4 ml-3 text-muted-foreground shrink-0" strokeWidth={1.75} />

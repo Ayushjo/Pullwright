@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ShieldCheck, Sparkles } from 'lucide-react'
 import AppShell from '../components/AppShell'
-import { Skeleton, useToast } from '../components/ui'
+import { Skeleton, useToast, PageHeader } from '../components/ui'
 import { addWalletKey, checkWalletKey, deleteWalletKey, getWallet, type WalletProvider, type WalletView } from '../api/client'
 import AddKeyBox from '../components/wallet/AddKeyBox'
 import CapabilityStrip from '../components/wallet/CapabilityStrip'
@@ -62,21 +62,23 @@ export default function Wallet() {
 
   return (
     <AppShell maxWidth="max-w-3xl">
-      <div className="relative">
-        <h1 className="text-2xl font-bold text-foreground mb-1">Model keys</h1>
-        <p className="text-sm text-muted-foreground mb-6 max-w-xl">
-          Pullwright runs on keys you bring.{' '}
-          <span className="relative inline-block text-foreground font-medium">
-            Free ones are enough
-            <HandUnderline className="text-primary/70" strokeWidth={3} delay={0.25} />
+      <PageHeader
+        title="Model keys"
+        description={
+          <span className="block max-w-xl">
+            Pullwright runs on keys you bring.{' '}
+            <span className="relative inline-block text-foreground">
+              Free ones are enough
+              <HandUnderline className="text-primary/70" strokeWidth={3} delay={0.25} />
+            </span>
+            : a Google Gemini key plans and writes the code, and others make it faster and sharper. Free keys are always used first.
           </span>
-          : a Google Gemini key plans and writes the code, and others make it faster and sharper. Free keys are always used first.
-        </p>
-      </div>
+        }
+      />
 
-      {error && <p className="text-sm text-red-700 mb-4">{error}</p>}
+      {error && <p className="text-sm text-destructive mb-4">{error}</p>}
 
-      <section className="rounded-xl border border-border bg-card p-4 sm:p-5 mb-5">
+      <section className="rounded-lg border border-hairline bg-card p-4 sm:p-5 mb-5">
         {view === null ? (
           <div className="space-y-3">
             <Skeleton className="h-10 w-full" />
@@ -88,7 +90,7 @@ export default function Wallet() {
               <div className="flex items-center gap-4">
                 <HandKey className="w-20 h-14 shrink-0 text-primary/70" />
                 <div>
-                  <p className="text-sm font-semibold text-foreground">No keys yet</p>
+                  <p className="text-[15px] text-foreground">No keys yet</p>
                   <p className="text-sm text-muted-foreground">Paste one below, or follow the Gemini steps — it takes about a minute and needs no card.</p>
                 </div>
               </div>
@@ -96,7 +98,7 @@ export default function Wallet() {
               <>
                 <CapabilityStrip cap={view.capability} />
                 {view.capability.missing && (
-                  <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
                     {view.capability.missing}
                   </motion.p>
                 )}
@@ -107,10 +109,10 @@ export default function Wallet() {
         )}
       </section>
 
-      <div className="flex items-baseline justify-between mb-3 mt-8">
-        <h2 className="text-sm font-semibold text-foreground">Providers</h2>
+      <div className="flex items-baseline justify-between mb-3 mt-10">
+        <h2 className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Providers</h2>
         {view && keys.length > 0 && (
-          <span className="text-xs text-muted-foreground">
+          <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
             {keys.length} saved{view.capability.allFree ? ' · all free' : ''}
           </span>
         )}
@@ -118,7 +120,7 @@ export default function Wallet() {
 
       <div className="space-y-3">
         {view === null
-          ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-xl" />)
+          ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-lg" />)
           : providers.map((g) => (
               <ProviderCard
                 key={g.id}
@@ -136,15 +138,15 @@ export default function Wallet() {
             ))}
       </div>
 
-      <div className="mt-8 grid gap-3 sm:grid-cols-2">
-        <div className="rounded-xl border border-border p-4 flex gap-3">
+      <div className="mt-10 grid sm:grid-cols-2 border border-hairline rounded-lg overflow-hidden bg-card">
+        <div className="p-5 flex gap-3">
           <ShieldCheck className="w-5 h-5 text-primary shrink-0 mt-0.5" strokeWidth={1.75} />
           <p className="text-sm text-muted-foreground">
             <span className="text-foreground font-medium">Private repos stay private.</span> Free Gemini and OpenRouter free models may train on what they see, so
             they're only used for public repos unless you allow it per task.
           </p>
         </div>
-        <div className="rounded-xl border border-border p-4 flex gap-3">
+        <div className="p-5 flex gap-3 border-t sm:border-t-0 sm:border-l border-hairline">
           <Sparkles className="w-5 h-5 text-primary shrink-0 mt-0.5" strokeWidth={1.75} />
           <p className="text-sm text-muted-foreground">
             <span className="text-foreground font-medium">Rather not manage keys?</span> Pro runs everything on our models.{' '}
