@@ -7,6 +7,7 @@ import { Input, Badge, Skeleton, Tabs, type TabItem } from '../components/ui'
 import { listTasks, getTaskMetrics } from '../api/client'
 import type { TaskRegistryEntry, TaskStatus } from '../types/task'
 import { fadeUp, stagger } from '../lib/motion'
+import { statusMeta } from '../lib/status'
 
 /* ── helpers ── */
 function timeAgo(iso: string) {
@@ -49,22 +50,9 @@ function formatCost(usd: number): string {
 }
 
 /* ── status badge helper ── */
-function statusTone(status: string): 'success' | 'warning' | 'danger' | 'neutral' | 'primary' {
-  if (status === 'done') return 'success'
-  if (status === 'running' || status === 'planning') return 'primary'
-  if (status === 'failed') return 'danger'
-  if (status === 'queued') return 'warning'
-  return 'neutral'
-}
-
-function statusLabel(status: string): string {
-  if (status === 'done') return 'Done'
-  if (status === 'running') return 'Running'
-  if (status === 'planning') return 'Planning'
-  if (status === 'failed') return 'Failed'
-  if (status === 'queued') return 'Queued'
-  return status
-}
+// Shared labels and tones (lib/status), so History says "Paused", "Review plan", etc. like everywhere else.
+const statusTone = (status: string) => statusMeta(status).tone
+const statusLabel = (status: string) => statusMeta(status).label
 
 /* ── Expanded metrics row ── */
 interface ExpandedMetrics {
