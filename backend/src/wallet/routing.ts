@@ -77,6 +77,10 @@ export function walletLanes(userId: string, keys: Key[], role: Role, opts: { pri
 }
 
 /** What a set of keys can do — for the wallet UI and admission ("Groq alone can't plan"). */
+/** Shown when a private repo would need a key whose free tier trains on prompts (Gemini, OpenRouter free). */
+export const PRIVATE_TRAINING_MSG =
+  "This repo is private, and your free keys that can plan and write code (Gemini, OpenRouter free models) may use prompts for training. Allow it for this task, or add a key that doesn't train (Vercel, OpenAI)."
+
 export function walletCapability(keys: Key[], opts: { privateRepo?: boolean; allowTraining?: boolean } = {}) {
   const has = (r: Role) => walletLanes("x", keys, r, opts).length > 0
   const canRun = has("plan") && has("run")

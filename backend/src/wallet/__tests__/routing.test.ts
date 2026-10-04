@@ -40,4 +40,11 @@ describe("walletLanes", () => {
     expect(walletCapability([k("gemini")])).toMatchObject({ canRun: true, allFree: true })
     expect(walletCapability([k("gemini"), k("openai", "paid")]).allFree).toBe(false)
   })
+
+  it("capability for a private repo: training-only keys need consent; a non-training planner doesn't", () => {
+    expect(walletCapability([k("gemini"), k("groq")], { privateRepo: true }).canRun).toBe(false)
+    expect(walletCapability([k("gemini"), k("groq")], { privateRepo: true, allowTraining: true }).canRun).toBe(true)
+    expect(walletCapability([k("gemini"), k("vercel", "free_credit", { balanceUsd: 4 })], { privateRepo: true }).canRun).toBe(true)
+    expect(walletCapability([k("gemini")]).canRun).toBe(true) // public repos are unaffected
+  })
 })

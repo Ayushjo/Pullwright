@@ -25,6 +25,8 @@ import { filterPatch, metricsOf, spec, taskCap } from "../agent/pipeline.js"
 import { configuredLanes, getGateway } from "../llm/lanes.js"
 import { laneId } from "../llm/gateway.js"
 import { PROVIDERS, seedLimits } from "../llm/registry.js"
+import { loadWallet } from "../wallet/credentials.js"
+import { PRIVATE_TRAINING_MSG, walletCapability } from "../wallet/routing.js"
 
 const ISSUE_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/issues\/\d+\/?$/
 
@@ -33,7 +35,24 @@ const CreateTask = z.object({
   autoApprove: z.boolean().optional(),
   autoPublish: z.boolean().optional(),
   draft: z.boolean().optional(),
+  /** Consent for this task: a private repo may use keys whose free tier trains on prompts. */
+  allowTraining: z.boolean().optional(),
 })
+/** Repo visibility for the consent check; unknown (network or permission error) counts as public, the pipeline re-checks. */
+async function repoIsPrivate(issueUrl: string, token?: string): Promise<boolean> {
+  const m = issueUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\//)
+  if (!m) return false
+  try {
+    const r = await fetch(`https://api.github.com/repos/${m[1]}/${m[2]}`, {
+      headers: { Accept: "application/vnd.github+json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      signal: AbortSignal.timeout(8_000),
+    })
+    if (!r.ok) return false
+    return Boolean(((await r.json()) as { private?: boolean }).private)
+  } catch {
+    return false
+  }
+}
 const LocalTask = z.object({
   localRepo: z.string().min(1).max(500),
   title: z.string().trim().min(3).max(300),
@@ -161,6 +180,13 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
         // Paid work gets the reserved paid workers: a Pro plan, or a paid key of the user's own.
         if (tier === "pro" || ent.key.kind === "byok" || (ent.key.kind === "wallet" && !ent.key.allFree)) queueClass = "paid"
       }
+      // A private repo never reaches a key that trains on prompts without consent. Only looked up when the
+      // wallet can't plan and code without such keys (one GitHub call); the pipeline re-checks after fetch.
+      if (keyChoice.keyKind === "wallet" && !parsed.data.allowTraining && req.session?.userId) {
+        if (!walletCapability(await loadWallet(req.session.userId), { privateRepo: true }).canRun && (await repoIsPrivate(parsed.data.issueUrl, req.session.accessToken))) {
+          return res.status(409).json({ error: PRIVATE_TRAINING_MSG, code: "private_repo_training" })
+        }
+      }
       // Count-then-create must not interleave for one user (two quick submits would both pass the
       // active-task check), so admission is serialized per user with a short owner-checked lock.
       const admitKey = req.session?.userId ? `admit:${req.session.userId}` : null
@@ -201,6 +227,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
               ...(parsed.data.autoApprove !== undefined ? { autoApprove: parsed.data.autoApprove } : {}),
               ...(parsed.data.autoPublish !== undefined ? { autoPublish: parsed.data.autoPublish } : {}),
               ...(parsed.data.draft !== undefined ? { draft: parsed.data.draft } : {}),
+              ...(parsed.data.allowTraining ? { allowTraining: true } : {}),
               ...keyChoice,
               queueClass,
             },

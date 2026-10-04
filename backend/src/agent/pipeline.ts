@@ -13,7 +13,7 @@ import { buildRepoMap, outline } from "./repoMap.js"
 import { chatVia, laneFromSpec, parseLanes, type ChatFn } from "../llm/lanes.js"
 import { NoLaneAvailable } from "../llm/gateway.js"
 import { loadWallet } from "../wallet/credentials.js"
-import { walletLanes } from "../wallet/routing.js"
+import { PRIVATE_TRAINING_MSG, walletCapability, walletLanes } from "../wallet/routing.js"
 import { detectRepoConfig } from "./repoConfig.js"
 import { cacheableInstall, depKey, restoreDeps, saveDeps } from "./depCache.js"
 import { planTools, runTools } from "./tools/index.js"
@@ -227,6 +227,10 @@ export class Pipeline {
         issue = fetched
         Object.assign(s, { title: issue.title, body: issue.body, comments: issue.comments, defaultBranch: issue.defaultBranch, repoPrivate: fetched.isPrivate })
         await taskStore.put(s)
+        // Backstop for the create-time check: a private repo never reaches a training lane without consent.
+        if (s.options.keyKind === "wallet" && s.repoPrivate && !s.options.allowTraining && s.userId && !walletCapability(await loadWallet(s.userId), { privateRepo: true }).canRun) {
+          throw new Error(PRIVATE_TRAINING_MSG)
+        }
         baseSha = await cloneForTask(ref, issue.defaultBranch, workDir, token)
       }
       await mkdir(path.join(workDir, ".git", "info"), { recursive: true })
