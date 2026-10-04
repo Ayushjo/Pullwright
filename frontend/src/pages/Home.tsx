@@ -30,6 +30,7 @@ import {
   useToast,
 } from '../components/ui'
 import { cn } from '../lib/cn'
+import { HandUnderline } from '../components/hand/Scribbles'
 import { fadeUp, stagger } from '../lib/motion'
 
 
@@ -382,6 +383,16 @@ export default function Home() {
                     {' '}required.
                   </p>
                 )}
+                <p className="text-xs text-muted-foreground mt-4">
+                  <span className="relative inline-block font-medium text-foreground">
+                    Free to run
+                    <HandUnderline className="text-primary/70" strokeWidth={3} delay={0.9} />
+                  </span>{' '}
+                  with a free Google Gemini key — no card.{' '}
+                  <Link to="/pricing" className="text-primary hover:underline underline-offset-2">
+                    Three ways to use it
+                  </Link>
+                </p>
               </motion.form>
             </motion.div>
 
