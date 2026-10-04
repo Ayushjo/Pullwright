@@ -48,7 +48,9 @@ export default {
         line: 'var(--border)',
         ink: 'var(--foreground)',
         mute: 'var(--muted-foreground)',
-        faint: 'var(--muted-foreground)',
+        faint: 'var(--faint)',
+        hairline: 'var(--hairline)',
+        code: 'var(--code-bg)',
       },
       fontFamily: {
         sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
@@ -60,12 +62,22 @@ export default {
         md: '8px',
         sm: '6px',
         button: '13px',
+        pill: '9999px',
         DEFAULT: 'var(--radius)',
       },
       spacing: {
         7: '28px',
         9: '36px',
         gutter: '22px',
+      },
+      maxWidth: {
+        frame: '1400px',
+      },
+      fontSize: {
+        // devin.ai-style headings: large, weight 400, tight tracking (set where used).
+        display: ['clamp(2.5rem, 5.2vw, 4rem)', { lineHeight: '1.04', letterSpacing: '-0.03em' }],
+        title: ['clamp(1.75rem, 3.4vw, 2.75rem)', { lineHeight: '1.08', letterSpacing: '-0.03em' }],
+        lead: ['clamp(1rem, 1.3vw, 1.125rem)', { lineHeight: '1.5' }],
       },
       zIndex: {
         nav: '50',

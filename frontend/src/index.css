@@ -6,10 +6,11 @@
 
 @layer base {
   :root {
-    --background: #ffffff;
-    --foreground: #000000;
+    /* Off-white canvas; cards stay white so they lift slightly off it. */
+    --background: #f7f7f6;
+    --foreground: #191919;
     --card: #ffffff;
-    --card-foreground: #000000;
+    --card-foreground: #191919;
     --popover: #ffffff;
     --popover-foreground: #000000;
     --primary: #2b7fff;
@@ -18,12 +19,17 @@
     --secondary: #f2f2f2;
     --secondary-foreground: #000000;
     --muted: #f2f2f2;
-    --muted-foreground: #6b6b6b;
+    --muted-foreground: rgba(25, 25, 25, 0.56);
+    /* The grey half of two-tone headlines. */
+    --faint: rgba(25, 25, 25, 0.4);
     --accent: #f2f2f2;
     --accent-foreground: #000000;
-    --destructive: #5b0000;
+    --destructive: #cf222e;
     --destructive-foreground: #ffffff;
-    --border: #e5e5e5;
+    --border: rgba(0, 0, 0, 0.08);
+    /* Frame and section lines. */
+    --hairline: rgba(0, 0, 0, 0.06);
+    --code-bg: #0d1117;
     --input: #e5e5e5;
     --ring: #2b7fff;
     --elevated: #f2f2f2;

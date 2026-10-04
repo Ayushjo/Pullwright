@@ -1,32 +1,35 @@
 import { forwardRef, type ReactNode } from 'react'
 import { cn } from '../../lib/cn'
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline'
+type Variant = 'primary' | 'solid' | 'secondary' | 'ghost' | 'danger' | 'outline'
 type Size = 'sm' | 'md' | 'lg'
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: Variant
   size?: Size
   loading?: boolean
+  /** "pill" for marketing and page-level calls to action; the default stays compact for in-card actions. */
+  shape?: 'default' | 'pill'
   children?: ReactNode
 }
 
 const VARIANTS: Record<Variant, string> = {
   primary: 'bg-primary text-primary-foreground hover:brightness-95 border border-transparent',
+  solid: 'bg-foreground text-white hover:opacity-85 border border-transparent',
   secondary: 'bg-card text-foreground border border-border hover:bg-muted',
-  outline: 'bg-card text-foreground border border-border hover:bg-muted',
+  outline: 'bg-transparent text-foreground border border-black/15 hover:bg-black/[.04]',
   ghost: 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent',
   danger: 'bg-destructive text-destructive-foreground hover:brightness-95 border border-transparent',
 }
 
 const SIZES: Record<Size, string> = {
-  sm: 'text-xs px-3 py-1.5 rounded-button gap-1.5',
-  md: 'text-sm px-[15px] py-[7px] rounded-button gap-2',
-  lg: 'text-sm px-5 py-2.5 rounded-button gap-2',
+  sm: 'text-xs px-3 py-1.5 gap-1.5',
+  md: 'text-sm px-[15px] py-[7px] gap-2',
+  lg: 'text-[15px] px-5 py-2.5 gap-2',
 }
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'primary', size = 'md', loading, disabled, className, children, ...props },
+  { variant = 'primary', size = 'md', shape = 'default', loading, disabled, className, children, ...props },
   ref,
 ) {
   return (
@@ -38,6 +41,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
         'disabled:opacity-50 disabled:cursor-not-allowed',
         VARIANTS[variant],
         SIZES[size],
+        shape === 'pill' ? 'rounded-pill' : 'rounded-button',
         className,
       )}
       {...props}
