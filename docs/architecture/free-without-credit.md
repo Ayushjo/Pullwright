@@ -93,5 +93,6 @@ Execution keeps Flash-Lite → Groq qwen (small prompts). The free step allowanc
 | L04 | ✅ | 3.7, 3.8, 3.5 |
 | L05 | ✅ | 3.7, 3.8, 3.5 |
 | L06 … H10 | paused: the Flash pool's ~100 requests/day were used by today's probes, this replay and 6 tasks. The campaign resumes at 00:00 UTC and needs 2–3 days | |
+| L06 … H10 (10-04) | restarted 03:05 UTC; parked at once. Google already reported 20/20 on all five Flash models (`…PerDayPerProjectPerModel-FreeTier`, retry 75,068 s = 00:00 UTC). Our campaign wasn't running after the reset, so another user of the same Google project spent it. Resumes 10-05 00:00 UTC | |
 
 Each task used ≈ 8 Flash requests (spec check + planning), so a single user's 3 tasks/day need ≈ 25 of the ~100. The budget in the table above holds.
