@@ -61,7 +61,7 @@ export default function SiteNav() {
     )
 
   const cta = user ? (
-    <Button variant="solid" shape="pill" size="sm" onClick={() => navigate('/dashboard')} className="px-4">
+    <Button variant="primary" shape="pill" size="sm" onClick={() => navigate('/dashboard')} className="px-4">
       Dashboard
     </Button>
   ) : (
@@ -69,7 +69,7 @@ export default function SiteNav() {
       <Button variant="outline" shape="pill" size="sm" onClick={() => login('/dashboard')} className="px-4">
         Login
       </Button>
-      <Button variant="solid" shape="pill" size="sm" onClick={() => login('/wallet')} className="px-4">
+      <Button variant="primary" shape="pill" size="sm" onClick={() => login('/wallet')} className="px-4">
         Start free
       </Button>
     </>

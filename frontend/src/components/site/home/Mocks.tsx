@@ -73,7 +73,7 @@ export function PrCard({ className }: { className?: string }) {
           </div>
         ))}
       </div>
-      <span className="mt-3 inline-flex rounded-pill bg-foreground text-white text-[11px] px-3 py-1">View PR</span>
+      <span className="mt-3 inline-flex rounded-pill bg-primary text-white text-[11px] px-3 py-1">View PR</span>
     </Window>
   )
 }
@@ -298,7 +298,7 @@ export function PlanMock() {
           ))}
         </div>
         <div className="mt-4 flex gap-2">
-          <span className="rounded-pill bg-foreground text-white text-[11px] px-3 py-1">Approve plan</span>
+          <span className="rounded-pill bg-primary text-white text-[11px] px-3 py-1">Approve plan</span>
           <span className="rounded-pill border border-black/15 text-[11px] px-3 py-1">Edit</span>
         </div>
       </div>

@@ -83,12 +83,12 @@ export default function Home() {
                       aria-label="GitHub issue URL"
                       className="flex-1 min-w-0 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground/80"
                     />
-                    <Button type="submit" variant="solid" shape="pill" loading={loading} className="hidden sm:inline-flex h-9 px-4">
+                    <Button type="submit" variant="primary" shape="pill" loading={loading} className="hidden sm:inline-flex h-9 px-4">
                       {user ? 'Start' : 'Sign in'}
                       {!loading && <ArrowRight className="w-4 h-4" />}
                     </Button>
                   </label>
-                  <Button type="submit" variant="solid" shape="pill" size="lg" loading={loading} className="sm:hidden h-12">
+                  <Button type="submit" variant="primary" shape="pill" size="lg" loading={loading} className="sm:hidden h-12">
                     {user ? 'Start' : 'Sign in'}
                     {!loading && <ArrowRight className="w-4 h-4" />}
                   </Button>

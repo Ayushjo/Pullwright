@@ -226,7 +226,7 @@ export function TopNav() {
 
         <div className="flex items-center gap-2 shrink-0">
           <Link to="/tasks/new" className="hidden md:block">
-            <Button variant="solid" shape="pill" size="sm" className="gap-1.5 px-4" tabIndex={-1}>
+            <Button variant="primary" shape="pill" size="sm" className="gap-1.5 px-4" tabIndex={-1}>
               <Plus className="w-4 h-4" />
               New task
             </Button>
