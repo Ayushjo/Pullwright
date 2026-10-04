@@ -24,7 +24,7 @@ export default function StatusButton({
   disabled?: boolean
   className?: string
   type?: 'button' | 'submit'
-  /** 'rect' matches a text input next to it (same radius); 'round' is the default soft button. */
+  /** 'rect' = square corners, to sit flush with a square text input; 'round' is the default soft button. */
   shape?: 'round' | 'rect'
 }) {
   const text = status === 'error' ? (labels.error ?? labels.idle) : labels[status]
@@ -37,7 +37,7 @@ export default function StatusButton({
         disabled={disabled || busy}
         className={cn(
           'relative inline-flex items-center justify-center text-sm font-medium px-4 py-2 min-w-[118px] transition-colors duration-300 focus-ring',
-          shape === 'rect' ? 'rounded-md' : 'rounded-button',
+          shape === 'rect' ? 'rounded-none' : 'rounded-button',
           busy ? 'bg-muted text-muted-foreground cursor-default' : 'bg-primary text-primary-foreground hover:brightness-95',
           status === 'error' && 'bg-red-600 text-white',
           'disabled:cursor-not-allowed',
