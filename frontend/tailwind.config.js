@@ -15,7 +15,8 @@ export default {
           foreground: 'var(--popover-foreground)',
         },
         primary: {
-          DEFAULT: 'var(--primary)',
+          // rgb channels so opacity modifiers (bg-primary/10, ring-primary/15) work; plain var() drops them.
+          DEFAULT: 'rgb(var(--primary-rgb) / <alpha-value>)',
           foreground: 'var(--primary-foreground)',
         },
         secondary: {

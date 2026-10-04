@@ -68,7 +68,7 @@ export default function Wallet() {
           Pullwright runs on keys you bring.{' '}
           <span className="relative inline-block text-foreground font-medium">
             Free ones are enough
-            <HandUnderline className="text-primary/50" strokeWidth={2.5} delay={0.25} />
+            <HandUnderline className="text-primary/70" strokeWidth={3} delay={0.25} />
           </span>
           : a Google Gemini key plans and writes the code, and others make it faster and sharper. Free keys are always used first.
         </p>
