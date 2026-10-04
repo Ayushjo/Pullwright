@@ -207,7 +207,7 @@ export default function Dashboard() {
         </Link>
       </motion.div>
 
-      <CapacityMeter className="-mt-4 mb-6 sm:max-w-md" />
+      <CapacityMeter className="-mt-4 mb-6 w-fit max-w-full" />
 
       {/* Stats strip */}
       {loading ? (
