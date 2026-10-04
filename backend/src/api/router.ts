@@ -13,7 +13,7 @@ import { getPrisma, isDatabaseEnabled } from "../db/prisma.js"
 import { countActiveTasksForUser, getStatsForUser, listTasksForUser, userOwnsTask, getMetricsFromDb, getTaskDetailFromDb } from "../repositories/taskRepository.js"
 import { RedisRateStore } from "./redisRateStore.js"
 import { flushLlmCalls, listCallsForTask } from "../repositories/llmCallRepository.js"
-import { allocGen, createTask, enqueue } from "../agent/service.js"
+import { allocGen, createTask, enqueue, makeStatusSink } from "../agent/service.js"
 import { HOLDS_SLOT, taskStore, TERMINAL, type TaskState } from "../agent/store.js"
 import { admissionKeys, admit, limitsFor, pruneActive, refund, startsUsed, WINDOW_MS } from "../entitlements/admission.js"
 import { createRedisClient } from "../config/redis.js"
@@ -456,6 +456,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
       finishedAt: new Date().toISOString(),
     }))
     if (idle) {
+      await makeStatusSink(taskRegistry)(idle) // lists (registry) and Postgres, which the worker would otherwise never update
       await taskStore.unmarkParked(s.taskId) // a pending resume job then finds the task cancelled and does nothing
       await eventBus.emit(s.taskId, { type: "status", status: "cancelled", detail: "Cancelled by user" })
       await taskStore.dropToken(s.taskId)
