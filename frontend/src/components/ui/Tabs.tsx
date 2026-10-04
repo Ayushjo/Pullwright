@@ -15,7 +15,11 @@ export default function Tabs<T extends string>({
   layoutId?: string
 }) {
   return (
-    <div className="inline-flex items-center gap-1 bg-card border border-border rounded-lg p-1">
+    // max-w-full + scroll: on a phone the pills scroll sideways instead of widening the page.
+    <div
+      className="inline-flex max-w-full items-center gap-1 overflow-x-auto bg-card border border-border rounded-lg p-1"
+      style={{ scrollbarWidth: 'none' }}
+    >
       {items.map((item) => {
         const active = item.key === value
         return (
@@ -23,7 +27,7 @@ export default function Tabs<T extends string>({
             key={item.key}
             onClick={() => onChange(item.key)}
             className={cn(
-              'relative px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors duration-micro',
+              'relative shrink-0 whitespace-nowrap px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors duration-micro',
               active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
             )}
           >

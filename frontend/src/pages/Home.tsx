@@ -461,9 +461,9 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="border-t border-border py-7">
-        <div className="max-w-6xl mx-auto px-gutter sm:px-gutter flex items-center justify-between gap-4">
+        <div className="max-w-6xl mx-auto px-gutter sm:px-gutter flex flex-wrap items-center justify-between gap-4">
           <Logo height={36} linked={false} animated={false} />
-          <nav className="flex items-center gap-5 text-xs text-muted-foreground">
+          <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
             <Link to="/pricing" className="hover:text-foreground">Pricing</Link>
             <Link to={`/r/${DEMO_REPLAY_ID}`} className="hover:text-foreground">Live replay</Link>
             <a href="https://github.com/Ayushjo/MyOwnDevin" target="_blank" rel="noreferrer" className="hover:text-foreground">GitHub</a>
