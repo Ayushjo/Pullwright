@@ -23,8 +23,8 @@ export function TwoToneHeading({
   strongFirst?: boolean
   className?: string
 }) {
-  const grey = muted && <span className="text-faint">{muted}</span>
-  // The strong line carries the brand blue; the grey lead-in stays neutral.
+  const grey = muted && <span className="text-foreground">{muted}</span>
+  // Black lead-in, brand-blue statement line.
   const main = strong && <span className="text-primary">{strong}</span>
   return (
     <Tag className={cn('font-normal text-foreground text-balance', size === 'display' ? 'text-display' : 'text-title', className)}>
