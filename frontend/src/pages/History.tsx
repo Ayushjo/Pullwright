@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, ExternalLink, ChevronDown, GitPullRequest, Clock } from 'lucide-react'
+import { Search, ExternalLink, ChevronDown, GitPullRequest, Clock, History as HistoryIcon } from 'lucide-react'
 import AppShell from '../components/AppShell'
-import { Input, Badge, Skeleton, Tabs, type TabItem } from '../components/ui'
+import { Button, EmptyState, Input, Badge, PageHeader, Skeleton, Tabs, type TabItem } from '../components/ui'
 import { listTasks, getTaskMetrics } from '../api/client'
 import type { TaskRegistryEntry, TaskStatus } from '../types/task'
 import { fadeUp, stagger } from '../lib/motion'
@@ -81,9 +81,7 @@ function ExpandedRow({ taskId, prUrl }: { taskId: string; prUrl?: string }) {
       transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
       className="overflow-hidden"
     >
-      <div
-        className="mx-3 sm:mx-4 mb-3 p-4 rounded-xl border border-border bg-muted"
-      >
+      <div className="mx-3 sm:mx-4 mb-3 p-4 rounded-md border border-hairline bg-background/70">
         {loadingMetrics ? (
           <div className="grid grid-cols-2 gap-3">
             <Skeleton className="h-10 rounded-lg" />
@@ -108,7 +106,7 @@ function ExpandedRow({ taskId, prUrl }: { taskId: string; prUrl?: string }) {
               href={prUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-success bg-green-50 border border-green-200 px-3 py-2 rounded-lg hover:bg-green-100 transition-colors"
+              className="inline-flex items-center justify-center gap-1.5 text-xs text-foreground border border-black/15 px-3.5 py-1.5 rounded-pill hover:bg-black/[.04] transition-colors"
               onClick={(e) => e.stopPropagation()}
             >
               <GitPullRequest className="w-3.5 h-3.5" />
@@ -118,7 +116,7 @@ function ExpandedRow({ taskId, prUrl }: { taskId: string; prUrl?: string }) {
           )}
           <Link
             to={`/tasks/${taskId}`}
-            className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-primary-foreground bg-primary border border-primary px-3 py-2 rounded-lg hover:brightness-95 transition-all"
+            className="inline-flex items-center justify-center gap-1.5 text-xs text-primary-foreground bg-primary px-3.5 py-1.5 rounded-pill hover:brightness-95 transition-all"
             onClick={(e) => e.stopPropagation()}
           >
             Open task
@@ -133,8 +131,8 @@ function ExpandedRow({ taskId, prUrl }: { taskId: string; prUrl?: string }) {
 function MetricChip({ icon, label, value }: { icon?: React.ReactNode; label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{label}</p>
-      <p className="text-sm font-semibold font-mono text-foreground tabular-nums flex items-center gap-1 mt-0.5">
+      <p className="font-mono text-[10.5px] text-muted-foreground uppercase tracking-[0.08em]">{label}</p>
+      <p className="text-sm font-mono text-foreground tabular-nums flex items-center gap-1 mt-1">
         {icon && <span className="text-muted-foreground">{icon}</span>}
         {value}
       </p>
@@ -148,10 +146,11 @@ function TaskRow({ entry }: { entry: TaskRegistryEntry }) {
   const repo = repoFromUrl(entry.issueUrl)
 
   return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden">
+    <div className="rounded-lg border border-hairline bg-card overflow-hidden hover:border-black/15 transition-colors">
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="w-full text-left px-4 py-3.5 flex items-center gap-3 hover:bg-primary/5 transition-colors group"
+        aria-expanded={expanded}
+        className="w-full text-left px-4 sm:px-5 py-3.5 flex items-center gap-3 group focus-ring"
       >
         {/* Status badge */}
         <Badge tone={statusTone(entry.status)} dot className="shrink-0">
@@ -164,11 +163,11 @@ function TaskRow({ entry }: { entry: TaskRegistryEntry }) {
             {entry.issueNumber ? `#${entry.issueNumber} — ` : ''}
             {entry.issueTitle || `Task ${entry.taskId.slice(0, 8)}`}
           </p>
-          <p className="text-muted-foreground text-xs mt-0.5 truncate">{repo}</p>
+          <p className="font-mono text-[11px] text-muted-foreground mt-0.5 truncate">{repo}</p>
         </div>
 
         {/* Time ago */}
-        <span className="text-muted-foreground text-xs shrink-0 hidden sm:block">
+        <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-muted-foreground shrink-0 hidden sm:block">
           {timeAgo(entry.createdAt)}
         </span>
 
@@ -193,7 +192,7 @@ function TaskRow({ entry }: { entry: TaskRegistryEntry }) {
 function DayGroup({ label, entries }: { label: string; entries: TaskRegistryEntry[] }) {
   return (
     <motion.div variants={fadeUp} className="space-y-2">
-      <p className="text-muted-foreground text-xs font-semibold uppercase tracking-widest px-1 mb-3">{label}</p>
+      <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground px-1 pt-2 mb-3">{label}</p>
       {entries.map((entry) => (
         <TaskRow key={entry.taskId} entry={entry} />
       ))}
@@ -209,7 +208,7 @@ function HistorySkeleton() {
         <div key={g} className="space-y-2">
           <Skeleton className="h-4 w-20 rounded mb-3" />
           {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-14 w-full rounded-xl" />
+            <Skeleton key={i} className="h-14 w-full rounded-lg" />
           ))}
         </div>
       ))}
@@ -218,15 +217,25 @@ function HistorySkeleton() {
 }
 
 /* ── Filter tabs ── */
-type Filter = 'all' | TaskStatus
+// Same groups as the Dashboard (raw statuses missed "PR opened", "Paused", "Ready to publish", …).
+type Filter = 'all' | 'needs_you' | 'active' | 'done' | 'failed'
 
 const FILTER_TABS: TabItem<Filter>[] = [
   { key: 'all', label: 'All' },
-  { key: 'done', label: 'Done' },
-  { key: 'running', label: 'Running' },
+  { key: 'needs_you', label: 'Needs you' },
+  { key: 'active', label: 'Running' },
+  { key: 'done', label: 'Shipped' },
   { key: 'failed', label: 'Failed' },
-  { key: 'queued', label: 'Queued' },
 ]
+
+function matches(filter: Filter, status: TaskStatus): boolean {
+  const m = statusMeta(status)
+  if (filter === 'all') return true
+  if (filter === 'needs_you') return Boolean(m.needsYou)
+  if (filter === 'active') return m.active
+  if (filter === 'done') return status === 'published' || status === 'done'
+  return status === 'failed' || status === 'cancelled'
+}
 
 /* ── Main export ── */
 export default function History() {
@@ -244,7 +253,7 @@ export default function History() {
 
   // Filter + search
   const visible = tasks.filter((t) => {
-    if (filter !== 'all' && t.status !== filter) return false
+    if (!matches(filter, t.status as TaskStatus)) return false
     if (search.trim()) {
       const q = search.toLowerCase()
       const title = (t.issueTitle ?? '').toLowerCase()
@@ -268,17 +277,11 @@ export default function History() {
 
   return (
     <AppShell>
-      {/* Page header */}
-      <div className="mb-8">
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
-          <h1 className="text-2xl font-bold text-foreground mb-1">History</h1>
-          <p className="text-muted-foreground text-sm">All your agent runs, grouped by day.</p>
-        </motion.div>
-      </div>
+      <PageHeader title="History" description="All your agent runs, grouped by day." />
 
       {/* Controls */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
-        <div className="flex-1 max-w-sm">
+      <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-6 border-b border-hairline pb-0 sm:pb-0">
+        <div className="flex-1 max-w-sm pb-3">
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -286,37 +289,33 @@ export default function History() {
             icon={<Search className="w-4 h-4" />}
           />
         </div>
-        <Tabs items={FILTER_TABS} value={filter} onChange={setFilter} layoutId="history-tabs" />
+        <Tabs
+          items={FILTER_TABS.map((f) => ({ ...f, count: tasks.filter((t) => matches(f.key, t.status as TaskStatus)).length }))}
+          value={filter}
+          onChange={setFilter}
+          layoutId="history-tabs"
+        />
       </div>
 
       {/* Content */}
       {loading ? (
         <HistorySkeleton />
       ) : visible.length === 0 ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="flex flex-col items-center justify-center py-24 text-center"
-        >
-          <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
-            <Clock className="w-6 h-6 text-primary" />
-          </div>
-          <p className="text-foreground font-semibold mb-1">
-            {tasks.length === 0 ? 'No tasks yet' : 'No matching tasks'}
-          </p>
-          <p className="text-muted-foreground text-sm mb-6">
-            {tasks.length === 0
-              ? 'Submit a GitHub issue to get started.'
-              : 'Try a different search or filter.'}
-          </p>
-          {tasks.length === 0 && (
-            <Link
-              to="/tasks/new"
-              className="inline-flex items-center gap-2 text-sm font-semibold px-5 py-2.5 rounded-button bg-primary text-primary-foreground hover:brightness-95 transition-all"
-            >
-              Submit first issue
-            </Link>
-          )}
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <EmptyState
+            icon={tasks.length === 0 ? HistoryIcon : Search}
+            title={tasks.length === 0 ? 'No tasks yet' : 'No matching tasks'}
+            text={tasks.length === 0 ? 'Submit a GitHub issue to get started.' : 'Try a different search or filter.'}
+            action={
+              tasks.length === 0 && (
+                <Link to="/tasks/new" tabIndex={-1}>
+                  <Button variant="primary" shape="pill" className="px-4">
+                    Submit your first issue
+                  </Button>
+                </Link>
+              )
+            }
+          />
         </motion.div>
       ) : (
         <motion.div
