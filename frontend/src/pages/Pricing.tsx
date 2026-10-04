@@ -17,7 +17,9 @@ import { COMPARE, FAQ, WAYS, type Way } from '../content/plans'
 function PlanColumn({ way, onCta, busy }: { way: Way; onCta: (w: Way) => void; busy: boolean }) {
   const solid = way.id !== 'keys'
   return (
-    <motion.div variants={fadeUp} className="flex flex-col rounded-lg border border-hairline bg-card p-6 sm:p-7 min-w-0">
+    // On desktop each card is a 5-row subgrid (header, price, blurb, button, list), so buttons and lists
+    // line up across the three columns whatever the blurb length.
+    <motion.div variants={fadeUp} className="flex flex-col lg:grid lg:grid-rows-subgrid lg:row-span-5 lg:gap-y-0 rounded-lg border border-hairline bg-card p-6 sm:p-7 min-w-0">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-[26px] font-normal tracking-[-0.02em] text-foreground leading-tight">{way.name}</h2>
@@ -40,7 +42,7 @@ function PlanColumn({ way, onCta, busy }: { way: Way; onCta: (w: Way) => void; b
 
       <p className="mt-5 text-[15px] leading-relaxed text-muted-foreground">{way.blurb}</p>
 
-      <Button variant={solid ? 'primary' : 'outline'} className="mt-6 w-full h-11 rounded-md text-[15px]" loading={busy} onClick={() => onCta(way)}>
+      <Button variant={solid ? 'primary' : 'outline'} className="mt-6 w-full h-11 rounded-md text-[15px] self-end" loading={busy} onClick={() => onCta(way)}>
         {busy ? 'Opening checkout…' : way.cta.label}
       </Button>
 
