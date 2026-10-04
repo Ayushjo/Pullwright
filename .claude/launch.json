@@ -85,6 +85,18 @@
       ],
       "cwd": "backend",
       "port": 3500
+    },
+    {
+      "name": "pullwright-backend-asuser",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "tsx",
+        "--env-file=.env",
+        "--env-file=.tasks/scratch/asuser.env",
+        "src/index.ts"
+      ],
+      "cwd": "backend",
+      "port": 3500
     }
   ]
 }
