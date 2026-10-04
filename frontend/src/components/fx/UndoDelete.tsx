@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Trash2, Undo2 } from 'lucide-react'
 import { cn } from '../../lib/cn'
@@ -12,6 +12,8 @@ export default function UndoDelete({ label = 'Remove', seconds = 5, onConfirm, c
   const [pending, setPending] = useState(false)
   const [count, setCount] = useState(seconds)
   const fired = useRef(false)
+  // Unique per instance: a shared layoutId makes framer-motion treat every Remove button on the page as one element.
+  const layoutId = `undo-delete-${useId()}`
 
   useEffect(() => {
     if (!pending) return
@@ -32,7 +34,7 @@ export default function UndoDelete({ label = 'Remove', seconds = 5, onConfirm, c
       {!pending ? (
         <motion.button
           key="remove"
-          layoutId="undo-delete"
+          layoutId={layoutId}
           type="button"
           onClick={() => {
             fired.current = false
@@ -49,7 +51,7 @@ export default function UndoDelete({ label = 'Remove', seconds = 5, onConfirm, c
       ) : (
         <motion.button
           key="undo"
-          layoutId="undo-delete"
+          layoutId={layoutId}
           type="button"
           onClick={() => setPending(false)}
           whileTap={{ scale: 0.95 }}
