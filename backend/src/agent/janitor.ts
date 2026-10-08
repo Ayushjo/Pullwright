@@ -16,6 +16,7 @@ import { taskStore, TERMINAL, type TaskStatus } from "./store.js"
  */
 const IDLE: TaskStatus[] = ["awaiting_approval", "needs_input", "ready", "needs_review"]
 const hours = (h: number) => h * 3_600_000
+const TASK_DIR = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 async function nodeModulesDirs(root: string, depth = 3): Promise<string[]> {
   const out: string[] = []
@@ -40,6 +41,9 @@ export async function sweepWorkspaces(now = Date.now()): Promise<{ removed: numb
   const terminalMs = hours(Number(process.env.JANITOR_TERMINAL_HOURS ?? 1))
   const idleMs = Number(process.env.JANITOR_IDLE_MINUTES ?? 30) * 60_000
   for (const id of await readdir(root)) {
+    // Only task workspaces (named by task id). .tasks/ also holds eval-repos/ and scratch/ — the janitor
+    // used to treat those as orphaned workspaces and delete them after a day (lost a campaign log, 10-08).
+    if (!TASK_DIR.test(id)) continue
     const dir = path.join(root, id)
     const st = await stat(dir).catch(() => null)
     if (!st?.isDirectory()) continue
