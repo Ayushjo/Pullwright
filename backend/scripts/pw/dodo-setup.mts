@@ -2,9 +2,10 @@
  * One-time Dodo Payments setup for an environment (test or live, from DODO_ENV).
  *
  *   npx tsx --env-file=.env scripts/pw/dodo-setup.mts product            # create the $8/month Pro product
+ *   npx tsx --env-file=.env scripts/pw/dodo-setup.mts pack               # create the one-time $5 credit pack
  *   npx tsx --env-file=.env scripts/pw/dodo-setup.mts webhook <https-url> # register <url>/api/webhooks/dodo
  *
- * Prints the env lines to add (DODO_PRO_PRODUCT_ID, DODO_WEBHOOK_SECRET); never prints the API key.
+ * Prints the env lines to add (DODO_PRO_PRODUCT_ID, DODO_PACK_PRODUCT_ID, DODO_WEBHOOK_SECRET); never prints the API key.
  * Webhooks need a public HTTPS backend — Dodo can't reach localhost. Locally, Settings confirms a
  * checkout through POST /api/billing/sync instead.
  */
@@ -45,6 +46,17 @@ if (cmd === "product") {
     }),
   })
   console.log(`DODO_PRO_PRODUCT_ID=${p.product_id}`)
+} else if (cmd === "pack") {
+  const p = await dodo<{ product_id: string }>("/products", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Pullwright credits",
+      description: "$4.25 of model usage on Pullwright's models, valid for 12 months. No subscription.",
+      tax_category: "saas",
+      price: { type: "one_time_price", currency: "USD", price: 500, discount: 0, purchasing_power_parity: false, tax_inclusive: false },
+    }),
+  })
+  console.log(`DODO_PACK_PRODUCT_ID=${p.product_id}`)
 } else if (cmd === "webhook" && arg?.startsWith("https://")) {
   const url = `${arg.replace(/\/$/, "")}/api/webhooks/dodo`
   const w = await dodo<{ id: string }>("/webhooks", {
@@ -56,6 +68,7 @@ if (cmd === "product") {
       filter_types: [
         "subscription.active", "subscription.renewed", "subscription.unpaused", "subscription.plan_changed", "subscription.updated",
         "subscription.past_due", "subscription.on_hold", "subscription.paused", "subscription.failed", "subscription.cancelled", "subscription.expired",
+        "payment.succeeded", // credit packs
       ],
     }),
   })
@@ -63,6 +76,6 @@ if (cmd === "product") {
   console.log(`Webhook ${w.id} → ${url}`)
   console.log(`DODO_WEBHOOK_SECRET=${secret}`)
 } else {
-  console.log("usage: dodo-setup.mts product | webhook <https://your-backend>")
+  console.log("usage: dodo-setup.mts product | pack | webhook <https://your-backend>")
   process.exit(1)
 }
