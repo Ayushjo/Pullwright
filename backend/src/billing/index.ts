@@ -6,6 +6,7 @@ import { decrypt, encrypt } from "../auth/session.js"
 import logger from "../logger.js"
 import { createRedisClient } from "../config/redis.js"
 import type { Redis } from "ioredis"
+import { creditSummary, grantCredit, type CreditSummary } from "./credits.js"
 
 /**
  * Plans, entitlements, bring-your-own-key and Dodo Payments.
@@ -24,8 +25,35 @@ export type Entitlement = {
   hostedAllowanceUsd: number
   hostedSpentUsd: number
   /** Which key a new task will use, or null when the user must add a key / upgrade. */
-  key: { kind: "byok"; provider: KeyProvider } | { kind: "platform" } | { kind: "wallet"; allFree: boolean } | null
+  key:
+    | { kind: "byok"; provider: KeyProvider }
+    | { kind: "platform"; fundedBy: "credits"; capUsd: number; trialOnly: boolean }
+    | { kind: "wallet"; allFree: boolean }
+    | null
+  credits: CreditSummary | null
   reason?: string
+}
+
+/** Smallest balance worth starting a task on, and the caps for tasks paid from credits. */
+const MIN_CREDIT_TASK_USD = Number(process.env.MIN_CREDIT_TASK_USD ?? 0.02)
+const CREDIT_TASK_CAP_USD = Number(process.env.CREDIT_TASK_CAP_USD ?? 0.3)
+export const TRIAL_TASK_CAP_USD = Number(process.env.TRIAL_TASK_CAP_USD ?? 0.1)
+
+/**
+ * Pro's monthly included usage is a ledger grant for the current billing period, created at most once per
+ * period (idempotent by external ref). Called when entitlements are read, so a missed webhook or a
+ * subscription that predates the ledger still gets its period's credit.
+ */
+async function ensureProGrant(userId: string, sub: { id: string; providerSubscriptionId: string | null; currentPeriodEnd: Date | null }, usd: number) {
+  if (!sub.currentPeriodEnd || sub.currentPeriodEnd.getTime() <= Date.now() || !(usd > 0)) return
+  await grantCredit({
+    userId,
+    kind: "grant",
+    usd,
+    externalRef: `pro:${sub.providerSubscriptionId ?? sub.id}:${sub.currentPeriodEnd.toISOString().slice(0, 10)}`,
+    expiresAt: sub.currentPeriodEnd,
+    note: "Pro monthly included usage",
+  })
 }
 
 function monthStart(d = new Date()) {
@@ -34,37 +62,43 @@ function monthStart(d = new Date()) {
 
 export async function getEntitlement(userId: string): Promise<Entitlement> {
   const db = getPrisma()
-  const [sub, plans, runsUsed, keys, hosted] = await Promise.all([
+  const [sub, plans, runsUsed, keys] = await Promise.all([
     db.subscription.findUnique({ where: { userId }, include: { plan: true } }),
     db.plan.findMany(),
     db.task.count({ where: { userId, createdAt: { gte: monthStart() }, NOT: { status: "cancelled" } } }),
     db.apiKey.findMany({ where: { userId }, select: { provider: true } }),
-    db.task.aggregate({
-      where: { userId, createdAt: { gte: monthStart() }, options: { path: ["keyKind"], equals: "platform" } },
-      _sum: { costUsd: true },
-    }),
   ])
   const pro = sub && sub.status === "active" && sub.plan.tier === "pro" ? sub.plan : null
   const plan = pro ?? plans.find((p) => p.tier === "free")
   const tier: Entitlement["tier"] = pro ? "pro" : "free"
   const runsIncluded = plan?.includedTasks ?? (tier === "pro" ? 100 : 10)
-  // Free never touches the operator's key, whatever the plan row says.
   const hostedAllowanceUsd = tier === "pro" ? Number(plan?.includedSpendUsd ?? 3) : 0
-  const hostedSpentUsd = Number(hosted._sum.costUsd ?? 0)
+  if (pro && sub) await ensureProGrant(userId, sub, hostedAllowanceUsd)
+  const credits = await creditSummary(userId)
+  const hostedSpentUsd = tier === "pro" ? Math.max(0, +(hostedAllowanceUsd - credits.grantRemainingUsd).toFixed(6)) : 0
   const byok = KEY_PROVIDERS.find((p) => keys.some((k) => k.provider === p))
 
-  const base = { tier, runsIncluded, runsUsed, hostedAllowanceUsd, hostedSpentUsd }
-  // The wallet (P4): tasks on the user's own keys. Daily admission limits apply; the monthly run count
-  // only governs usage paid by us (hosted credits).
+  const base = { tier, runsIncluded, runsUsed, hostedAllowanceUsd, hostedSpentUsd, credits }
+  // 1. The wallet: tasks on the user's own keys (free ones first). Daily admission limits apply.
   const wallet = walletCapability(await loadWallet(userId))
   if (wallet.canRun) return { ...base, key: { kind: "wallet", allFree: wallet.allFree } }
+  // 2. Credits (Pro's monthly grant, packs, the trial): our models, hard-capped by what's available.
+  if (credits.availableUsd >= MIN_CREDIT_TASK_USD) {
+    const capUsd = +Math.min(CREDIT_TASK_CAP_USD, credits.availableUsd, credits.trialOnly ? TRIAL_TASK_CAP_USD : Infinity).toFixed(4)
+    return { ...base, key: { kind: "platform", fundedBy: "credits", capUsd, trialOnly: credits.trialOnly } }
+  }
+  // 3. Legacy own OpenAI/OpenRouter key (pre-wallet), still bounded by the monthly run count.
   if (runsUsed >= runsIncluded) return { ...base, key: null, reason: `You've used all ${runsIncluded} runs included this month.` }
   if (byok) return { ...base, key: { kind: "byok", provider: byok } }
-  if (tier === "pro" && hostedSpentUsd < hostedAllowanceUsd) return { ...base, key: { kind: "platform" } }
   return {
     ...base,
     key: null,
-    reason: wallet.missing && keys.length ? wallet.missing : tier === "pro" ? "Your included model usage for this month is used up — add your own key to keep going." : "Add a free Gemini key in your Wallet (2 minutes, no card) — or upgrade to Pro.",
+    reason:
+      wallet.missing && keys.length
+        ? wallet.missing
+        : tier === "pro"
+          ? "Your included model usage for this month is used up — buy a credit pack or add your own key to keep going."
+          : "Add a free Gemini key in your Wallet (2 minutes, no card), try 2 tasks free, or buy credits.",
   }
 }
 
@@ -171,9 +205,16 @@ function billingRedis() {
   return (redis ??= createRedisClient())
 }
 
-export async function createCheckout(user: { id: string; login: string; email?: string | null; name?: string | null }) {
-  const productId = process.env.DODO_PRO_PRODUCT_ID
-  if (!productId) throw new Error("Payments are not configured yet (DODO_PRO_PRODUCT_ID missing).")
+/** A credit pack: one-time Dodo product → credit after the processor's fee, valid 12 months. */
+export const PACK = {
+  productId: () => process.env.DODO_PACK_PRODUCT_ID,
+  creditUsd: Number(process.env.PACK_CREDIT_USD ?? 4.25),
+  validDays: Number(process.env.PACK_VALID_DAYS ?? 365),
+}
+
+export async function createCheckout(user: { id: string; login: string; email?: string | null; name?: string | null }, kind: "pro" | "pack" = "pro") {
+  const productId = kind === "pack" ? PACK.productId() : process.env.DODO_PRO_PRODUCT_ID
+  if (!productId) throw new Error(`Payments are not configured yet (${kind === "pack" ? "DODO_PACK_PRODUCT_ID" : "DODO_PRO_PRODUCT_ID"} missing).`)
   const frontend = process.env.FRONTEND_URL ?? "http://localhost:5173"
   const out = await dodo<{ checkout_url?: string | null; session_id: string }>("/checkouts", {
     method: "POST",
@@ -182,7 +223,7 @@ export async function createCheckout(user: { id: string; login: string; email?: 
       customer: { email: user.email ?? `${user.login}@users.noreply.github.com`, name: user.name ?? user.login },
       return_url: `${frontend}/settings?billing=success`,
       cancel_url: `${frontend}/pricing`,
-      metadata: { user_id: user.id, github_login: user.login },
+      metadata: { user_id: user.id, github_login: user.login, kind },
     }),
   })
   if (!out.checkout_url) throw new Error("The payment provider didn't return a checkout page. Please try again.")
@@ -210,10 +251,17 @@ export async function syncCheckout(userId: string): Promise<{ status: string }> 
   if (!sessionId) return { status: "none" }
   const session = await dodo<{ payment_id?: string | null; payment_status?: string | null }>(`/checkouts/${encodeURIComponent(sessionId)}`)
   if (!session.payment_id) return { status: session.payment_status ?? "pending" }
-  const payment = await dodo<{ subscription_id?: string | null; status?: string | null; metadata?: Record<string, string> }>(
+  const payment = await dodo<{ subscription_id?: string | null; status?: string | null; metadata?: Record<string, string>; product_cart?: { product_id: string; quantity: number }[] | null }>(
     `/payments/${encodeURIComponent(session.payment_id)}`,
   )
-  if (!payment.subscription_id) return { status: payment.status ?? "pending" }
+  if (!payment.subscription_id) {
+    // A one-time purchase (credit pack): apply it like the payment.succeeded webhook would.
+    if (payment.status !== "succeeded") return { status: payment.status ?? "pending" }
+    const owner = payment.metadata?.user_id
+    if (owner && owner !== userId) throw new Error("That payment belongs to another account.")
+    const out = await applyPayment(getPrisma(), { ...(payment as DodoPayment), payment_id: session.payment_id, metadata: { ...(payment.metadata ?? {}), user_id: userId } })
+    return { status: out.result === "processed" ? "credited" : "succeeded" }
+  }
   const sub = await dodo<DodoSubscription>(`/subscriptions/${encodeURIComponent(payment.subscription_id)}`)
   const owner = sub.metadata?.user_id ?? payment.metadata?.user_id
   if (owner && owner !== userId) throw new Error("That subscription belongs to another account.")
@@ -320,7 +368,40 @@ async function planForProduct(db: ReturnType<typeof getPrisma>, productId: strin
   return null
 }
 
+type DodoPayment = {
+  payment_id: string
+  status?: string | null
+  subscription_id?: string | null
+  product_cart?: { product_id: string; quantity: number }[] | null
+  metadata?: Record<string, string>
+}
+
+/**
+ * A successful one-time payment that bought credit packs → one purchase credit, keyed by the payment id
+ * (a webhook retry or the return-page sync after the webhook can't credit twice). Subscription payments
+ * and unknown products are ignored here; subscriptions go through applyEvent.
+ */
+async function applyPayment(db: ReturnType<typeof getPrisma>, p: DodoPayment): Promise<{ result: "processed" | "ignored"; note?: string }> {
+  if (p.status && p.status !== "succeeded") return { result: "ignored", note: `payment ${p.status}` }
+  if (p.subscription_id) return { result: "ignored", note: "subscription payment" }
+  const packId = PACK.productId()
+  const packs = (p.product_cart ?? []).filter((i) => packId && i.product_id === packId).reduce((n, i) => n + Math.max(1, i.quantity), 0)
+  if (!packs) return { result: "ignored", note: "no credit pack in cart" }
+  const userId = p.metadata?.user_id
+  if (!userId || !(await db.user.findUnique({ where: { id: userId }, select: { id: true } }))) return { result: "ignored", note: "no known user_id in metadata" }
+  const res = await grantCredit({
+    userId,
+    kind: "purchase",
+    usd: +(PACK.creditUsd * packs).toFixed(2),
+    externalRef: `pay:${p.payment_id}`,
+    expiresAt: new Date(Date.now() + PACK.validDays * 86_400_000),
+    note: `${packs} credit pack${packs > 1 ? "s" : ""}`,
+  })
+  return res === "granted" ? { result: "processed" } : { result: "ignored", note: "already credited" }
+}
+
 async function applyEvent(db: ReturnType<typeof getPrisma>, ev: DodoEvent): Promise<{ result: "processed" | "ignored"; note?: string }> {
+  if (ev.type === "payment.succeeded") return applyPayment(db, ev.data as unknown as DodoPayment)
   const status = STATUS[ev.type]
   if (!status && ev.type !== "subscription.updated") return { result: "ignored" }
   const d = ev.data

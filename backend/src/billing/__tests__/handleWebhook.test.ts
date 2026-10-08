@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import { Prisma } from "@prisma/client"
 
 // In-memory stand-in for the Prisma tables the webhook touches.
 type Row = Record<string, unknown>
@@ -9,8 +10,17 @@ const plans: Row[] = [
   { id: "plan-pro", tier: "pro", providerProductId: "prod_pro" },
 ]
 let failNextUpsert = false
+const credits: Row[] = []
+process.env.DODO_PACK_PRODUCT_ID = "prod_pack"
 
 const db = {
+  user: { findUnique: async ({ where }: { where: { id: string } }) => (where.id === "u1" ? { id: "u1" } : null) },
+  creditEntry: {
+    create: async ({ data }: { data: Row }) => {
+      if (credits.some((c) => c.externalRef === data.externalRef)) throw new Prisma.PrismaClientKnownRequestError("unique", { code: "P2002", clientVersion: "test" })
+      credits.push({ ...data })
+    },
+  },
   paymentEvent: {
     create: async ({ data }: { data: Row }) => {
       if (events.has(data.eventId as string)) throw new Error("unique violation")
@@ -49,6 +59,7 @@ const ev = (product_id?: string) => ({
 beforeEach(() => {
   events.clear()
   subs.clear()
+  credits.length = 0
 })
 
 describe("Dodo webhook processing", () => {
@@ -88,4 +99,21 @@ describe("Dodo webhook processing", () => {
     expect(subs.get("u1")?.status).toBe("canceled")
     expect(await handleWebhook("e9", { type: "subscription.active", data: { subscription_id: "sub_3", product_id: "prod_pro", customer: { customer_id: "cus_unknown" } } })).toBe("ignored")
   })
+
+  it("a credit-pack payment credits once, even when Dodo delivers it again under a new event id", async () => {
+    const pay = { type: "payment.succeeded", data: { payment_id: "pay_1", status: "succeeded", product_cart: [{ product_id: "prod_pack", quantity: 1 }], metadata: { user_id: "u1" } } }
+    expect(await handleWebhook("p1", pay as never)).toBe("processed")
+    expect(credits).toHaveLength(1)
+    expect(credits[0]).toMatchObject({ userId: "u1", kind: "purchase", amountMicros: 4_250_000n, externalRef: "pay:pay_1" })
+    expect(await handleWebhook("p1-retry-new-id", pay as never)).toBe("ignored") // same payment, different webhook id
+    expect(credits).toHaveLength(1)
+    expect(subs.has("u1")).toBe(false) // a pack never creates or changes a subscription
+  })
+
+  it("ignores payments that aren't credit packs or have no known user", async () => {
+    expect(await handleWebhook("p2", { type: "payment.succeeded", data: { payment_id: "pay_2", status: "succeeded", product_cart: [{ product_id: "prod_other", quantity: 1 }], metadata: { user_id: "u1" } } } as never)).toBe("ignored")
+    expect(await handleWebhook("p3", { type: "payment.succeeded", data: { payment_id: "pay_3", status: "succeeded", product_cart: [{ product_id: "prod_pack", quantity: 1 }], metadata: { user_id: "nobody" } } } as never)).toBe("ignored")
+    expect(credits).toHaveLength(0)
+  })
 })
+

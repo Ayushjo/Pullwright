@@ -37,6 +37,8 @@ export type TaskOptions = {
   /** Which API key pays for this task: the operator's platform key, or the user's own. */
   keyKind?: "platform" | "byok" | "wallet"
   keyProvider?: "openai" | "openrouter"
+  /** Set only when the task runs on our models paid from the user's credits; the only tasks ever debited. */
+  fundedBy?: "credits"
   /** Per-task spend cap in USD (defaults from TASK_BUDGET_USD, scaled by plan size, raisable by the user). */
   capUsd?: number
   /** Eval A/B only: "direct" bypasses the gateway (P0 transport); "unpaced" keeps the gateway but drops free-tier pacing seeds. */

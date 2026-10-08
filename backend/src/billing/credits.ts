@@ -75,6 +75,8 @@ export type CreditSummary = {
   trialOnly: boolean
   nextExpiry: { atIso: string; usd: number } | null
   overdraftUsd: number
+  /** What's left of live Pro monthly grants (for "included usage this month"). */
+  grantRemainingUsd: number
 }
 
 export async function creditSummary(userId: string, now = new Date()): Promise<CreditSummary> {
@@ -98,6 +100,7 @@ export async function creditSummary(userId: string, now = new Date()): Promise<C
     trialOnly: buckets.length > 0 && buckets.every((b) => b.kind === "trial"),
     nextExpiry: expiring ? { atIso: expiring.expiresAt!.toISOString(), usd: toUsd(expiring.remainingMicros) } : null,
     overdraftUsd: toUsd(overdraftMicros),
+    grantRemainingUsd: toUsd(buckets.filter((b) => b.kind === "grant").reduce((s, b) => s + b.remainingMicros, 0)),
   }
 }
 
