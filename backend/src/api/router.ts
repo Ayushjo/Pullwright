@@ -20,6 +20,7 @@ import { createRedisClient } from "../config/redis.js"
 import type { Redis } from "ioredis"
 import { getSpendLedger } from "../agent/spend.js"
 import { getEntitlement } from "../billing/index.js"
+import { creditSummary } from "../billing/credits.js"
 import { diffStat, diffVs, restoreCheckpoint, tasksRoot } from "../agent/git.js"
 import { filterPatch, metricsOf, spec, taskCap } from "../agent/pipeline.js"
 import { configuredLanes, getGateway } from "../llm/lanes.js"
@@ -167,7 +168,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
       return res.status(401).json({ error: "Sign in again to create tasks" })
     }
     try {
-      let keyChoice: { keyKind: "platform" | "byok" | "wallet"; keyProvider?: "openai" | "openrouter" } = { keyKind: "platform" }
+      let keyChoice: { keyKind: "platform" | "byok" | "wallet"; keyProvider?: "openai" | "openrouter"; fundedBy?: "credits"; capUsd?: number } = { keyKind: "platform" }
       let tier: "free" | "pro" = "free"
       let queueClass: "free" | "paid" = "free"
       const owners = (process.env.OPERATOR_GITHUB_LOGINS ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean)
@@ -176,9 +177,15 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
         const ent = await getEntitlement(req.session.userId)
         tier = ent.tier
         if (!ent.key) return res.status(402).json({ error: ent.reason ?? "Add an API key or upgrade to run tasks.", code: "needs_key_or_plan" })
-        keyChoice = ent.key.kind === "byok" ? { keyKind: "byok", keyProvider: ent.key.provider } : ent.key.kind === "wallet" ? { keyKind: "wallet" } : { keyKind: "platform" }
-        // Paid work gets the reserved paid workers: a Pro plan, or a paid key of the user's own.
-        if (tier === "pro" || ent.key.kind === "byok" || (ent.key.kind === "wallet" && !ent.key.allFree)) queueClass = "paid"
+        keyChoice =
+          ent.key.kind === "byok"
+            ? { keyKind: "byok", keyProvider: ent.key.provider }
+            : ent.key.kind === "wallet"
+              ? { keyKind: "wallet" }
+              : { keyKind: "platform", fundedBy: "credits", capUsd: ent.key.capUsd }
+        // Paid work gets the reserved paid workers: a Pro plan, a paid key of the user's own, or bought credit
+        // (trial credit queues with free work).
+        if (tier === "pro" || ent.key.kind === "byok" || (ent.key.kind === "wallet" && !ent.key.allFree) || (ent.key.kind === "platform" && !ent.key.trialOnly)) queueClass = "paid"
       }
       // A private repo never reaches a key that trains on prompts without consent. Only looked up when the
       // wallet can't plan and code without such keys (one GitHub call); the pipeline re-checks after fetch.
@@ -198,6 +205,13 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
         // Admission: tasks per rolling 24 h and active tasks (running or paused), atomically per user.
         const taskId = randomUUID()
         const uid = !req.isOperator && !isOwner ? req.session?.userId : undefined
+        // Credit-funded: re-read the balance under the admission lock, so two quick submits can't both
+        // reserve the same dollars (the task row, with its cap, is written before the lock is released).
+        if (uid && keyChoice.fundedBy === "credits") {
+          const again = await getEntitlement(uid)
+          if (again.key?.kind !== "platform") return res.status(402).json({ error: again.reason ?? "Your credit balance is used up.", code: "needs_key_or_plan" })
+          keyChoice.capUsd = Math.min(keyChoice.capUsd ?? Infinity, again.key.capUsd)
+        }
         if (uid) {
           await pruneActive(admissionRedis(), uid, async (id) => {
             const t = await taskStore.get(id)
@@ -529,6 +543,13 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     if (!parsed.success) return res.status(400).json({ error: "Add between $0.05 and $0.50" })
     if (!["needs_review", "failed"].includes(s.status) || !s.runMessages?.length) {
       return res.status(409).json({ error: "Only a run that stopped early can be continued" })
+    }
+    // A credit-funded task can only grow its cap by what the balance still covers.
+    if (s.options.fundedBy === "credits" && s.userId) {
+      const c = await creditSummary(s.userId)
+      if (c.availableUsd < parsed.data.addUsd) {
+        return res.status(402).json({ error: `Your available credit is $${c.availableUsd.toFixed(2)} — not enough to add $${parsed.data.addUsd.toFixed(2)}.`, code: "insufficient_credits" })
+      }
     }
     const next = await taskStore.transition(s.taskId, ["needs_review", "failed"], (cur) => {
       const n: TaskState = { ...cur, status: "running", statusDetail: "Continuing with more budget", options: { ...cur.options, capUsd: +(taskCap(cur) + parsed.data.addUsd).toFixed(2) } }

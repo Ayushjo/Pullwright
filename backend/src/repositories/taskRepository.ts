@@ -40,6 +40,8 @@ export type CreateTaskInput = {
   issueNumber: number
   githubLogin?: string
   branchName?: string
+  /** Stored at creation so a queued credit-funded task already holds back its cap. */
+  options?: unknown
 }
 
 export async function createTaskInDb(input: CreateTaskInput): Promise<void> {
@@ -58,6 +60,7 @@ export async function createTaskInDb(input: CreateTaskInput): Promise<void> {
       branchName: input.branchName ?? `pullwright/task-${input.taskId}`,
       githubLogin: input.githubLogin ?? null,
       status: "queued",
+      ...(input.options !== undefined ? { options: JSON.parse(JSON.stringify(input.options)) as Prisma.InputJsonValue } : {}),
     },
   })
 }

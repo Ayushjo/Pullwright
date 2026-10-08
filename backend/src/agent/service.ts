@@ -6,6 +6,7 @@ import type { EventBus } from "../events/eventBus.js"
 import type { TaskRegistry } from "../store/taskRegistry.js"
 import { createTaskInDb, saveMetricsToDb, syncTaskStateToDb } from "../repositories/taskRepository.js"
 import { recordTaskUsage } from "../repositories/usageRepository.js"
+import { recordTaskSpend } from "../billing/credits.js"
 import logger from "../logger.js"
 import { Pipeline, metricsOf, type StageName } from "./pipeline.js"
 import { parseIssueUrl } from "./git.js"
@@ -75,6 +76,10 @@ const LOCK_MS = 90_000
 export function makeStatusSink(registry: TaskRegistry) {
   return async (s: TaskState) => {
     s.costUsd = getSpendLedger().taskSpent(s.taskId)
+    // Only tasks created as credit-funded are ever debited (one ledger row per task, kept at its spend).
+    if (s.userId && s.options.fundedBy === "credits" && s.costUsd > 0) {
+      await recordTaskSpend(s.userId, s.taskId, s.costUsd).catch((e) => logger.error(`credit debit failed for ${s.taskId}: ${e}`))
+    }
     await registry.registerOrUpdate(s.taskId, {
       issueUrl: s.issueUrl,
       issueTitle: s.title || `Issue #${s.issueNumber}`,
@@ -147,6 +152,11 @@ export async function createTask(input: CreateTaskInput, registry: TaskRegistry)
       keyKind: input.options?.keyKind ?? "platform",
       ...(input.options?.keyProvider ? { keyProvider: input.options.keyProvider } : {}),
       queueClass: input.options?.queueClass ?? "free",
+      ...(input.options?.allowTraining ? { allowTraining: true } : {}),
+      ...(input.options?.transport ? { transport: input.options.transport } : {}),
+      ...(input.options?.specCheck === false ? { specCheck: false as const } : {}),
+      ...(input.options?.fundedBy === "credits" ? { fundedBy: "credits" as const } : {}),
+      ...(input.options?.capUsd && input.options.capUsd > 0 ? { capUsd: input.options.capUsd } : {}),
     },
     rejectedFiles: [],
     checkpoints: [],
@@ -167,6 +177,7 @@ export async function createTask(input: CreateTaskInput, registry: TaskRegistry)
       issueTitle: state.title,
       issueNumber: ref.issueNumber,
       ...(input.githubLogin ? { githubLogin: input.githubLogin } : {}),
+      options: state.options,
     })
   }
   await enqueue("plan", taskId)
