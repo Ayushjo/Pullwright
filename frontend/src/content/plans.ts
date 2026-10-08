@@ -2,7 +2,8 @@
  * The three ways to use Pullwright, for Pricing. Numbers mirror the backend:
  * daily and concurrent limits — backend/src/entitlements/admission.ts (limitsFor);
  * queue class — backend/src/api/router.ts (Pro, or any paid key of your own, gets the priority pool);
- * Pro price and included usage — the Pro plan row / Dodo product ($8/month, $3 included).
+ * Pro price and included usage — the Pro plan row / Dodo product ($8/month, $3 included);
+ * credit pack and trial — backend/src/billing/index.ts (PACK) and billing/trial.ts (TRIAL).
  */
 export type WayId = 'free' | 'keys' | 'pro'
 
@@ -58,7 +59,7 @@ export const WAYS: Way[] = [
     tag: 'Popular',
     blurb: 'Runs on our models with $3 of usage included every month. Your free keys still go first, so it lasts longer.',
     includes: 'Everything in your paid keys, plus:',
-    features: ['25 tasks a day, three at once', '$3 of model usage each month (≈35 hard tasks)', 'No keys needed at all'],
+    features: ['25 tasks a day, three at once', '$3 of model usage each month (≈35 hard tasks)', 'No keys needed at all', 'Top up with a $5 credit pack if a month runs over'],
     cta: { label: 'Go Pro', to: '/settings' },
   },
 ]
@@ -71,6 +72,7 @@ export const COMPARE: { group?: string; label: string; values: [string | boolean
   { label: 'Running at once', values: ['1', '1', '3'] },
   { label: 'Queue', values: ['Shared', 'Priority', 'Priority'] },
   { label: 'Model usage', values: ['Your free keys', 'Your key, after the free ones', '$3 included each month'] },
+  { label: 'Credit packs ($5 → $4.25, 12 months)', values: [true, true, true] },
   { group: 'Every task', label: 'Plan you approve or edit', values: [true, true, true] },
   { label: 'Sandboxed run with your tests', values: [true, true, true] },
   { label: 'Independent review', values: [true, true, true] },
@@ -92,6 +94,14 @@ export const FAQ: [string, string][] = [
   [
     'Is my code safe?',
     'Each task runs in a throwaway sandbox with no network access after dependencies install and no credentials inside. Your GitHub token only lives in the worker that opens the PR, and no PR is opened without your click.',
+  ],
+  [
+    'Can I try it before adding a key?',
+    'Yes. Once per GitHub account you can claim $0.20 of usage on our models, enough for two tasks. It’s for GitHub accounts older than 30 days and lasts 14 days.',
+  ],
+  [
+    'Can I pay as I go instead of subscribing?',
+    'Yes. A $5 credit pack adds $4.25 of usage on our models (the rest covers payment fees), valid for 12 months, with no subscription. Every task has a hard cap, so a pack can’t be spent by one runaway task.',
   ],
   ['Can I cancel Pro?', 'Yes — manage or cancel any time from Settings. Payments are handled by Dodo Payments.'],
 ]
