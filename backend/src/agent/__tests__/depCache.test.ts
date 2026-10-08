@@ -79,16 +79,20 @@ describe("workspace janitor", () => {
     process.env.TASKS_DIR = root
     process.env.DEP_CACHE_DIR = path.join(root, "..", `cache-${path.basename(root)}`)
     const old = new Date(Date.now() - 3 * 3_600_000).toISOString()
-    for (const [id, status] of [["done", "published"], ["idle", "ready"], ["live", "running"]] as const) {
+    // Workspaces are named by task id; the janitor only touches UUID-named directories.
+    const done = "00000000-0000-4000-8000-000000000001"
+    const idle = "00000000-0000-4000-8000-000000000002"
+    const live = "00000000-0000-4000-8000-000000000003"
+    for (const [id, status] of [[done, "published"], [idle, "ready"], [live, "running"]] as const) {
       pkg(path.join(root, id, "repo"), "web")
       states.set(id, { status, updatedAt: old })
     }
     const r = await sweepWorkspaces()
     expect(r).toEqual({ removed: 1, slimmed: 1 })
-    expect(existsSync(path.join(root, "done"))).toBe(false)
-    expect(existsSync(path.join(root, "idle", "repo", "web", "package.json"))).toBe(true)
-    expect(existsSync(path.join(root, "idle", "repo", "web", "node_modules"))).toBe(false)
-    expect(existsSync(path.join(root, "live", "repo", "web", "node_modules"))).toBe(true)
+    expect(existsSync(path.join(root, done))).toBe(false)
+    expect(existsSync(path.join(root, idle, "repo", "web", "package.json"))).toBe(true)
+    expect(existsSync(path.join(root, idle, "repo", "web", "node_modules"))).toBe(false)
+    expect(existsSync(path.join(root, live, "repo", "web", "node_modules"))).toBe(true)
     expect(reapStale).toHaveBeenCalledWith(3 * 3_600_000)
   })
 })
