@@ -4,12 +4,13 @@ import { ArrowRight } from 'lucide-react'
 import AppShell from '../components/AppShell'
 import { Badge, Button, PageHeader, useToast } from '../components/ui'
 import CapacityMeter from '../components/wallet/CapacityMeter'
-import { getBilling, getWallet, openBillingPortal, startCheckout, syncBilling, type BillingInfo, type WalletView } from '../api/client'
+import CreditsCard from '../components/billing/CreditsCard'
+import { claimTrial, getBilling, getCredits, getWallet, openBillingPortal, startCheckout, syncBilling, type BillingInfo, type CreditsView, type WalletView } from '../api/client'
 
 /** White card with a mono title over a hairline. */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, id, className = '', children }: { title: string; id?: string; className?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-hairline bg-card overflow-hidden">
+    <section id={id} className={`rounded-lg border border-hairline bg-card overflow-hidden scroll-mt-24 ${className}`}>
       <h2 className="px-5 py-3.5 border-b border-hairline font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">{title}</h2>
       <div className="p-5">{children}</div>
     </section>
@@ -21,6 +22,8 @@ export default function Settings() {
   const [info, setInfo] = useState<BillingInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [wallet, setWallet] = useState<WalletView | null>(null)
+  const [credits, setCredits] = useState<CreditsView | null>(null)
+  const loadCredits = () => getCredits().then(setCredits).catch(() => setCredits(null))
   const [busy, setBusy] = useState<string | null>(null)
   // Only the newest billing response is shown: the first load can resolve after the post-checkout refresh.
   const billingSeq = useRef(0)
@@ -32,6 +35,7 @@ export default function Settings() {
 
   useEffect(() => {
     loadBilling().catch((e: Error) => setError(e.message))
+    void loadCredits()
     getWallet()
       .then(setWallet)
       .catch(() => setWallet(null))
@@ -50,10 +54,18 @@ export default function Settings() {
           }
           return
         }
+        // A credit pack: "credited" when this call added it, "succeeded" when the webhook already had.
+        if (r.status === 'credited' || r.status === 'succeeded') {
+          if (!stop) {
+            await Promise.all([loadBilling(), loadCredits()])
+            push('Credits added to your balance.', 'success')
+          }
+          return
+        }
         if (['failed', 'cancelled', 'expired', 'none'].includes(r.status)) break
         await new Promise((res) => setTimeout(res, 2500))
       }
-      if (!stop) push('Payment received — your Pro plan activates as soon as it is confirmed.', 'info')
+      if (!stop) push('Payment received — it shows up here as soon as it is confirmed.', 'info')
     })()
     return () => {
       stop = true
@@ -122,11 +134,26 @@ export default function Settings() {
                       : 'New tasks run on your keys — free ones first.'
                     : ent.key.kind === 'byok'
                       ? `New tasks use your ${ent.key.provider === 'openai' ? 'OpenAI' : 'OpenRouter'} key.`
-                      : 'New tasks use your included Pro model usage.'
+                      : `New tasks run on our models from your credit, up to $${ent.key.capUsd.toFixed(2)} each.`
                   : ent.reason}
               </p>
             </div>
           )}
+        </Section>
+
+        <Section title="Credits" id="credits" className="lg:col-span-2 lg:order-last">
+          <CreditsCard
+            view={credits}
+            busy={busy}
+            onBuy={() => run('pack', async () => void (window.location.href = (await startCheckout('pack')).url))}
+            onTrial={() =>
+              run('trial', async () => {
+                const r = await claimTrial()
+                await Promise.all([loadCredits(), loadBilling()])
+                push(`$${r.usd.toFixed(2)} of free usage added — enough for 2 tasks.`, 'success')
+              })
+            }
+          />
         </Section>
 
         <Section title="Model keys">

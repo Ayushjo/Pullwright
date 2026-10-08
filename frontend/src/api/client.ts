@@ -189,21 +189,47 @@ export type BillingInfo = {
     runsUsed: number
     hostedAllowanceUsd: number
     hostedSpentUsd: number
-    key: { kind: 'byok'; provider: KeyProvider } | { kind: 'platform' } | { kind: 'wallet'; allFree: boolean } | null
+    key:
+      | { kind: 'byok'; provider: KeyProvider }
+      | { kind: 'platform'; fundedBy: 'credits'; capUsd: number; trialOnly: boolean }
+      | { kind: 'wallet'; allFree: boolean }
+      | null
+    credits: CreditSummary | null
     reason?: string
   }
   keys: { provider: KeyProvider; last4: string; model: string | null; createdAt: string; lastUsedAt: string | null }[]
   subscription: { tier: string; status: string; currentPeriodEnd: string | null; cancelAtPeriodEnd: boolean } | null
   paymentsEnabled: boolean
+  packEnabled?: boolean
 }
 export const getBilling = () => request<BillingInfo>('/api/billing')
 export const saveApiKey = (provider: KeyProvider, key: string, model?: string) =>
   post<{ keys: BillingInfo['keys'] }>('/api/keys', { provider, key, ...(model ? { model } : {}) })
 export const deleteApiKey = (provider: KeyProvider) => request<{ keys: BillingInfo['keys'] }>(`/api/keys/${provider}`, { method: 'DELETE' })
-export const startCheckout = () => post<{ url: string }>('/api/billing/checkout')
+export const startCheckout = (kind: 'pro' | 'pack' = 'pro') => post<{ url: string }>('/api/billing/checkout', { kind })
 export const openBillingPortal = () => post<{ url: string }>('/api/billing/portal')
 /** After checkout: ask the server to confirm the subscription with Dodo (doesn't wait for the webhook). */
 export const syncBilling = () => post<{ status: string }>('/api/billing/sync')
+
+/* ── Credits (Pro's monthly usage, packs, the trial) ── */
+export type CreditSummary = {
+  balanceUsd: number
+  /** Balance minus what running credit-funded tasks could still spend. */
+  availableUsd: number
+  trialOnly: boolean
+  nextExpiry: { atIso: string; usd: number } | null
+  overdraftUsd: number
+  grantRemainingUsd: number
+}
+export type CreditRow = { kind: 'grant' | 'purchase' | 'trial' | 'debit' | 'refund' | 'adjust'; usd: number; note: string | null; taskId: string | null; expiresAt: string | null; createdAt: string }
+export type CreditsView = {
+  summary: CreditSummary
+  history: CreditRow[]
+  trial: { available: boolean; claimed: boolean; usd: number }
+  pack: { enabled: boolean; priceUsd: number; creditUsd: number; validDays: number }
+}
+export const getCredits = () => request<CreditsView>('/api/credits')
+export const claimTrial = () => post<{ ok: true; usd: number; expiresAt: string; summary: CreditSummary }>('/api/credits/trial')
 
 /* ── Wallet (free and paid model keys) ── */
 export type WalletProvider = 'gemini' | 'groq' | 'vercel' | 'openrouter' | 'openai'
