@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowLeft, ArrowRight, CircleDot, GitBranch, Box, GitPullRequest, ShieldAlert } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CircleDot, GitBranch, Box, GitPullRequest, Gift, ShieldAlert } from 'lucide-react'
 import AppShell from '../components/AppShell'
 import { BentoCard, BentoContent, Button, Input, useToast } from '../components/ui'
-import { ApiError, createTask } from '../api/client'
+import { ApiError, claimTrial, createTask, getCredits } from '../api/client'
 import { fadeUp, stagger } from '../lib/motion'
 import CapacityMeter from '../components/wallet/CapacityMeter'
 
@@ -23,6 +23,9 @@ export default function NewTask() {
   // Private repo + keys that may train on prompts: asked once, per task (server answers 409 private_repo_training).
   const [consent, setConsent] = useState<{ message: string } | null>(null)
   const [allowTraining, setAllowTraining] = useState(false)
+  // No key and no credit (402): offer the one-time free trial when this GitHub account still has it.
+  const [trialOffer, setTrialOffer] = useState<number | null>(null)
+  const [claiming, setClaiming] = useState(false)
   const navigate = useNavigate()
   const { push: pushToast } = useToast()
 
@@ -46,9 +49,30 @@ export default function NewTask() {
         setLoading(false)
         return
       }
+      if (err instanceof ApiError && err.code === 'needs_key_or_plan') {
+        const c = await getCredits().catch(() => null)
+        setTrialOffer(c?.trial.available ? c.trial.usd : null)
+      }
       pushToast(msg, 'error')
       setError(msg)
       setLoading(false)
+    }
+  }
+
+  async function startTrial() {
+    setClaiming(true)
+    try {
+      await claimTrial()
+      setTrialOffer(null)
+      setError('')
+      pushToast('Free trial added — starting your task.', 'success')
+      const { taskId } = await createTask(url.trim(), { autoApprove: !approvePlan, ...(allowTraining ? { allowTraining: true } : {}) })
+      navigate(`/tasks/${taskId}`)
+    } catch (err) {
+      setTrialOffer(null)
+      setError((err as Error).message)
+    } finally {
+      setClaiming(false)
     }
   }
 
@@ -116,6 +140,20 @@ export default function NewTask() {
                     <span className="block text-xs text-muted-foreground">Recommended. Nothing is changed and no PR is opened without your review.</span>
                   </span>
                 </label>
+
+                {trialOffer !== null && (
+                  <div className="border border-hairline bg-card p-3.5">
+                    <p className="flex items-start gap-2 text-[13px]">
+                      <Gift className="w-4 h-4 shrink-0 mt-0.5 text-primary" strokeWidth={1.75} />
+                      <span>
+                        Try it first: ${trialOffer.toFixed(2)} of usage on our models, enough for 2 tasks. Once per GitHub account, no card.
+                      </span>
+                    </p>
+                    <Button type="button" size="sm" className="mt-3 rounded-none px-4" loading={claiming} onClick={startTrial}>
+                      Use the free trial for this task
+                    </Button>
+                  </div>
+                )}
 
                 <AnimatePresence initial={false}>
                   {consent && (
