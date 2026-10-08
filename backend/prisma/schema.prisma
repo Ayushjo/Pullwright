@@ -62,12 +62,15 @@ model User {
   email       String?
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   lastLoginAt DateTime @default(now()) @map("last_login_at") @db.Timestamptz(6)
+  /// GitHub account creation date (trial eligibility: accounts at least 30 days old).
+  githubCreatedAt DateTime? @map("github_created_at") @db.Timestamptz(6)
 
   tasks         Task[]
   apiKeys       ApiKey[]
   subscription  Subscription?
   usageRecords  UsageRecord[]
   orgMemberships OrganizationMember[]
+  credits       CreditEntry[]
 
   @@map("users")
 }
@@ -243,6 +246,36 @@ model LlmCall {
   @@index([taskId])
   @@index([keyOwner, createdAt])
   @@map("llm_calls")
+}
+
+enum CreditKind {
+  grant     // Pro's monthly included usage
+  purchase  // a credit pack
+  trial     // the one-time free trial
+  debit     // spend of a task that ran on our models (one row per task, updated as it spends)
+  refund
+  adjust
+}
+
+/// Credits ledger, micro-USD. Positive = credit, negative = debit. The balance is computed oldest-expiry
+/// first in code (billing/credits.ts). externalRef makes grants idempotent (Dodo payment id, subscription
+/// period, trial:<githubId>); taskId makes the per-task debit an upsert.
+model CreditEntry {
+  id          String     @id @default(uuid()) @db.Uuid
+  userId      String     @map("user_id") @db.Uuid
+  kind        CreditKind
+  amountMicros BigInt    @map("amount_micros")
+  externalRef String?    @unique @map("external_ref")
+  taskId      String?    @unique @map("task_id") @db.Uuid
+  expiresAt   DateTime?  @map("expires_at") @db.Timestamptz(6)
+  note        String?
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("credit_ledger")
 }
 
 model PaymentEvent {
