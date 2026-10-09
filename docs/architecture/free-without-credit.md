@@ -101,3 +101,22 @@ Each task used ≈ 8 Flash requests (spec check + planning), so a single user's 
 
 A free **OpenRouter** key adds a reviewer as safe as gpt-5-mini on the replay set: Nemotron 3 Super, 2/14 false approvals (both H01) and 1/10 false rejections. Groq gpt-oss had 1/9 false approvals and the Flash pool 4/14. It has no 8K request cap, so it also covers the large-repo patches Groq can't take. Only 50 free requests a day per OpenRouter account, so it sits after Groq in the review order. As a planner it is not yet measured: one H03 attempt ran out of daily quota after 14 calls, still planning. See qualification.md §10.
 
+
+## Update 10-08: ladder without credit, L06–R03
+
+Profile `lanes/free-nocredit.env` (plan: Gemini Flash pool; execute: Flash-Lite; review: Groq gpt-oss → Flash pool), `--tag free-nocredit-v1`, $0 for every item.
+
+| Item | No credit (10-08) | Free with credit (§9, 10-03) | Calls | Min | Planner models |
+|---|---|---|---|---|---|
+| L06 | ✅ pass | ✅ | 15 | 0.9 | 3.6, preview |
+| L07 | ✅ pass | ✅ | 20 | 1.1 | preview |
+| L08 | ✅ pass | ✅ | 27 | 1.5 | preview |
+| L09 | ✅ blocked as designed | ✅ | 1 | 0.3 | (spec check) |
+| L10 | ✅ pass | ✅ | 15 | 1.2 | 3.6 |
+| L11 | ✅ pass | ✅ | 25 | 1.2 | 3.6, preview |
+| R01 | ✅ pass | ✅ | 11 | 1.5 | preview |
+| R02 | ✅ pass | ✅ | 29 | 7.5 | (pool) |
+| R03 | ✅ pass (ready) | ⚠️ needs review (step limit) | 60 | 12 | 3.5, 3.8 |
+| R04 … H10 | parked on the Flash pool's daily quota at R04 (12 planner calls); the runner then stopped with the session, so it needs a restart from R04 | | | | |
+
+**So far: L 11/11 (with L01–L05: 10/11, the L01 miss is the literal-script hidden test), R01–R03 3/3, all reviewed by Groq, $0.** Matches free-with-credit on every item so far and is better on R03. A user's 3 tasks/day fit the ~100 Flash requests/day; this campaign runs ~10 tasks/day back to back, which is why it parks.

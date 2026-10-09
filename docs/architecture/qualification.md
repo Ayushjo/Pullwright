@@ -289,7 +289,9 @@ Nemotron 3 Super is **as safe as gpt-5-mini**: its only false approvals are the 
 
 **Decision.** A free OpenRouter key now **reviews on Nemotron 3 Super**, ordered Vercel credit → Groq gpt-oss → **Nemotron** → Flash pool → paid keys (`wallet/routing.ts`, test in `routing.test.ts`). It sits behind Groq to save its small daily budget. Like Gemini free, it is kept off private repos unless the user allows it, because OpenRouter's free tier may train on prompts.
 
-**Open.** Rerun the H03 planner test after a reset (00:00 UTC) on its own day, so the campaign isn't sharing the backend profile; if it passes, add Nemotron as the planner fallback after the Gemini Flash pool. Retry Laguna S 2.1 and Gemma 4 31B when their upstreams are up. The two keys used may share one account's 50/day; one key's `free_model_daily_requests` is the only reliable gauge.
+**Planner rerun (10-08, `--tag or-free-plan-v2`, own day, fresh 50/50 quota): ✅ pass.** H03 planned on Nemotron 3 Super (spec check + plan, ≈6 planning calls this time), executed on Flash-Lite, reviewed by Groq: hidden test passes, suite 27 pass / 1 pre-existing fail, reviewer ✔ high, 45 calls, 4.5 min, $0. P0 gpt-5-mini and free mode with credit (§9) also passed H03. One run only, so Nemotron is a **candidate** planner fallback after the Gemini Flash pool (it would spend at most ~10 of the 50 daily requests per plan); not wired yet.
+
+**Open.** (Superseded by the rerun above.) Rerun the H03 planner test after a reset (00:00 UTC) on its own day, so the campaign isn't sharing the backend profile; if it passes, add Nemotron as the planner fallback after the Gemini Flash pool. Retry Laguna S 2.1 and Gemma 4 31B when their upstreams are up. The two keys used may share one account's 50/day; one key's `free_model_daily_requests` is the only reliable gauge.
 
 ## Status of P2 (10-03)
 
