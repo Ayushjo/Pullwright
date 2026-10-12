@@ -55,5 +55,13 @@ describe("walletLanes", () => {
     expect(names(walletLanes("u", keys, "judge", { privateRepo: true })).some((n) => n.startsWith("openrouter:"))).toBe(false)
     expect(names(walletLanes("u", [k("openrouter", "paid")], "judge"))).toEqual(["openrouter:openai/gpt-5-mini"])
   })
-})
 
+  it("a free OpenRouter key is the planner fallback after the Gemini Flash pool, before paid keys", () => {
+    const plan = names(walletLanes("u", [k("openai", "paid"), k("gemini"), k("openrouter", "free")], "plan"))
+    const or = plan.indexOf("openrouter:nvidia/nemotron-3-super-120b-a12b:free")
+    expect(or).toBeGreaterThan(plan.lastIndexOf("gemini:gemini-3.7-flash"))
+    expect(or).toBeLessThan(plan.indexOf("openai:gpt-5-mini"))
+    expect(walletLanes("u", [k("openrouter", "free")], "plan", { privateRepo: true })).toEqual([]) // trains: needs consent
+    expect(walletCapability([k("openrouter", "free")]).canRun).toBe(false) // can plan, but nothing executes
+  })
+})

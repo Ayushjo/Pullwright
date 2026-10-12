@@ -5,7 +5,8 @@ import type { WalletProvider } from "./credentials.js"
  * Which of a user's keys serve each role, in order (free → free credit → the user's paid keys).
  * Orders follow the P2 measurements (docs/architecture/qualification.md, free-without-credit.md):
  * - plan / review: gpt-5-mini on the Vercel free credit is the measured best; then the Gemini Flash pool
- *   (review: Groq gpt-oss-120b first — 1/9 false approvals vs Flash 4/14); paid keys last.
+ *   (review: Groq gpt-oss-120b first — 1/9 false approvals vs Flash 4/14); then OpenRouter's free Nemotron
+ *   (planned H03 end to end, 10-08); paid keys last.
  * - execute: Gemini Flash-Lite (25/26 with a credit planner), then the credit, then paid.
  * - vision: Groq qwen3.8-27b and Flash-Lite read screenshots exactly; gpt-oss can't.
  * Flash-Lite never reviews (8/11 false approvals).
@@ -18,8 +19,9 @@ const FLASH_POOL = ["gemini-3.6-flash", "gemini-3-flash-preview", "gemini-3.8-fl
 const LITE_POOL = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
 /**
  * The one free OpenRouter model that passed tools + two-turn + parallel + JSON (2026-10-04 probe) and
- * reviews as safely as gpt-5-mini (replay: 2/14 false approvals, both H01; 1/10 false rejections).
- * OpenRouter's free models share 50 requests/day per account, so it sits behind the lanes with more room.
+ * reviews as safely as gpt-5-mini (replay: 2/14 false approvals, both H01; 1/10 false rejections), and
+ * planned H03 end to end (hidden test passes, ~6 planning calls). OpenRouter's free models share 50
+ * requests/day per account, so it sits behind the lanes with more room, as the fallback when Flash is out.
  */
 const OR_FREE = "nvidia/nemotron-3-super-120b-a12b:free"
 
@@ -56,6 +58,7 @@ export function walletLanes(userId: string, keys: Key[], role: Role, opts: { pri
     case "plan":
       add(credit, ["openai/gpt-5-mini"], "free_credit")
       add(gemini, FLASH_POOL, "free")
+      add(openrouterFree, [OR_FREE], "free")
       add(openrouterPaid, ["openai/gpt-5-mini"], "byok")
       add(openai, ["gpt-5-mini"], "byok")
       break
