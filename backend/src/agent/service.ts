@@ -62,6 +62,20 @@ export async function enqueue(stage: StageName, taskId: string, opts: { delayMs?
   return gen
 }
 
+/** Drop a parked task's pending resume job (on cancel), so nothing stays queued for a finished task. */
+export async function removeResumeJob(taskId: string, stage: string, gen: number): Promise<boolean> {
+  const id = `${taskId}:${stage}:${gen}`
+  let removed = false
+  for (const q of Object.values(queues)) {
+    const job = await q.getJob(id)
+    if (job && (await job.isDelayed().catch(() => false))) {
+      await job.remove().catch(() => {})
+      removed = true
+    }
+  }
+  return removed
+}
+
 /** A parked task whose wait has run out without resuming is finalized (partial work kept for review). */
 export const MAX_PARK_MS = Number(process.env.PW_MAX_PARK_HOURS ?? 48) * 3_600_000
 

@@ -769,6 +769,8 @@ export class Pipeline {
       await this.emit(taskId, { type: "diff_ready", files: s.stats })
 
       if (!patch.trim()) return this.fail(s, "The agent finished without changing any files")
+      // Cancelled while the checks ran: stop here (the patch is saved) instead of reviewing and finishing.
+      if (await taskStore.isCancelled(taskId)) return this.cancelled(s)
 
       // Independent review if the finish path didn't already produce a verdict (e.g. forced review).
       if (!s.verdict) {
@@ -780,6 +782,7 @@ export class Pipeline {
         }
       }
       delete s.runUsed
+      if (await taskStore.isCancelled(taskId)) return this.cancelled(s)
       const good = !forcedReview && (s.gate?.ok ?? false) && (s.verdict?.success ?? false)
       s.costUsd = getSpendLedger().taskSpent(taskId)
       if (good && s.options.autoPublish) {
