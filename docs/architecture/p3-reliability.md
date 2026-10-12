@@ -68,3 +68,30 @@ Each sandbox has its own CPU and memory caps, but nothing stopped several tasks 
 - A task's own commands are sequential, so a task never holds a slot while waiting for another; the semaphore can't deadlock.
 
 Tests (`execLimit.test.ts`): the cap is never exceeded, waiters are served FIFO, a slot is freed when the command throws, and a double release doesn't free a second slot.
+
+## Kill stress test (10-12)
+
+Harness (`.tasks/scratch/killtest.mts`): create a local eval task (never published), cancel it at a chosen point, wait 25 s, then check:
+
+- status is `cancelled`;
+- no sandbox container is labelled with the task;
+- no waiting, delayed, active or prioritized job remains in either queue;
+- no `pw:lock:<id>`;
+- no admission slot is held;
+- the model call count doesn't move after the cancel.
+
+The parked case forces a park by putting the profile's planner lanes in a 15-minute gateway cooldown (`pw:qcool:…`), then lifts it.
+
+| Cancel at | First run | Cause | After the fix |
+|---|---|---|---|
+| parked (waiting for quota) | ❌ status cancelled, but the delayed resume job stayed queued (it would have no-op'd at the resume time) | the cancel path only unmarked the park | ✅ the resume job is removed on cancel (`removeResumeJob`) |
+| planning (2 calls in) | ✅ stopped in 1.4 s, no calls after | | |
+| awaiting approval | ✅ 1.4 s | | |
+| running (3 tool calls in) | ✅ 1.4 s, container removed | | |
+| validating (tests running) | ❌ **ignored: finished as `ready`** although cancel answered 200 | the finish path (checks → review → status) never looked at the cancel flag | ✅ stops in 5 s as `cancelled`; the patch is kept; one call already in flight completes |
+| cancel again / after terminal | ✅ 409 "Task is already cancelled", nothing changes | | |
+| publishing | not testable on local repos | publishing ignored the flag and opened the PR anyway | cancel now answers 409 `publishing` ("can't be stopped, close it on GitHub") |
+
+- **Expired park:** a task parked longer than `PW_MAX_PARK_HOURS` (48 h) is failed on worker start with "no model was available for N h". It leaves no lock, container or delayed job.
+- **Job retention is bounded:** completed jobs are kept 1 h (max 200), failed jobs 24 h (max 500).
+- **Workspaces** of cancelled tasks stay until the janitor's terminal sweep (`JANITOR_TERMINAL_HOURS`, 1 h).
