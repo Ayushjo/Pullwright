@@ -57,3 +57,14 @@ When no model lane can take the next call (`NoLaneAvailable` with a retry time),
 
 - A longer repeated-kill stress run (one kill per test so far, plus the orphan case).
 - Per-host exec semaphore for CPU-heavy tests (needed once a host runs several tasks at once).
+
+## Sandbox exec limit (10-12)
+
+Each sandbox has its own CPU and memory caps, but nothing stopped several tasks on one worker from running installs and test suites at the same moment. On a small host that turned into spurious `timeout -s KILL` failures. `Sandbox.exec` now waits for a slot under a process-wide FIFO semaphore (`agent/execLimit.ts`):
+
+- `SANDBOX_MAX_EXEC` sets the number of slots; the default is CPUs − 1, at least 1.
+- Time spent waiting for a slot doesn't count toward the command's timeout.
+- Waits over 2 s are logged.
+- A task's own commands are sequential, so a task never holds a slot while waiting for another; the semaphore can't deadlock.
+
+Tests (`execLimit.test.ts`): the cap is never exceeded, waiters are served FIFO, a slot is freed when the command throws, and a double release doesn't free a second slot.

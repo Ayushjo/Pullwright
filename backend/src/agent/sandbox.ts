@@ -6,6 +6,7 @@ import { PassThrough } from "stream"
 import type Docker from "dockerode"
 import { createDockerClient } from "../config/docker.js"
 import logger from "../logger.js"
+import { execLimit } from "./execLimit.js"
 
 /**
  * Sandbox provider (shape borrowed from the E2B SDK: create / exec / kill).
@@ -93,8 +94,17 @@ export class Sandbox {
     return new Sandbox(docker, container, taskId)
   }
 
-  /** Runs `bash -c cmd` with a hard kill after `timeoutMs`. Output is stdout+stderr interleaved. */
+  /**
+   * Runs `bash -c cmd` with a hard kill after `timeoutMs`. Output is stdout+stderr interleaved. Waits for
+   * a slot under the worker-wide exec limit first; the wait doesn't count toward the timeout.
+   */
   async exec(cmd: string, timeoutMs = 60_000, cwd = "/workspace"): Promise<ExecResult> {
+    const { value, waitedMs } = await execLimit.run(() => this.execNow(cmd, timeoutMs, cwd))
+    if (waitedMs > 2_000) logger.info(`⏳ ${this.taskId}: waited ${(waitedMs / 1000).toFixed(1)} s for a sandbox slot (${execLimit.max} at once)`)
+    return value
+  }
+
+  private async execNow(cmd: string, timeoutMs: number, cwd: string): Promise<ExecResult> {
     const started = Date.now()
     const secs = Math.max(1, Math.ceil(timeoutMs / 1000))
     const exec = await this.container.exec({
