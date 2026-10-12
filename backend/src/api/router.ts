@@ -461,6 +461,10 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     const s = await load(req, res)
     if (!s) return
     if (TERMINAL.includes(s.status)) return res.status(409).json({ error: `Task is already ${s.status}` })
+    // Opening the PR is one short step that doesn't stop halfway; saying "cancelled" here would be untrue.
+    if (s.status === "publishing") {
+      return res.status(409).json({ error: "The pull request is being opened right now and can't be stopped. Close it on GitHub if you don't want it.", code: "publishing" })
+    }
     await taskStore.cancel(s.taskId)
     // Idle tasks are cancelled right here; a running stage sees the flag and stops itself.
     const idle = await taskStore.transition(s.taskId, ["awaiting_approval", "needs_input", "ready", "needs_review", "queued", "parked"], (cur) => ({
