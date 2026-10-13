@@ -125,10 +125,29 @@ deployed HTTPS backend exists, the return page confirms purchases through `POST 
   cap and reset at UTC midnight, kill switch.
 - `creditDebit.test.ts` (3): only credit tasks are debited; `createTask` keeps funding, cap and consent.
 
+## End-to-end test (10-13, Dodo test mode, Brave, signed in as the owner with `OPERATOR_GITHUB_LOGINS=` so billing applies)
+
+The owner's 3 wallet keys were paused for the run (status only, backup first) and restored afterwards, so credit had to pay.
+
+| Step | Result |
+|---|---|
+| First billing read on a Pro (test) subscription | the $3 monthly grant was created once for the period (`pro:<sub>:2026-11-04`) |
+| Settings → "Try 2 tasks free" | +$0.20, expires 27 Oct; the button disappears; ~8 s (GitHub account-age lookup + DB) |
+| Claim again | 409 `already_claimed` |
+| New task on `Ayushjo/devin-test-app#1` | `keyKind: platform`, `fundedBy: credits`, `capUsd: 0.30`, paid queue; available dropped by the cap ($3.20 → $2.90) while it ran |
+| Task finished | ready, tests passed and the reviewer approved, 10 calls, **$0.005422**, debited in one row (updated as it spent), drawn from the trial first (it expires soonest) |
+| A cancelled task (1 call) | −$0.000529; nothing held once it stopped |
+| Balance | $3.20 − 0.005422 − 0.000529 = **$3.194049**, exact |
+| Settings → "Buy $4.25 credit — $5.00" → Dodo test checkout (US test address, published test card) | payment succeeded; the return page confirmed it with Dodo (`/billing/sync` → `credited`); **+$4.25**, valid to 13 Oct 2027; balance $7.444049 |
+| Confirm the same payment again | `succeeded`, still one purchase row, balance unchanged |
+
+Found and fixed during the run:
+- Every billing read re-inserted the Pro grant and let the unique key reject it. That was harmless, but it logged a Prisma error each time; the grant row is now looked up first.
+- On the return from checkout an older `/credits` response could land last, so the history list was stale until a reload. The newest response now wins.
+- Sub-cent task debits showed as "−$0.00"; they now show 3 decimals.
+- The active-limit message said "Wait for it" with 3 tasks running, and linked to plans; it now reads "one of them" and links to the running tasks.
+
 ## Not done yet
 
-- End-to-end in test mode: buy a pack through Dodo checkout, claim the trial, run a credit task, and watch
-  the debit. This is waiting for the free-nocredit campaign to finish so the backend can restart on the
-  new code.
-- A deployed webhook endpoint (EC2) and live-mode products.
+- A deployed webhook endpoint (EC2, `api.pullwright.iayush.com`) and live-mode products. In test mode the return page already confirms purchases without the webhook.
 - Refunds through Dodo (`refund.succeeded` → a negative `adjust` row removing the refunded credit) once live.
