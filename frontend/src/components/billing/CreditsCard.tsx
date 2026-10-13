@@ -12,7 +12,8 @@ const KIND: Record<CreditRow['kind'], string> = {
   adjust: 'Adjustment',
 }
 
-const usd = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(n).toFixed(2)}`
+// Task debits are often fractions of a cent: show 3 decimals there instead of a misleading "$0.00".
+const usd = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(n) > 0 && Math.abs(n) < 0.01 ? Math.abs(n).toFixed(3) : Math.abs(n).toFixed(2)}`
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 
 /**

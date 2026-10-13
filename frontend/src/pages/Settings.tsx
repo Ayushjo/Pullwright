@@ -23,7 +23,14 @@ export default function Settings() {
   const [error, setError] = useState<string | null>(null)
   const [wallet, setWallet] = useState<WalletView | null>(null)
   const [credits, setCredits] = useState<CreditsView | null>(null)
-  const loadCredits = () => getCredits().then(setCredits).catch(() => setCredits(null))
+  // Same guard as billing: on the return from checkout an older response must not overwrite the newer one.
+  const creditsSeq = useRef(0)
+  const loadCredits = () => {
+    const seq = ++creditsSeq.current
+    return getCredits()
+      .then((c) => seq === creditsSeq.current && setCredits(c))
+      .catch(() => seq === creditsSeq.current && setCredits(null))
+  }
   const [busy, setBusy] = useState<string | null>(null)
   // Only the newest billing response is shown: the first load can resolve after the post-checkout refresh.
   const billingSeq = useRef(0)
