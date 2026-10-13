@@ -46,11 +46,14 @@ export const TRIAL_TASK_CAP_USD = Number(process.env.TRIAL_TASK_CAP_USD ?? 0.1)
  */
 async function ensureProGrant(userId: string, sub: { id: string; providerSubscriptionId: string | null; currentPeriodEnd: Date | null }, usd: number) {
   if (!sub.currentPeriodEnd || sub.currentPeriodEnd.getTime() <= Date.now() || !(usd > 0)) return
+  const externalRef = `pro:${sub.providerSubscriptionId ?? sub.id}:${sub.currentPeriodEnd.toISOString().slice(0, 10)}`
+  // Look first: this runs on every entitlement read, and a duplicate insert (though harmless) logs an error.
+  if (await getPrisma().creditEntry.findUnique({ where: { externalRef }, select: { id: true } })) return
   await grantCredit({
     userId,
     kind: "grant",
     usd,
-    externalRef: `pro:${sub.providerSubscriptionId ?? sub.id}:${sub.currentPeriodEnd.toISOString().slice(0, 10)}`,
+    externalRef,
     expiresAt: sub.currentPeriodEnd,
     note: "Pro monthly included usage",
   })

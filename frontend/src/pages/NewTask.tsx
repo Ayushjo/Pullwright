@@ -18,6 +18,7 @@ const STEPS = [
 export default function NewTask() {
   const [url, setUrl] = useState(() => new URLSearchParams(window.location.search).get('url') ?? '')
   const [error, setError] = useState('')
+  const [errorCode, setErrorCode] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [approvePlan, setApprovePlan] = useState(true)
   // Private repo + keys that may train on prompts: asked once, per task (server answers 409 private_repo_training).
@@ -53,6 +54,7 @@ export default function NewTask() {
         const c = await getCredits().catch(() => null)
         setTrialOffer(c?.trial.available ? c.trial.usd : null)
       }
+      setErrorCode(err instanceof ApiError ? (err.code ?? null) : null)
       pushToast(msg, 'error')
       setError(msg)
       setLoading(false)
@@ -124,7 +126,9 @@ export default function NewTask() {
                   {error && (
                     <p className="text-danger text-xs mt-2">
                       {error}{' '}
-                      {/key|wallet/i.test(error) ? (
+                      {errorCode === 'active_limit' ? (
+                        <Link to="/dashboard" className="text-primary underline">See your running tasks</Link>
+                      ) : /key|wallet/i.test(error) ? (
                         <Link to="/wallet" className="text-primary underline">Add a key</Link>
                       ) : /upgrade|limit|runs|tasks/i.test(error) ? (
                         <Link to="/pricing" className="text-primary underline">See plans</Link>

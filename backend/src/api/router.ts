@@ -227,7 +227,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
             })
           }
           if (!a.ok) {
-            return res.status(429).json({ error: `You already have ${limits.maxActive === 1 ? "a task" : `${limits.maxActive} tasks`} in progress (running or paused). Wait for it to finish or cancel it.`, code: "active_limit" })
+            return res.status(429).json({ error: limits.maxActive === 1 ? "You already have a task in progress (running or paused). Wait for it to finish or cancel it." : `You already have ${limits.maxActive} tasks in progress (running or paused). Wait for one to finish or cancel one.`, code: "active_limit" })
           }
         }
         const s = await createTask(
