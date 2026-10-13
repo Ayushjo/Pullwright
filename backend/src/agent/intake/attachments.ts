@@ -173,23 +173,68 @@ export async function fetchAllowed(raw: string, maxBytes: number, fetchImpl: Fet
       await res.body?.cancel().catch(() => {})
       return { skipped: "video (not analysed)" }
     }
-    const declared = Number(res.headers.get("content-length") ?? 0)
-    if (declared > maxBytes) {
-      await res.body?.cancel().catch(() => {})
-      return { skipped: `too large (${Math.round(declared / 1024)} KB)` }
-    }
-    const chunks: Buffer[] = []
-    let total = 0
-    if (res.body) {
-      for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-        total += chunk.byteLength
-        if (total > maxBytes) return { skipped: `too large (> ${Math.round(maxBytes / 1024)} KB)` }
-        chunks.push(Buffer.from(chunk))
-      }
-    }
-    return { bytes: Buffer.concat(chunks), contentType }
+    return readLimited(res, maxBytes, contentType)
   }
   return { skipped: "too many redirects" }
+}
+
+async function readLimited(res: Response, maxBytes: number, contentType: string): Promise<{ bytes: Buffer; contentType: string } | { skipped: string }> {
+  const declared = Number(res.headers.get("content-length") ?? 0)
+  if (declared > maxBytes) {
+    await res.body?.cancel().catch(() => {})
+    return { skipped: `too large (${Math.round(declared / 1024)} KB)` }
+  }
+  const chunks: Buffer[] = []
+  let total = 0
+  if (res.body) {
+    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+      total += chunk.byteLength
+      if (total > maxBytes) return { skipped: `too large (> ${Math.round(maxBytes / 1024)} KB)` }
+      chunks.push(Buffer.from(chunk))
+    }
+  }
+  return { bytes: Buffer.concat(chunks), contentType }
+}
+
+export type RepoRef = { owner: string; repo: string; token?: string | null | undefined }
+
+/**
+ * A link to a file in the task's own repository — `github.com/o/r/blob|raw/<ref>/<path>` (with or without
+ * `?raw=true`) or `raw.githubusercontent.com/o/r/<ref>/<path>`. Issues often show images committed to the
+ * repo this way; in a private repo those URLs need the user's token, which only the contents API takes.
+ * Links to any other repository return null (the user's token is never used to fetch elsewhere).
+ */
+export function repoFileRef(raw: string, repo: { owner: string; repo: string }): { ref: string; path: string } | null {
+  let u: URL
+  try {
+    u = new URL(raw)
+  } catch {
+    return null
+  }
+  if (u.protocol !== "https:" || u.username || u.password) return null
+  const host = u.hostname.toLowerCase()
+  const parts = u.pathname.split("/").filter(Boolean).map(decodeURIComponent)
+  let owner: string | undefined, name: string | undefined, ref: string | undefined, rest: string[]
+  if (host === "github.com" && (parts[2] === "blob" || parts[2] === "raw")) [owner, name, , ref, ...rest] = parts
+  else if (host === "raw.githubusercontent.com") [owner, name, ref, ...rest] = parts
+  else return null
+  if (!owner || !name || !ref || !rest.length) return null
+  if (owner.toLowerCase() !== repo.owner.toLowerCase() || name.toLowerCase() !== repo.repo.toLowerCase()) return null
+  if (rest.some((p) => p === ".." || p === ".")) return null
+  return { ref, path: rest.join("/") }
+}
+
+/** Download a file of the task's repo through the contents API (raw media type), with the user's token. */
+export async function fetchRepoFile(repo: RepoRef, file: { ref: string; path: string }, maxBytes: number, fetchImpl: Fetch = fetch): Promise<{ bytes: Buffer; contentType: string } | { skipped: string }> {
+  const url = `https://api.github.com/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/contents/${file.path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(file.ref)}`
+  const res = await fetchImpl(url, {
+    redirect: "error",
+    signal: AbortSignal.timeout(20_000),
+    headers: { "User-Agent": "Pullwright", Accept: "application/vnd.github.raw", "X-GitHub-Api-Version": "2022-11-28", ...(repo.token ? { Authorization: `Bearer ${repo.token}` } : {}) },
+  })
+  if (res.status === 401 || res.status === 403 || res.status === 404) return { skipped: `not accessible in the repository (HTTP ${res.status})` }
+  if (!res.ok) return { skipped: `HTTP ${res.status}` }
+  return readLimited(res, maxBytes, res.headers.get("content-type") ?? "")
 }
 
 const safeHost = (raw: string) => {
@@ -219,7 +264,7 @@ async function readLocal(url: string, maxBytes: number): Promise<{ bytes: Buffer
  * Downloads attachments into dir (outside the repo, so they never enter the diff). Images: ≤6, ≤10 MB,
  * deduplicated; text files ≤200 KB are inlined as text; videos and anything else are listed as skipped.
  */
-export async function downloadAttachments(refs: AttachmentRef[], dir: string, opts: { local?: boolean; fetchImpl?: Fetch } = {}): Promise<Attachment[]> {
+export async function downloadAttachments(refs: AttachmentRef[], dir: string, opts: { local?: boolean; fetchImpl?: Fetch; repo?: RepoRef } = {}): Promise<Attachment[]> {
   await mkdir(dir, { recursive: true })
   const out: Attachment[] = []
   const seen = new Set<string>()
@@ -236,7 +281,13 @@ export async function downloadAttachments(refs: AttachmentRef[], dir: string, op
     const max = ref.kind === "file" ? LIMITS.fileBytes : LIMITS.imageBytes
     let got: { bytes: Buffer; contentType: string } | { skipped: string }
     try {
-      got = opts.local && ref.fetchUrl.startsWith("attachment://") ? await readLocal(ref.fetchUrl, max) : await fetchAllowed(ref.fetchUrl, max, opts.fetchImpl)
+      const inRepo = opts.repo ? (repoFileRef(ref.fetchUrl, opts.repo) ?? repoFileRef(ref.url, opts.repo)) : null
+      got =
+        opts.local && ref.fetchUrl.startsWith("attachment://")
+          ? await readLocal(ref.fetchUrl, max)
+          : inRepo && opts.repo
+            ? await fetchRepoFile(opts.repo, inRepo, max, opts.fetchImpl)
+            : await fetchAllowed(ref.fetchUrl, max, opts.fetchImpl)
     } catch (e) {
       got = { skipped: `download failed: ${(e as Error).message.slice(0, 80)}` }
     }

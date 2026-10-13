@@ -398,7 +398,11 @@ export class Pipeline {
     if (refs.length) {
       await this.setStatus(s, "planning", `Reading ${refs.length} attachment${refs.length === 1 ? "" : "s"}`)
       try {
-        const atts = await downloadAttachments(refs, path.join(tasksRoot(), s.taskId, "attachments"), { local: s.source?.kind === "local" })
+        const atts = await downloadAttachments(refs, path.join(tasksRoot(), s.taskId, "attachments"), {
+          local: s.source?.kind === "local",
+          // Images committed to the repo and linked from the issue (private repos need the user's token).
+          ...(s.source?.kind === "local" ? {} : { repo: { owner: s.owner, repo: s.repo, token: await githubToken(s) } }),
+        })
         const chat = atts.some((a) => a.kind === "image" && a.file) ? await visionChat(s) : null
         described = chat ? await describeImages(atts, issue, this.tracked(s, chat), s.taskId) : atts
         const read = described.filter((a) => a.description && !a.skipped).length

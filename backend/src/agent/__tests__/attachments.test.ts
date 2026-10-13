@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { allowedUrl, downloadAttachments, extractAttachments, fetchAllowed, sniff } from "../intake/attachments.js"
+import { allowedUrl, downloadAttachments, extractAttachments, fetchAllowed, repoFileRef, sniff } from "../intake/attachments.js"
 
 const ID1 = "3a38776d-6b2f-4c9b-9d00-20c8618e8279"
 const ID2 = "11111111-2222-4333-8444-555555555555"
@@ -129,5 +129,34 @@ describe("downloadAttachments", () => {
     const out = await downloadAttachments(refs, dir, { local: true })
     expect(out[0]!.mime).toBe("image/png")
     expect(out[1]!.skipped).toBe("invalid local attachment name")
+  })
+})
+
+describe("images committed to the task's own repo", () => {
+  const repo = { owner: "Ayushjo", repo: "pw-private-attach-test" }
+  it("recognises blob, raw and raw.githubusercontent links to this repo only", () => {
+    expect(repoFileRef("https://github.com/Ayushjo/pw-private-attach-test/blob/main/docs/mock.png?raw=true", repo)).toEqual({ ref: "main", path: "docs/mock.png" })
+    expect(repoFileRef("https://github.com/ayushjo/PW-private-attach-test/raw/abc123/a%20b.png", repo)).toEqual({ ref: "abc123", path: "a b.png" })
+    expect(repoFileRef("https://raw.githubusercontent.com/Ayushjo/pw-private-attach-test/main/docs/mock.png", repo)).toEqual({ ref: "main", path: "docs/mock.png" })
+    expect(repoFileRef("https://github.com/someone/else/blob/main/x.png", repo)).toBeNull() // never with the user's token
+    expect(repoFileRef("https://github.com/Ayushjo/pw-private-attach-test/issues/1", repo)).toBeNull()
+    expect(repoFileRef("http://github.com/Ayushjo/pw-private-attach-test/blob/main/x.png", repo)).toBeNull()
+    expect(repoFileRef("https://github.com/Ayushjo/pw-private-attach-test/blob/main/../secrets.png", repo)).toBeNull()
+  })
+
+  it("downloads them through the contents API with the user's token; other hosts keep the allowlist", async () => {
+    const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
+    const calls: { url: string; auth: string | null }[] = []
+    const fake = (async (url: string, init?: RequestInit) => {
+      calls.push({ url, auth: new Headers(init?.headers).get("authorization") })
+      return new Response(PNG, { status: 200, headers: { "content-type": "image/png" } })
+    }) as unknown as typeof fetch
+    const dir = mkdtempSync(path.join(tmpdir(), "pw-att-"))
+    const refs = extractAttachments("Mock:\n\n![m](https://github.com/Ayushjo/pw-private-attach-test/blob/main/docs/mock.png?raw=true)\n\n![x](https://github.com/other/repo/blob/main/x.png?raw=true)", undefined, "issue")
+    const out = await downloadAttachments(refs, dir, { fetchImpl: fake, repo: { ...repo, token: "tok" } })
+    expect(out[0]).toMatchObject({ kind: "image", mime: "image/png" })
+    expect(calls[0]).toEqual({ url: "https://api.github.com/repos/Ayushjo/pw-private-attach-test/contents/docs/mock.png?ref=main", auth: "Bearer tok" })
+    expect(out[1]!.skipped).toMatch(/host not allowed/) // another repo's blob link: not fetched, no token sent
+    expect(calls).toHaveLength(1)
   })
 })
