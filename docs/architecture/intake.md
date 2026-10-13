@@ -261,3 +261,20 @@ Real issues arrive in three shapes the ladder never tested: short and vague ("X 
 | Attachments visible in the plan view | ✅ after two fixes: `sendFile` refused the `.tasks/` dot-directory (`73b3bf6`); the browser cached the resulting 404 (`323037a`, `ce72c61`) |
 | Private-repo attachment download | ⏳ needs a private test repo from the owner |
 | Cost of intake | Spec check ≈ $0.0016 per task on gpt-5-mini (≈13% of an easy task); transcription $0 on Groq |
+
+## Private repo with an image committed to the repo (10-13, GUI test)
+
+Setup: private repo `Ayushjo/pw-private-attach-test` (the bookstore fixture plus `docs/availability-mock.png`). Issue #1 is the M11 issue; its image links to the repo file, `https://github.com/Ayushjo/pw-private-attach-test/blob/main/docs/availability-mock.png?raw=true`. The task ran on the owner's free wallet keys, signed in as a normal user.
+
+| Step | Result |
+|---|---|
+| Submit the private issue | consent prompt: "This repo is private, and your free keys … may use prompts for training"; Start stays disabled until "Allow it for this task only" is ticked |
+| With consent, before the fix | **image skipped: "host not allowed (github.com)"**. The allowlist covered GitHub's upload hosts but not links to files in the repo. The model guessed the legend (`'In Stock'`/`'Low Stock'`/`'Out of Stock'`). The task finished *ready*, tests and reviewer green, but the **hidden M11 test failed** (`'In Stock'` ≠ `'in stock'`). The reviewer couldn't see the image either. |
+| After the fix (`fcb22a7`) | image read (`kind: mockup`, legend transcribed), 20 calls, $0, ready, and the **hidden M11 test passes** |
+
+The fix: links to a file in the task's own repository are downloaded through `api.github.com/repos/{o}/{r}/contents/{path}?ref=…`, with `Accept: application/vnd.github.raw` and the user's token. This covers `github.com/o/r/blob|raw/<ref>/<path>` (with or without `?raw=true`) and `raw.githubusercontent.com/o/r/<ref>/<path>`. The size limits are the same as for other attachments.
+
+- Links to any other repository keep the old allowlist and never get the token.
+- `..` path segments are refused.
+
+Gemini was overloaded during the run (503 "high demand" on every Flash and Flash-Lite model, and one daily-quota 429). The gateway kept failing over; the task took ~12 min instead of ~3 but finished.
