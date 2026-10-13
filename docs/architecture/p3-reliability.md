@@ -95,3 +95,9 @@ The parked case forces a park by putting the profile's planner lanes in a 15-min
 - **Expired park:** a task parked longer than `PW_MAX_PARK_HOURS` (48 h) is failed on worker start with "no model was available for N h". It leaves no lock, container or delayed job.
 - **Job retention is bounded:** completed jobs are kept 1 h (max 200), failed jobs 24 h (max 500).
 - **Workspaces** of cancelled tasks stay until the janitor's terminal sweep (`JANITOR_TERMINAL_HOURS`, 1 h).
+
+**Follow-up (10-13).**
+
+- More than an hour after the kill test, the janitor had removed all six cancelled tasks' workspaces. The one left is the pre-fix validating case, which ended as `ready`; ready workspaces are kept, with dependencies trimmed, so the PR can still be published.
+- In the GUI limit test, the Pro limit of 3 active tasks counted only tasks in flight or parked. Tasks waiting for plan approval don't hold a worker, so they don't count.
+- The 4th start showed the 429 inline and as a toast. The capacity meter had already warned: "3 tasks running — the limit is 3".
