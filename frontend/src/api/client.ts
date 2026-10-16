@@ -192,9 +192,11 @@ export type BillingInfo = {
     key:
       | { kind: 'byok'; provider: KeyProvider }
       | { kind: 'platform'; fundedBy: 'credits'; capUsd: number; trialOnly: boolean }
+      | { kind: 'platform'; fundedBy: 'free_claude'; capUsd: number; model: string }
       | { kind: 'wallet'; allFree: boolean }
       | null
     credits: CreditSummary | null
+    free: FreeAllowance | null
     reason?: string
   }
   keys: { provider: KeyProvider; last4: string; model: string | null; createdAt: string; lastUsedAt: string | null }[]
@@ -210,6 +212,19 @@ export const startCheckout = (kind: 'pro' | 'pack' = 'pro') => post<{ url: strin
 export const openBillingPortal = () => post<{ url: string }>('/api/billing/portal')
 /** After checkout: ask the server to confirm the subscription with Dodo (doesn't wait for the webhook). */
 export const syncBilling = () => post<{ status: string }>('/api/billing/sync')
+
+/* ── Free monthly Claude allowance ── */
+export type FreeAllowance = {
+  enabled: boolean
+  ineligible?: string
+  limit: number
+  used: number
+  left: number
+  renewsAt: string
+  poolOpen: boolean
+  poolOpensAt?: string
+  model: string
+}
 
 /* ── Credits (Pro's monthly usage, packs, the trial) ── */
 export type CreditSummary = {

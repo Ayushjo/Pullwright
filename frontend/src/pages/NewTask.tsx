@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowLeft, ArrowRight, CircleDot, GitBranch, Box, GitPullRequest, Gift, ShieldAlert } from 'lucide-react'
 import AppShell from '../components/AppShell'
 import { BentoCard, BentoContent, Button, Input, useToast } from '../components/ui'
-import { ApiError, claimTrial, createTask, getCredits } from '../api/client'
+import { ApiError, claimTrial, createTask, getBilling, getCredits, type BillingInfo } from '../api/client'
 import { fadeUp, stagger } from '../lib/motion'
 import CapacityMeter from '../components/wallet/CapacityMeter'
+import FreeClaudeMeter from '../components/billing/FreeClaudeMeter'
 
 const STEPS = [
   { icon: GitBranch, label: 'You approve the plan' },
@@ -27,6 +28,14 @@ export default function NewTask() {
   // No key and no credit (402): offer the one-time free trial when this GitHub account still has it.
   const [trialOffer, setTrialOffer] = useState<number | null>(null)
   const [claiming, setClaiming] = useState(false)
+  // Which money a new task uses: shows the free Claude allowance when that's what will run it.
+  const [ent, setEnt] = useState<BillingInfo['entitlement'] | null>(null)
+  useEffect(() => {
+    getBilling()
+      .then((b) => setEnt(b.entitlement))
+      .catch(() => setEnt(null))
+  }, [])
+  const onFree = ent?.key?.kind === 'platform' && ent.key.fundedBy === 'free_claude'
   const navigate = useNavigate()
   const { push: pushToast } = useToast()
 
@@ -187,6 +196,7 @@ export default function NewTask() {
                 </AnimatePresence>
 
                 <CapacityMeter />
+                {(onFree || (ent?.free?.enabled && !ent.key)) && <FreeClaudeMeter free={ent?.free} />}
 
                 <Button
                   type="submit"

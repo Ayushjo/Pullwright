@@ -5,6 +5,7 @@ import AppShell from '../components/AppShell'
 import { Badge, Button, PageHeader, useToast } from '../components/ui'
 import CapacityMeter from '../components/wallet/CapacityMeter'
 import CreditsCard from '../components/billing/CreditsCard'
+import FreeClaudeMeter from '../components/billing/FreeClaudeMeter'
 import { claimTrial, getBilling, getCredits, getWallet, openBillingPortal, startCheckout, syncBilling, type BillingInfo, type CreditsView, type WalletView } from '../api/client'
 
 /** White card with a mono title over a hairline. */
@@ -122,6 +123,7 @@ export default function Settings() {
                 )}
               </div>
               <CapacityMeter className="w-fit max-w-full" />
+              <FreeClaudeMeter free={ent.free} className="sm:max-w-sm" />
               {pro && (
                 <div className="rounded-md border border-hairline p-4 sm:max-w-xs">
                   <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Included usage this month</p>
@@ -141,7 +143,9 @@ export default function Settings() {
                       : 'New tasks run on your keys — free ones first.'
                     : ent.key.kind === 'byok'
                       ? `New tasks use your ${ent.key.provider === 'openai' ? 'OpenAI' : 'OpenRouter'} key.`
-                      : `New tasks run on our models from your credit, up to $${ent.key.capUsd.toFixed(2)} each.`
+                      : ent.key.fundedBy === 'free_claude'
+                        ? `New tasks run free on Claude (${ent.key.model.replace(/^claude-/, '').replace(/-(\d)-(\d)$/, ' $1.$2')}) — no key needed.`
+                        : `New tasks run on our models from your credit, up to $${ent.key.capUsd.toFixed(2)} each.`
                   : ent.reason}
               </p>
             </div>
