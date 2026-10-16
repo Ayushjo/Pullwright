@@ -72,4 +72,16 @@ Private repos need no training-consent prompt on this path: the Anthropic API do
 
 - Promo-credit terms: confirm the credits may serve end users, and when unused credit expires.
 - Alerts at 70% and 90% of the monthly pool (today it shows only in `/api/budget`-style reads).
-- An end-to-end GUI run (below, 10-17).
+
+## End-to-end GUI run (10-17, Brave, owner signed in as a normal user, wallet keys paused then restored)
+
+| Step | Result |
+|---|---|
+| Settings with no usable key | entitlement `fundedBy: free_claude`, Haiku 5.5, $0.15 cap; meter "10 of 10 free Claude tasks left this month · No key needed · renews 1 Nov"; "New tasks run free on Claude Haiku 5.5 — no key needed" |
+| New task page | daily capacity meter plus the free-Claude meter |
+| Start `Ayushjo/devin-test-app#1` | ready, tests and reviewer green, **6 calls, $0.0022**, every call `anthropic/claude-haiku-5-5` with spend class `pool`; pool counters day and month = $0.00224 exactly |
+| Afterwards | meter **9 of 10**; credit balance unchanged ($7.444049), no debit row |
+| Allowance set to 1 (used up) | meter turns amber ("They renew 1 Nov. A free Gemini key gives you unlimited free tasks" + link); new tasks fall through to **credits** (Sonnet, $0.30 cap), as designed for a user who has credit |
+
+- **Queue:** the free task went to the paid queue because the test account is Pro (`tier === "pro"`), which is the intended policy. A free account's allowance tasks queue as free.
+- **Copy fixes from the run:** singular copy for a one-task allowance, and the model shown as "Haiku 5.5".
