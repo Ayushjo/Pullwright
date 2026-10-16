@@ -395,3 +395,6 @@ for (const item of items) {
 }
 const end = await api("GET", "/api/budget")
 console.log(`\nPlatform spend now: $${Number(end.platformSpentUsd).toFixed(4)}`)
+// Open handles (the gateway's Redis, Prisma) would keep the process alive after the run — and the
+// campaign wrappers waiting on it — once Neon drops the idle connection.
+process.exit(0)
