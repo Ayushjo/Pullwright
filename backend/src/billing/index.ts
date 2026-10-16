@@ -7,6 +7,7 @@ import logger from "../logger.js"
 import { createRedisClient } from "../config/redis.js"
 import type { Redis } from "ioredis"
 import { creditSummary, grantCredit, type CreditSummary } from "./credits.js"
+import { canUseFree, freeAllowance, FREE_CLAUDE, type FreeAllowance } from "./freeAllowance.js"
 
 /**
  * Plans, entitlements, bring-your-own-key and Dodo Payments.
@@ -28,9 +29,12 @@ export type Entitlement = {
   key:
     | { kind: "byok"; provider: KeyProvider }
     | { kind: "platform"; fundedBy: "credits"; capUsd: number; trialOnly: boolean }
+    | { kind: "platform"; fundedBy: "free_claude"; capUsd: number; model: string }
     | { kind: "wallet"; allFree: boolean }
     | null
   credits: CreditSummary | null
+  /** The free monthly Claude allowance (tasks left, renewal, pool state). */
+  free: FreeAllowance | null
   reason?: string
 }
 
@@ -81,16 +85,19 @@ export async function getEntitlement(userId: string): Promise<Entitlement> {
   const hostedSpentUsd = tier === "pro" ? Math.max(0, +(hostedAllowanceUsd - credits.grantRemainingUsd).toFixed(6)) : 0
   const byok = KEY_PROVIDERS.find((p) => keys.some((k) => k.provider === p))
 
-  const base = { tier, runsIncluded, runsUsed, hostedAllowanceUsd, hostedSpentUsd, credits }
+  const free = await freeAllowance(userId).catch(() => null)
+  const base = { tier, runsIncluded, runsUsed, hostedAllowanceUsd, hostedSpentUsd, credits, free }
   // 1. The wallet: tasks on the user's own keys (free ones first). Daily admission limits apply.
   const wallet = walletCapability(await loadWallet(userId))
   if (wallet.canRun) return { ...base, key: { kind: "wallet", allFree: wallet.allFree } }
-  // 2. Credits (Pro's monthly grant, packs, the trial): our models, hard-capped by what's available.
+  // 2. The free monthly Claude allowance (no key, no card), before any credit the user paid for.
+  if (free && canUseFree(free)) return { ...base, key: { kind: "platform", fundedBy: "free_claude", capUsd: FREE_CLAUDE.taskCapUsd(), model: free.model } }
+  // 3. Credits (Pro's monthly grant, packs, the trial): our models, hard-capped by what's available.
   if (credits.availableUsd >= MIN_CREDIT_TASK_USD) {
     const capUsd = +Math.min(CREDIT_TASK_CAP_USD, credits.availableUsd, credits.trialOnly ? TRIAL_TASK_CAP_USD : Infinity).toFixed(4)
     return { ...base, key: { kind: "platform", fundedBy: "credits", capUsd, trialOnly: credits.trialOnly } }
   }
-  // 3. Legacy own OpenAI/OpenRouter key (pre-wallet), still bounded by the monthly run count.
+  // 4. Legacy own OpenAI/OpenRouter key (pre-wallet), still bounded by the monthly run count.
   if (runsUsed >= runsIncluded) return { ...base, key: null, reason: `You've used all ${runsIncluded} runs included this month.` }
   if (byok) return { ...base, key: { kind: "byok", provider: byok } }
   return {
@@ -101,7 +108,7 @@ export async function getEntitlement(userId: string): Promise<Entitlement> {
         ? wallet.missing
         : tier === "pro"
           ? "Your included model usage for this month is used up — buy a credit pack or add your own key to keep going."
-          : "Add a free Gemini key in your Wallet (2 minutes, no card), try 2 tasks free, or buy credits.",
+          : freeReason(free) ?? "Add a free Gemini key in your Wallet (2 minutes, no card) for unlimited free tasks, or buy credits.",
   }
 }
 
@@ -435,4 +442,14 @@ async function applyEvent(db: ReturnType<typeof getPrisma>, ev: DodoEvent): Prom
   await db.subscription.upsert({ where: { userId }, create: { userId, ...fields }, update: fields })
   logger.info(`Billing: ${ev.type} for user ${userId}`)
   return { result: "processed" }
+}
+
+/** Why the free Claude allowance can't run a task now, phrased for the user (null when it isn't the blocker). */
+function freeReason(f: FreeAllowance | null): string | null {
+  if (!f?.enabled) return null
+  const gemini = "add a free Gemini key in your Wallet for unlimited free tasks"
+  if (f.ineligible) return `${f.ineligible} Meanwhile, ${gemini}.`
+  if (f.left <= 0) return `You've used your ${f.limit} free Claude tasks this month (they renew ${f.renewsAt.slice(0, 10)}). ${gemini[0]!.toUpperCase()}${gemini.slice(1)}, or buy credits.`
+  if (!f.poolOpen) return `Today's free Claude tasks are all taken — they're back at ${f.poolOpensAt ? new Date(f.poolOpensAt).toISOString().slice(11, 16) + " UTC" : "the reset"}. Or ${gemini}.`
+  return null
 }

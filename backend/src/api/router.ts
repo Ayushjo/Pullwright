@@ -21,6 +21,7 @@ import type { Redis } from "ioredis"
 import { getSpendLedger } from "../agent/spend.js"
 import { getEntitlement } from "../billing/index.js"
 import { creditSummary } from "../billing/credits.js"
+import { canUseFree, freeAllowance } from "../billing/freeAllowance.js"
 import { diffStat, diffVs, restoreCheckpoint, tasksRoot } from "../agent/git.js"
 import { filterPatch, metricsOf, spec, taskCap } from "../agent/pipeline.js"
 import { configuredLanes, getGateway } from "../llm/lanes.js"
@@ -173,7 +174,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
       return res.status(401).json({ error: "Sign in again to create tasks" })
     }
     try {
-      let keyChoice: { keyKind: "platform" | "byok" | "wallet"; keyProvider?: "openai" | "openrouter"; fundedBy?: "credits"; capUsd?: number } = { keyKind: "platform" }
+      let keyChoice: { keyKind: "platform" | "byok" | "wallet"; keyProvider?: "openai" | "openrouter"; fundedBy?: "credits" | "free_claude"; capUsd?: number } = { keyKind: "platform" }
       let tier: "free" | "pro" = "free"
       let queueClass: "free" | "paid" = "free"
       const owners = (process.env.OPERATOR_GITHUB_LOGINS ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean)
@@ -187,10 +188,11 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
             ? { keyKind: "byok", keyProvider: ent.key.provider }
             : ent.key.kind === "wallet"
               ? { keyKind: "wallet" }
-              : { keyKind: "platform", fundedBy: "credits", capUsd: ent.key.capUsd }
+              : { keyKind: "platform", fundedBy: ent.key.fundedBy, capUsd: ent.key.capUsd }
         // Paid work gets the reserved paid workers: a Pro plan, a paid key of the user's own, or bought credit
-        // (trial credit queues with free work).
-        if (tier === "pro" || ent.key.kind === "byok" || (ent.key.kind === "wallet" && !ent.key.allFree) || (ent.key.kind === "platform" && !ent.key.trialOnly)) queueClass = "paid"
+        // (trial credit and the free Claude allowance queue with free work).
+        const paidCredit = ent.key.kind === "platform" && ent.key.fundedBy === "credits" && !ent.key.trialOnly
+        if (tier === "pro" || ent.key.kind === "byok" || (ent.key.kind === "wallet" && !ent.key.allFree) || paidCredit) queueClass = "paid"
       }
       // A private repo never reaches a key that trains on prompts without consent. Only looked up when the
       // wallet can't plan and code without such keys (one GitHub call); the pipeline re-checks after fetch.
@@ -212,6 +214,14 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
         const uid = !req.isOperator && !isOwner ? req.session?.userId : undefined
         // Credit-funded: re-read the balance under the admission lock, so two quick submits can't both
         // reserve the same dollars (the task row, with its cap, is written before the lock is released).
+        // Free allowance: re-count under the same lock, so two quick submits can't both take the last task.
+        if (uid && keyChoice.fundedBy === "free_claude") {
+          const f = await freeAllowance(uid)
+          if (!canUseFree(f)) {
+            const again = await getEntitlement(uid)
+            return res.status(402).json({ error: again.reason ?? "Your free Claude tasks are used up for now.", code: "needs_key_or_plan" })
+          }
+        }
         if (uid && keyChoice.fundedBy === "credits") {
           const again = await getEntitlement(uid)
           if (again.key?.kind !== "platform") return res.status(402).json({ error: again.reason ?? "Your credit balance is used up.", code: "needs_key_or_plan" })
@@ -553,6 +563,10 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     if (!parsed.success) return res.status(400).json({ error: "Add between $0.05 and $0.50" })
     if (!["needs_review", "failed"].includes(s.status) || !s.runMessages?.length) {
       return res.status(409).json({ error: "Only a run that stopped early can be continued" })
+    }
+    // A free-allowance task is capped by design: more budget comes from a key or credits, not the pool.
+    if (s.options.fundedBy === "free_claude") {
+      return res.status(402).json({ error: "Free Claude tasks have a fixed budget. Add a free Gemini key or buy credits to continue this one.", code: "free_task_cap" })
     }
     // A credit-funded task can only grow its cap by what the balance still covers.
     if (s.options.fundedBy === "credits" && s.userId) {
