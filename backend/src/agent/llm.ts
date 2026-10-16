@@ -11,6 +11,7 @@ import { createHash } from "crypto"
 import { PROVIDERS, type ProviderId } from "../llm/registry.js"
 import { originOf, renderMessages } from "../llm/render.js"
 import { assertSafeUrl, safeFetch } from "../llm/safeEndpoint.js"
+import { claudeChat } from "../llm/anthropic.js"
 
 /**
  * Thin, metered OpenAI-compatible chat client.
@@ -171,6 +172,7 @@ export async function chat(spec: ModelSpec, opts: CallOptions): Promise<LLMResul
 
 async function callWithRetries(spec: ModelSpec, opts: CallOptions, keyOwner: LedgerEntry["keyOwner"], hold: Hold): Promise<LLMResult> {
   const ledger = getSpendLedger()
+  if (spec.provider === "anthropic") return callClaude(spec, opts, keyOwner, hold)
 
   const client = clientFor(spec)
   const target = { provider: spec.provider, model: spec.model }
@@ -235,6 +237,62 @@ async function callWithRetries(spec: ModelSpec, opts: CallOptions, keyOwner: Led
         throw err
       }
       if (attempts > 1) logger.warn(`LLM call failed (attempt ${attempt}/${attempts}): ${(err as Error).message}`)
+      if (attempt < attempts) await sleep(retryDelayMs(err, attempt))
+    }
+  }
+  throw lastErr
+}
+
+/** Claude through the native Messages API (llm/anthropic.ts): same metering and result shape as chat(). */
+async function callClaude(spec: ModelSpec, opts: CallOptions, keyOwner: LedgerEntry["keyOwner"], hold: Hold): Promise<LLMResult> {
+  const ledger = getSpendLedger()
+  const apiKey = spec.apiKey ?? process.env.ANTHROPIC_API_KEY
+  if (!apiKey) throw new Error("No API key configured for anthropic")
+  const effort = (process.env.PW_ANTHROPIC_EFFORT as "low" | "medium" | "high" | "xhigh" | "max" | undefined) ?? "medium"
+  const attempts = opts.attempts ?? 3
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const started = Date.now()
+    try {
+      // The canonical history, unrendered: the adapter needs each Claude turn's raw blocks (extra_content).
+      const r = await claudeChat({
+        model: spec.model,
+        apiKey,
+        messages: opts.messages,
+        ...(opts.tools ? { tools: opts.tools } : {}),
+        maxOutputTokens: opts.maxOutputTokens,
+        ...(opts.jsonMode ? { jsonMode: true } : {}),
+        effort,
+        ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}),
+      })
+      const costUsd = keyOwner === "free" ? 0 : r.costUsd
+      await ledger.record(
+        { taskId: opts.taskId, keyOwner, provider: "anthropic", model: r.model, purpose: opts.purpose, inputTokens: r.usage.inputTokens, cachedInputTokens: r.usage.cachedInputTokens, outputTokens: r.usage.outputTokens, costUsd },
+        hold,
+        { durationMs: Date.now() - started },
+      )
+      if (r.transformations.length) logger.info(`claude ${opts.taskId} ${opts.purpose}: input_transformations ${JSON.stringify(r.transformations).slice(0, 300)}`)
+      const target = { provider: spec.provider, model: spec.model }
+      const result: LLMResult = {
+        text: r.text,
+        toolCalls: r.toolCalls.map((tc) => ({ ...tc, origin: originOf(target) })),
+        finishReason: r.finishReason,
+        costUsd,
+        inputTokens: r.usage.inputTokens,
+        cachedInputTokens: r.usage.cachedInputTokens,
+        outputTokens: r.usage.outputTokens,
+        durationMs: Date.now() - started,
+      }
+      opts.onUsage?.({ ...result, model: r.model, provider: spec.provider, purpose: opts.purpose })
+      return result
+    } catch (err) {
+      if (err instanceof SpendLimitError) throw err
+      lastErr = err
+      const status = (err as { status?: number }).status
+      // 529 overloaded and 429 are retryable; 4xx request errors are not.
+      const retryable = status === 429 || status === 529 || (status !== undefined && status >= 500) || status === undefined
+      if (!retryable) throw err
+      if (attempts > 1) logger.warn(`Claude call failed (attempt ${attempt}/${attempts}): ${(err as Error).message}`)
       if (attempt < attempts) await sleep(retryDelayMs(err, attempt))
     }
   }

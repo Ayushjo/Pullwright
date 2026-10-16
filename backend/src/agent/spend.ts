@@ -34,6 +34,12 @@ export const PRICES: Record<string, Price> = {
   // Anthropic (BYOK) — cached reads are 10% of input.
   "claude-haiku-4-5": { input: 1.0, cachedInput: 0.1, output: 5.0 },
   "claude-sonnet-5": { input: 2.0, cachedInput: 0.2, output: 10.0 },
+  // Claude 5.5 / Fable 5.1 (claude-api reference, 2026-10). Actual calls are priced in llm/anthropic.ts
+  // (cache writes at 1.25× input); these feed the worst-case reservation.
+  "claude-haiku-5-5": { input: 0.1, cachedInput: 0.01, output: 0.5 },
+  "claude-sonnet-5-5": { input: 2.0, cachedInput: 0.2, output: 10.0 },
+  "claude-opus-5-5": { input: 4.0, cachedInput: 0.2, output: 20.0 },
+  "claude-fable-5-1": { input: 10.0, cachedInput: 0.25, output: 50.0 },
   // Cheap candidates via Vercel AI Gateway (ai-gateway.vercel.sh/v1/models, fetched 2026-09-29).
   // Temporary until the phase-1 catalog syncs prices per route.
   "deepseek-v4-flash-0731": { input: 0.076, cachedInput: 0.014, output: 0.153 },

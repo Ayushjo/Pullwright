@@ -56,9 +56,10 @@ export const PROVIDERS: Record<ProviderId, ProviderDescriptor> = {
   },
   anthropic: {
     id: "anthropic", label: "Anthropic (Claude)", kind: "direct", baseURL: "https://api.anthropic.com/v1",
+    platformKeyEnv: "ANTHROPIC_API_KEY",
     keyPattern: /^sk-ant-[A-Za-z0-9_-]{20,}$/, params: { ...COMPAT_PARAMS, reasoningEffort: false },
     dataPolicy: { free: "no_train", paid: "no_train" }, dailyReset: "rolling", reportsCost: false,
-    notes: "Native Messages API adapter needed for cache_control (≈90% of our tokens are cached).",
+    notes: "Native Messages API adapter (llm/anthropic.ts): automatic prompt caching, adaptive thinking replayed verbatim, refusal fallback.",
   },
   gemini: {
     id: "gemini", label: "Google Gemini", kind: "direct", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -167,6 +168,8 @@ const VISION: { provider: ProviderId | "*"; model: RegExp; tokens: number; ok: b
   { provider: "gemini", model: /^gemma-/, tokens: 258, ok: false, note: "reads images but leaks <thought> text into answers" },
   { provider: "groq", model: /^qwen\/qwen3\.8-27b$/, tokens: 1_282, ok: true },
   { provider: "groq", model: /^openai\/gpt-oss/, tokens: 0, ok: false, note: "text only (400: content must be a string)" },
+  // All current Claude models read images natively (tokens ≈ width×height/750; not yet measured here).
+  { provider: "anthropic", model: /^claude-/, tokens: 1_600, ok: true },
 ]
 
 /** Whether a lane may be sent issue images (measured to read them at a sane token cost). */
