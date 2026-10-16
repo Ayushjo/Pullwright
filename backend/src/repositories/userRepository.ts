@@ -8,6 +8,8 @@ export type UpsertUserInput = {
   name?: string
   avatarUrl?: string
   email?: string
+  /** GitHub account creation date (GET /user created_at): the free allowance needs accounts ≥ 30 days old. */
+  githubCreatedAt?: Date
 }
 
 export async function upsertUserByGithubId(input: UpsertUserInput): Promise<string | null> {
@@ -25,6 +27,7 @@ export async function upsertUserByGithubId(input: UpsertUserInput): Promise<stri
       avatarUrl: input.avatarUrl ?? null,
       email: input.email ?? null,
       lastLoginAt: now,
+      ...(input.githubCreatedAt ? { githubCreatedAt: input.githubCreatedAt } : {}),
     },
     update: {
       login: input.login,
@@ -32,6 +35,7 @@ export async function upsertUserByGithubId(input: UpsertUserInput): Promise<stri
       avatarUrl: input.avatarUrl ?? null,
       email: input.email ?? null,
       lastLoginAt: now,
+      ...(input.githubCreatedAt ? { githubCreatedAt: input.githubCreatedAt } : {}),
     },
   })
 

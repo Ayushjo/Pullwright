@@ -112,6 +112,7 @@ export function createOAuthRouter(sessionStore: SessionStore) {
         name?: string
         avatar_url: string
         email?: string
+        created_at?: string
       }
 
       if (!user.login || !user.avatar_url) {
@@ -131,6 +132,7 @@ export function createOAuthRouter(sessionStore: SessionStore) {
               ...(user.name ? { name: user.name } : {}),
               avatarUrl: user.avatar_url,
               ...(user.email ? { email: user.email } : {}),
+              ...(user.created_at && !Number.isNaN(Date.parse(user.created_at)) ? { githubCreatedAt: new Date(user.created_at) } : {}),
             })
             if (persisted) {
               userId = persisted
@@ -178,7 +180,7 @@ export function createOAuthRouter(sessionStore: SessionStore) {
     const accessToken = process.env.GITHUB_TOKEN
     const userRes = await fetch(GITHUB_USER_URL, { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/vnd.github+json" } })
     if (!userRes.ok) return res.status(502).json({ error: "GITHUB_TOKEN is not valid" })
-    const user = (await userRes.json()) as { id: number; login: string; name?: string; avatar_url: string; email?: string }
+    const user = (await userRes.json()) as { id: number; login: string; name?: string; avatar_url: string; email?: string; created_at?: string }
     let userId: string | undefined
     if (isDatabaseEnabled()) {
       userId =
@@ -188,6 +190,7 @@ export function createOAuthRouter(sessionStore: SessionStore) {
           ...(user.name ? { name: user.name } : {}),
           avatarUrl: user.avatar_url,
           ...(user.email ? { email: user.email } : {}),
+          ...(user.created_at && !Number.isNaN(Date.parse(user.created_at)) ? { githubCreatedAt: new Date(user.created_at) } : {}),
         })) ?? undefined
     }
     const sessionId = await sessionStore.create({
