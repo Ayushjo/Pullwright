@@ -68,3 +68,13 @@ export async function listCallsForTask(taskId: string) {
   const rows = await getPrisma().llmCall.findMany({ where: { taskId }, orderBy: { createdAt: "asc" } })
   return rows.map((r) => ({ ...r, costUsd: Number(r.costUsd) }))
 }
+
+/** Spend on a budgeted pool key (key_owner "pool") for one provider since a date — seeds the pool counters. */
+export async function sumPoolSpend(provider: string, since: Date): Promise<number> {
+  if (!isDatabaseEnabled()) return 0
+  const agg = await getPrisma().llmCall.aggregate({
+    _sum: { costUsd: true },
+    where: { keyOwner: "pool", provider, createdAt: { gte: since } },
+  })
+  return Number(agg._sum.costUsd ?? 0)
+}

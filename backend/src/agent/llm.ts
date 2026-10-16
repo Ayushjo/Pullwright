@@ -162,7 +162,7 @@ export async function chat(spec: ModelSpec, opts: CallOptions): Promise<LLMResul
   const worstCase =
     (estimateInputTokens(opts.messages, opts.tools) * price.input + opts.maxOutputTokens * price.output) / 1_000_000
   // Reserve the worst case atomically (calls in flight count too); released on record or failure.
-  const hold = await ledger.reserve(opts.taskId, keyOwner, worstCase, opts.taskCapUsd)
+  const hold = await ledger.reserve(opts.taskId, keyOwner, worstCase, opts.taskCapUsd, keyOwner === "pool" ? spec.provider : undefined)
   try {
     return await callWithRetries(spec, opts, keyOwner, hold)
   } finally {

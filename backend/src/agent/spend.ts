@@ -3,7 +3,7 @@ import path from "path"
 import { fileURLToPath } from "url"
 import type { Redis } from "ioredis"
 import { randomUUID } from "crypto"
-import { queueLlmCall, sumPlatformSpend } from "../repositories/llmCallRepository.js"
+import { queueLlmCall, sumPlatformSpend, sumPoolSpend } from "../repositories/llmCallRepository.js"
 import { routePrice } from "../llm/catalog.js"
 
 /**
@@ -71,10 +71,36 @@ export function costOf(model: string, u: TokenUsage, provider?: string): number 
 }
 
 export class SpendLimitError extends Error {
-  constructor(readonly scope: "task" | "global", message: string) {
+  /** pool: a budgeted promo key's daily or monthly budget is used up; retryAt = when it refills. */
+  constructor(readonly scope: "task" | "global" | "pool", message: string, readonly retryAt?: number) {
     super(message)
     this.name = "SpendLimitError"
   }
+}
+
+/**
+ * Budgeted pools: a platform key paid from a fixed monthly allowance (e.g. Anthropic promo credits)
+ * gets its own UTC-day and UTC-month budgets, separate from the operator's lifetime hard stop, so a
+ * test or a free tier on one key can never block or loosen another. Configured per provider:
+ * <PROVIDER>_POOL_MONTHLY_USD and <PROVIDER>_POOL_DAILY_USD (e.g. ANTHROPIC_POOL_MONTHLY_USD=80).
+ */
+export type PoolBudget = { monthlyUsd: number; dailyUsd: number }
+export function poolBudget(provider: string): PoolBudget | null {
+  const P = provider.toUpperCase()
+  const m = process.env[`${P}_POOL_MONTHLY_USD`]
+  if (!m) return null
+  const d = process.env[`${P}_POOL_DAILY_USD`]
+  return { monthlyUsd: Number(m), dailyUsd: d ? Number(d) : Infinity }
+}
+const kPoolDay = (p: string, d = new Date()) => `pw:spend:pool:${p}:${d.toISOString().slice(0, 10)}`
+const kPoolMonth = (p: string, d = new Date()) => `pw:spend:pool:${p}:${d.toISOString().slice(0, 7)}`
+export function nextUtcDay(now = Date.now()): number {
+  const d = new Date(now)
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1)
+}
+function nextUtcMonth(now = Date.now()): number {
+  const d = new Date(now)
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -85,8 +111,9 @@ export type LedgerEntry = {
   taskId: string
   /** platform = the operator's own key (counts against the platform caps); byok = the user's key;
    *  free_credit = a provider's free monthly credit (e.g. Vercel AI Gateway) — task cap only;
-   *  free = a free-tier key (Gemini, Groq, OpenRouter :free) — costs nothing, still recorded. */
-  keyOwner: "platform" | "byok" | "free_credit" | "free"
+   *  free = a free-tier key (Gemini, Groq, OpenRouter :free) — costs nothing, still recorded;
+   *  pool = a platform key with its own daily/monthly budget (see poolBudget), outside the hard stop. */
+  keyOwner: "platform" | "byok" | "free_credit" | "free" | "pool"
   provider: string
   model: string
   purpose: string
@@ -136,7 +163,7 @@ redis.call('ZADD', KEYS[2], exp, ARGV[1]); redis.call('HSET', KEYS[3], ARGV[1], 
 redis.call('PEXPIRE', KEYS[2], ARGV[7]); redis.call('PEXPIRE', KEYS[3], ARGV[7])
 return {1}`
 
-export type Hold = { id: string; taskId: string; keyOwner: LedgerEntry["keyOwner"]; amount: number }
+export type Hold = { id: string; taskId: string; keyOwner: LedgerEntry["keyOwner"]; amount: number; pool?: string }
 
 export class SpendLedger {
   readonly file: string
@@ -226,7 +253,8 @@ export class SpendLedger {
    * Reserve the worst-case cost of the next call, or throw. The check counts calls already in
    * flight (their holds), so parallel calls can't jointly overshoot a cap. Release or record after.
    */
-  async reserve(taskId: string, keyOwner: LedgerEntry["keyOwner"], amountUsd: number, taskCapUsd = this.taskCapUsd): Promise<Hold> {
+  async reserve(taskId: string, keyOwner: LedgerEntry["keyOwner"], amountUsd: number, taskCapUsd = this.taskCapUsd, pool?: string): Promise<Hold> {
+    if (keyOwner === "pool") return this.reservePool(taskId, pool!, amountUsd, taskCapUsd)
     await this.seed()
     const hold: Hold = { id: randomUUID(), taskId, keyOwner, amount: amountUsd }
     const platform = keyOwner === "platform"
@@ -255,6 +283,68 @@ export class SpendLedger {
     return hold
   }
 
+  /**
+   * A pool reservation: the same atomic check, with the pool's day counter in the lifetime slot and
+   * its month counter in the month slot, so the existing script enforces both budgets plus the task cap.
+   */
+  private async reservePool(taskId: string, pool: string, amountUsd: number, taskCapUsd: number): Promise<Hold> {
+    const budget = poolBudget(pool)
+    if (!budget) throw new Error(`No budget configured for pool ${pool}`)
+    await this.seedPool(pool)
+    const hold: Hold = { id: randomUUID(), taskId, keyOwner: "pool", amount: amountUsd, pool }
+    if (!this.redis) {
+      this.localHolds.set(hold.id, hold)
+      return hold
+    }
+    const cap = (n: number) => (Number.isFinite(n) ? String(n) : "-1")
+    const res = (await this.redis.eval(
+      RESERVE, 7,
+      kTask(taskId), kHoldZ(`task:${taskId}`), kHoldH(`task:${taskId}`), kPoolDay(pool), kPoolMonth(pool), kHoldZ(`pool:${pool}`), kHoldH(`pool:${pool}`),
+      hold.id, amountUsd, taskCapUsd, cap(budget.dailyUsd), cap(budget.monthlyUsd), Date.now(), HOLD_TTL_MS, "1",
+    )) as [number, string?, string?]
+    if (Number(res[0]) !== 1) {
+      const scope = res[1]
+      if (scope === "task") throw this.limitError("task", Number(res[2]), amountUsd, taskCapUsd)
+      const day = scope === "global"
+      throw new SpendLimitError(
+        "pool",
+        `${pool} ${day ? "daily" : "monthly"} budget $${day ? budget.dailyUsd : budget.monthlyUsd} is used up ($${Number(res[2]).toFixed(4)} spent)`,
+        day ? nextUtcDay() : nextUtcMonth(),
+      )
+    }
+    return hold
+  }
+
+  /** What a pool has spent today and this month (UTC), counting calls in flight. */
+  async poolSpent(pool: string): Promise<{ dayUsd: number; monthUsd: number }> {
+    await this.seedPool(pool)
+    if (!this.redis) return { dayUsd: 0, monthUsd: 0 }
+    const [d, m, held] = await Promise.all([this.redis.get(kPoolDay(pool)), this.redis.get(kPoolMonth(pool)), this.redis.hvals(kHoldH(`pool:${pool}`))])
+    const h = held.reduce((a, v) => a + Number(v), 0)
+    return { dayUsd: Number(d ?? 0) + h, monthUsd: Number(m ?? 0) + h }
+  }
+
+  private poolSeeded = new Map<string, Promise<void>>()
+  /** Raise the pool's Redis counters to at least the durable record (llm_calls rows with key_owner "pool"). */
+  private seedPool(pool: string): Promise<void> {
+    const day = new Date().toISOString().slice(0, 10)
+    const key = `${pool}:${day}`
+    let p = this.poolSeeded.get(key)
+    if (!p) {
+      p = (async () => {
+        if (!this.redis) return
+        const now = new Date()
+        const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+        const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+        const [dbDay, dbMonth] = await Promise.all([sumPoolSpend(pool, dayStart).catch(() => 0), sumPoolSpend(pool, monthStart).catch(() => 0)])
+        if (Number((await this.redis.get(kPoolDay(pool))) ?? 0) < dbDay) await this.redis.set(kPoolDay(pool), String(dbDay), "EX", 3 * 24 * 3600)
+        if (Number((await this.redis.get(kPoolMonth(pool))) ?? 0) < dbMonth) await this.redis.set(kPoolMonth(pool), String(dbMonth), "EX", 40 * 24 * 3600)
+      })()
+      this.poolSeeded.set(key, p)
+    }
+    return p
+  }
+
   async release(hold: Hold): Promise<void> {
     if (!this.redis) {
       this.localHolds.delete(hold.id)
@@ -262,6 +352,7 @@ export class SpendLedger {
     }
     const m = this.redis.multi().zrem(kHoldZ(`task:${hold.taskId}`), hold.id).hdel(kHoldH(`task:${hold.taskId}`), hold.id)
     if (hold.keyOwner === "platform") m.zrem(kHoldZ("platform"), hold.id).hdel(kHoldH("platform"), hold.id)
+    if (hold.keyOwner === "pool" && hold.pool) m.zrem(kHoldZ(`pool:${hold.pool}`), hold.id).hdel(kHoldH(`pool:${hold.pool}`), hold.id)
     await m.exec()
   }
 
@@ -286,6 +377,10 @@ export class SpendLedger {
       await this.seed()
       const m = this.redis.multi()
       if (entry.keyOwner === "platform") m.incrbyfloat(K_PLATFORM, entry.costUsd).incrbyfloat(kMonth(), entry.costUsd).expire(kMonth(), 40 * 24 * 3600)
+      if (entry.keyOwner === "pool") {
+        m.incrbyfloat(kPoolDay(entry.provider), entry.costUsd).expire(kPoolDay(entry.provider), 3 * 24 * 3600)
+        m.incrbyfloat(kPoolMonth(entry.provider), entry.costUsd).expire(kPoolMonth(entry.provider), 40 * 24 * 3600)
+      }
       m.incrbyfloat(kTask(entry.taskId), entry.costUsd).expire(kTask(entry.taskId), TASK_TTL)
       m.incr(kCalls(entry.taskId)).expire(kCalls(entry.taskId), TASK_TTL)
       await m.exec()

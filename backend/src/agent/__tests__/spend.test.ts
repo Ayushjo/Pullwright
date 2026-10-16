@@ -10,6 +10,7 @@ const rows: { costUsd: number; keyOwner: string }[] = []
 vi.mock("../../repositories/llmCallRepository.js", () => ({
   queueLlmCall: (r: { costUsd: number; keyOwner: string }) => rows.push(r),
   sumPlatformSpend: async () => 0,
+  sumPoolSpend: async () => 0,
 }))
 
 const { SpendLedger, SpendLimitError } = await import("../spend.js")
@@ -71,3 +72,45 @@ describe("SpendLedger reservations", () => {
     await expect(l.reserve("t5", "platform", 0.09)).resolves.toBeTruthy()
   })
 })
+
+describe("budgeted pools (promo keys)", () => {
+  const poolEntry = (taskId: string, costUsd: number) => ({
+    taskId, keyOwner: "pool" as const, provider: "anthropic", model: "claude-haiku-5-5", purpose: "run", inputTokens: 1, cachedInputTokens: 0, outputTokens: 1, costUsd,
+  })
+  beforeEach(() => {
+    process.env.ANTHROPIC_POOL_MONTHLY_USD = "1"
+    process.env.ANTHROPIC_POOL_DAILY_USD = "0.10"
+  })
+
+  it("enforces the daily budget with a refill time, and never counts toward the platform hard stop", async (ctx) => {
+    if (!available) ctx.skip()
+    const l = new SpendLedger(redis, dir(), 0.01 /* platform hard stop already tiny */, 5)
+    const h = await l.reserve("p1", "pool", 0.06, 5, "anthropic")
+    await l.record(poolEntry("p1", 0.06), h)
+    const err = await l.reserve("p2", "pool", 0.05, 5, "anthropic").catch((e) => e)
+    expect(err).toBeInstanceOf(SpendLimitError)
+    expect(err.scope).toBe("pool")
+    expect(err.retryAt).toBeGreaterThan(Date.now())
+    expect(new Date(err.retryAt).getUTCHours()).toBe(0) // next UTC midnight
+    expect(await l.platformSpent()).toBe(0)
+    expect(await l.poolSpent("anthropic")).toMatchObject({ dayUsd: 0.06, monthUsd: 0.06 })
+  })
+
+  it("counts calls in flight, so parallel calls can't overshoot the pool", async (ctx) => {
+    if (!available) ctx.skip()
+    const l = new SpendLedger(redis, dir(), 100, 5)
+    const results = await Promise.allSettled(Array.from({ length: 5 }, (_, i) => l.reserve(`q${i}`, "pool", 0.03, 5, "anthropic")))
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(3) // 3 × 0.03 ≤ 0.10 < 4 × 0.03
+  })
+
+  it("enforces the monthly budget too", async (ctx) => {
+    if (!available) ctx.skip()
+    process.env.ANTHROPIC_POOL_DAILY_USD = "100"
+    process.env.ANTHROPIC_POOL_MONTHLY_USD = "0.05"
+    const l = new SpendLedger(redis, dir(), 100, 5)
+    const err = await l.reserve("m1", "pool", 0.06, 5, "anthropic").catch((e) => e)
+    expect(err.scope).toBe("pool")
+    expect(err.message).toMatch(/monthly/)
+  })
+})
+

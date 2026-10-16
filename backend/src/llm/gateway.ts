@@ -157,6 +157,13 @@ export class Gateway {
         attempts.push({ lane: id, outcome: "ok", ...(laneMessages !== call.messages ? { detail: "compact rendering" } : {}) })
         return { result: { ...result, lane }, waitMs, lastHardError }
       } catch (err) {
+        // A budgeted pool that's used up for today/this month is like an exhausted quota: try the next
+        // lane, else park until it refills. Every other budget decision is final.
+        if (err instanceof SpendLimitError && err.scope === "pool" && err.retryAt) {
+          attempts.push({ lane: id, outcome: "quota", detail: err.message.slice(0, 200), retryInMs: err.retryAt - Date.now() })
+          wait(err.retryAt - Date.now())
+          continue
+        }
         if (err instanceof SpendLimitError) throw err // budget decisions are final, not a lane problem
         const c = classifyError(err)
         const cool = cooldownFor(c.cls, lane, c.retryAfterMs)

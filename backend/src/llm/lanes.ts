@@ -1,3 +1,4 @@
+import { poolBudget } from "../agent/spend.js"
 import { createRedisClient } from "../config/redis.js"
 import type { CallOptions, LLMResult, ModelSpec } from "../agent/llm.js"
 import { CircuitBreaker } from "./breaker.js"
@@ -22,6 +23,8 @@ function platformSpendClass(provider: ProviderId, model: string): Lane["spendCla
   if (provider === "vercel") return "free_credit"
   if (provider === "gemini" || provider === "groq") return "free" // the operator's free-tier keys
   if (provider === "openrouter" && model.endsWith(":free")) return "free"
+  // A key with its own daily/monthly budget (promo credits) never counts toward the operator's hard stop.
+  if (poolBudget(provider)) return "pool"
   return "platform"
 }
 
