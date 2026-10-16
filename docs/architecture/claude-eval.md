@@ -140,3 +140,11 @@ Caveats:
 - The simulated user is Haiku for every model.
 - Effort `medium` throughout. `low` would be cheaper and is untested.
 - Mixed routing (e.g. Sonnet planning + Haiku executing) is untested.
+
+## Side effect found: one lifetime spend ledger for every platform key
+
+`SPEND_HARD_STOP_USD` caps lifetime platform spend across **all** providers. It was sized for the OpenAI budget ($3). The Claude evaluation's $25.20 on the Anthropic key pushed the lifetime total to $27.62. After that, the no-credit campaign refused to start ("too close to the spend hard stop"), and every gateway reservation, even $0 Gemini calls, would have failed.
+
+Stopgap (`backend/.env`, not committed): the hard stop is now $28.20, which keeps OpenAI's original $0.58 of headroom.
+
+Proper fix (open): per-provider (per platform key) budgets in the spend ledger, so a test on one key can never block or loosen another.
