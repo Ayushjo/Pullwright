@@ -84,7 +84,7 @@ const STOP = new Set(["ready", "needs_review", "failed", "cancelled", "needs_inp
 async function runItem(item: LadderItem) {
   const repo = materialise(item.fixture, item.gitSource, item.gitRef)
   const t0 = Date.now()
-  const { taskId } = await api("POST", "/api/eval/task", { localRepo: repo, title: item.title, body: item.body, autoApprove: !SIM_USER, ...(MODEL ? { model: MODEL } : {}), ...(TRANSPORT ? { transport: TRANSPORT } : {}), ...(NO_SPEC ? { specCheck: false } : {}) })
+  const { taskId } = await api("POST", "/api/eval/task", { localRepo: repo, title: item.title, body: item.body, autoApprove: !SIM_USER, ...(MODEL ? { model: MODEL } : {}), ...(TRANSPORT ? { transport: TRANSPORT } : {}), ...(NO_SPEC ? { specCheck: false } : {}), ...(process.env.PW_EVAL_OWNER ? { ownerLogin: process.env.PW_EVAL_OWNER } : {}) })
   process.stdout.write(`\n▶ ${item.id} task=${taskId}\n`)
   let s: Record<string, any> = {}
   let last = ""

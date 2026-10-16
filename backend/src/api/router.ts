@@ -64,6 +64,8 @@ const LocalTask = z.object({
   transport: z.enum(["direct", "unpaced"]).optional(),
   specCheck: z.literal(false).optional(),
   queueClass: z.enum(["free", "paid"]).optional(),
+  /** Show the run in this user's dashboard (their GitHub login): live activity, plan, diff and review in the GUI. */
+  ownerLogin: z.string().trim().min(1).max(100).optional(),
 })
 const Approve = z.object({
   requirements: z.array(z.string().trim().min(3).max(500)).max(15).optional(),
@@ -150,10 +152,13 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     if (!repoPath.startsWith(root + path.sep) || !existsSync(path.join(repoPath, ".git"))) {
       return res.status(400).json({ error: "localRepo must be a git repo inside EVAL_REPOS_DIR" })
     }
+    const owner = parsed.data.ownerLogin && isDatabaseEnabled() ? await getPrisma().user.findFirst({ where: { login: parsed.data.ownerLogin }, select: { id: true, login: true } }) : null
+    if (parsed.data.ownerLogin && !owner) return res.status(400).json({ error: `No user ${parsed.data.ownerLogin}` })
     const s = await createTask(
       {
         issueUrl: "",
         local: { repoPath, title: parsed.data.title, body: parsed.data.body },
+        ...(owner ? { userId: owner.id, githubLogin: owner.login } : {}),
         options: { autoApprove: parsed.data.autoApprove ?? true, autoPublish: false, draft: true, ...(parsed.data.model ? { model: parsed.data.model } : {}), ...(parsed.data.transport ? { transport: parsed.data.transport } : {}), ...(parsed.data.specCheck === false ? { specCheck: false as const } : {}), ...(parsed.data.queueClass ? { queueClass: parsed.data.queueClass } : {}) },
       },
       taskRegistry,
