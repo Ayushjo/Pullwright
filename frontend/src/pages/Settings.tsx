@@ -173,7 +173,9 @@ export default function Settings() {
               {wallet === null
                 ? 'Free and paid model keys live in your Wallet.'
                 : wallet.keys.length === 0
-                  ? 'No keys yet — a free Gemini key is all you need to start.'
+                  ? ent?.free?.enabled
+                    ? 'No keys yet — your free Claude tasks need none. A free Gemini key makes the free plan unlimited.'
+                    : 'No keys yet — a free Gemini key is all you need to start.'
                   : `${wallet.keys.length} key${wallet.keys.length > 1 ? 's' : ''} saved${wallet.capability.allFree ? ', all free' : ''}.`}
             </p>
             <Link to="/wallet" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline underline-offset-2">
