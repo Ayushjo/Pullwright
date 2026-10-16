@@ -112,8 +112,9 @@ export type LedgerEntry = {
   /** platform = the operator's own key (counts against the platform caps); byok = the user's key;
    *  free_credit = a provider's free monthly credit (e.g. Vercel AI Gateway) — task cap only;
    *  free = a free-tier key (Gemini, Groq, OpenRouter :free) — costs nothing, still recorded;
-   *  pool = a platform key with its own daily/monthly budget (see poolBudget), outside the hard stop. */
-  keyOwner: "platform" | "byok" | "free_credit" | "free" | "pool"
+   *  pool = a platform key with its own daily/monthly budget (see poolBudget), outside the hard stop;
+   *  credits = our key paid from the user's credit balance — bounded by the task cap (≤ their balance). */
+  keyOwner: "platform" | "byok" | "free_credit" | "free" | "pool" | "credits"
   provider: string
   model: string
   purpose: string

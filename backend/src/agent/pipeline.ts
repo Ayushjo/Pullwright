@@ -24,6 +24,7 @@ import { groundIssue, groundingNote } from "./grounding.js"
 import { checkpoint, cloneForTask, cloneLocal, diffStat, diffVs, fetchIssue, git, publishPatch, redact, tasksRoot } from "./git.js"
 import { taskStore, type TaskState, type TaskStatus } from "./store.js"
 import { loadKey } from "../billing/index.js"
+import { FREE_CLAUDE } from "../billing/freeAllowance.js"
 import type { ChatCompletionContentPart } from "openai/resources/chat/completions"
 import type { UserContent } from "./llm.js"
 import { dataUrl, downloadAttachments, extractAttachments, type AttachmentRef } from "./intake/attachments.js"
@@ -77,6 +78,9 @@ async function llmFor(s: TaskState, role: "plan" | "run" | "judge"): Promise<Cha
     const lanes = walletLanes(s.userId, await loadWallet(s.userId), role, { privateRepo: Boolean(s.repoPrivate), allowTraining: Boolean(s.options.allowTraining) })
     return chatVia(lanes)
   }
+  // Tasks on our models paid by the free allowance or by credits run on the models chosen for that money.
+  const funded = fundedLanes(s)
+  if (funded.length) return chatVia(funded)
   const base = await modelSpec(s, role)
   // PW_GATEWAY=off: the P0 transport (direct chat, 3 attempts, 120 s) for A/B runs against the gateway.
   if (process.env.PW_GATEWAY === "off" || s.options.transport === "direct") return (o) => chat(base, o)
@@ -91,6 +95,19 @@ async function llmFor(s: TaskState, role: "plan" | "run" | "judge"): Promise<Cha
   return chatVia(configured.length ? configured : [laneFromSpec(base)])
 }
 
+/**
+ * Lanes for tasks on our models, by who pays (every role):
+ * - the free monthly allowance → FREE_CLAUDE_MODEL (Haiku 5.5: 34/40 at $0.016 a task, claude-eval.md);
+ * - credits (Pro's monthly usage, packs) → PW_LANES_CREDITS, default Sonnet 5.5 (26/26 on the ladder).
+ * Empty when the task isn't funded that way or the key isn't configured (then the platform lanes apply).
+ */
+export function fundedLanes(s: Pick<TaskState, "options">): ReturnType<typeof parseLanes> {
+  if (s.options.fundedBy === "free_claude") return parseLanes(`anthropic:${FREE_CLAUDE.model()}`)
+  // Bounded by the user's balance (each task's cap ≤ what they have), so not by the free pool's budget.
+  if (s.options.fundedBy === "credits") return parseLanes(process.env.PW_LANES_CREDITS ?? "anthropic:claude-sonnet-5-5").map((l) => ({ ...l, spendClass: "credits" as const }))
+  return []
+}
+
 /** Lanes that read issue images: measured vision models only; private repos skip lanes that train on data. */
 const DEFAULT_VISION_LANES = "groq:qwen/qwen3.8-27b,gemini:gemini-3.5-flash-lite,vercel:openai/gpt-5-mini"
 async function visionChat(s: TaskState): Promise<ChatFn | null> {
@@ -98,6 +115,8 @@ async function visionChat(s: TaskState): Promise<ChatFn | null> {
     const lanes = walletLanes(s.userId, await loadWallet(s.userId), "vision", { privateRepo: Boolean(s.repoPrivate), allowTraining: Boolean(s.options.allowTraining) })
     return lanes.length ? chatVia(lanes) : null
   }
+  const funded = fundedLanes(s).filter((l) => supportsVision(l.provider, l.model))
+  if (funded.length) return chatVia(funded)
   const base = await modelSpec(s, "plan")
   if (base.apiKey) return supportsVision(base.provider, base.model) ? chatVia([laneFromSpec(base, s.userId ?? null)]) : null
   const lanes = parseLanes(process.env.PW_LANES_VISION ?? DEFAULT_VISION_LANES, "low").filter(

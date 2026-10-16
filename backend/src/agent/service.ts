@@ -169,7 +169,7 @@ export async function createTask(input: CreateTaskInput, registry: TaskRegistry)
       ...(input.options?.allowTraining ? { allowTraining: true } : {}),
       ...(input.options?.transport ? { transport: input.options.transport } : {}),
       ...(input.options?.specCheck === false ? { specCheck: false as const } : {}),
-      ...(input.options?.fundedBy === "credits" ? { fundedBy: "credits" as const } : {}),
+      ...(input.options?.fundedBy === "credits" || input.options?.fundedBy === "free_claude" ? { fundedBy: input.options.fundedBy } : {}),
       ...(input.options?.capUsd && input.options.capUsd > 0 ? { capUsd: input.options.capUsd } : {}),
     },
     rejectedFiles: [],
