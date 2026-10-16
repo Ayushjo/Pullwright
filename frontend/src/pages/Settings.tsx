@@ -5,7 +5,7 @@ import AppShell from '../components/AppShell'
 import { Badge, Button, PageHeader, useToast } from '../components/ui'
 import CapacityMeter from '../components/wallet/CapacityMeter'
 import CreditsCard from '../components/billing/CreditsCard'
-import FreeClaudeMeter from '../components/billing/FreeClaudeMeter'
+import FreeClaudeMeter, { modelLabel } from '../components/billing/FreeClaudeMeter'
 import { claimTrial, getBilling, getCredits, getWallet, openBillingPortal, startCheckout, syncBilling, type BillingInfo, type CreditsView, type WalletView } from '../api/client'
 
 /** White card with a mono title over a hairline. */
@@ -144,7 +144,7 @@ export default function Settings() {
                     : ent.key.kind === 'byok'
                       ? `New tasks use your ${ent.key.provider === 'openai' ? 'OpenAI' : 'OpenRouter'} key.`
                       : ent.key.fundedBy === 'free_claude'
-                        ? `New tasks run free on Claude (${ent.key.model.replace(/^claude-/, '').replace(/-(\d)-(\d)$/, ' $1.$2')}) — no key needed.`
+                        ? `New tasks run free on Claude ${modelLabel(ent.key.model)} — no key needed.`
                         : `New tasks run on our models from your credit, up to $${ent.key.capUsd.toFixed(2)} each.`
                   : ent.reason}
               </p>

@@ -8,9 +8,13 @@ const date = (iso: string) => new Date(iso).toLocaleDateString([], { month: 'sho
 const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 /** The free monthly Claude allowance as one line: what's left, when it renews, and why it's paused if it is. */
+/** "claude-haiku-5-5" → "Haiku 5.5". */
+export const modelLabel = (id: string) =>
+  id.replace(/^claude-/, '').replace(/-(\d+)-(\d+)$/, ' $1.$2').replace(/^\w/, (c) => c.toUpperCase())
+
 export function freeClaudeText(f: FreeAllowance): { line: string; note: string | null; blocked: boolean } {
   if (f.ineligible) return { line: 'Free Claude tasks', note: f.ineligible, blocked: true }
-  if (f.left <= 0) return { line: `All ${f.limit} free Claude tasks used this month`, note: `They renew ${date(f.renewsAt)}. A free Gemini key gives you unlimited free tasks.`, blocked: true }
+  if (f.left <= 0) return { line: f.limit === 1 ? 'Your free Claude task is used this month' : `All ${f.limit} free Claude tasks used this month`, note: `They renew ${date(f.renewsAt)}. A free Gemini key gives you unlimited free tasks.`, blocked: true }
   if (!f.poolOpen)
     return { line: `${f.left} of ${f.limit} free Claude tasks left this month`, note: `Today's free tasks are all taken — back ${f.poolOpensAt ? `at ${time(f.poolOpensAt)}` : 'tomorrow'}.`, blocked: true }
   return { line: `${f.left} of ${f.limit} free Claude tasks left this month`, note: `No key needed · renews ${date(f.renewsAt)}`, blocked: false }
