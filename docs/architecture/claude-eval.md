@@ -74,3 +74,69 @@ Total: **$7.17 for 40 tasks**, about 11× Haiku.
   - H09, which Haiku failed, passed.
 - **Fewer calls than Haiku** on hard work (H mean 13 vs 18; H07 22 vs 39), but each call costs ~20× more.
 - **Vague and very vague items are the weak spot: 4/8**, the same as Haiku's 5/8 within noise. Every miss is a *ready* task that the reviewer approved but whose hidden test failed. The agent built a reasonable reading of the vague issue that wasn't the one the hidden test encodes (V07's validation rules, VH01's storage format, VVH04's CSV rules, VVH06's API shape). Sonnet asked the simulated user once on 5 of the 8 items (Haiku never asked), and one answer wasn't enough to pin the contract down.
+
+## Opus 5.5 (`claude-opus-5-5`, $4 / $20 per MTok) — `--tag claude-opus-v1`
+
+All 40 items, visible live in the owner's dashboard.
+
+| Set | Hidden test passed | Mean $ | Median $ | Max $ | Mean min |
+|---|---|---|---|---|---|
+| L easy (11) | **11/11** | 0.173 | 0.202 | 0.239 | 1.0 |
+| R real repo (5) | **4/5** (R05 → needs review) | 0.755 | 0.603 | 2.056 | 3.8 |
+| H hard (10) | **10/10** | 0.646 | 0.594 | 1.085 | 3.3 |
+| M image (6) | **4/6**: both "with image" passed; on M11n it **stopped and asked** what the availability values should be (correct, since the fact is only in the missing image) | 0.194 | 0.218 | 0.283 | 1.0 |
+| V vague (5) | **5/5** | 0.327 | 0.368 | 0.465 | 1.8 |
+| VV very vague (3) | **2/3** (VVH06 failed) | 0.761 | 0.500 | 1.530 | 3.9 |
+| **All 40** | **36/40** | **0.430** | 0.291 | 2.056 | |
+
+Total: **$17.22 for 40 tasks**, ≈ 2.4× Sonnet and 26× Haiku.
+
+- **Best on vague work: 7/8**, against 4/8 for Sonnet and 6/8 for Haiku (both counting fixes). Opus reads intent better from thin issues. It asked the simulated user on 3 of 8 and assumed well on the rest.
+- **The only model that refused to guess on a missing image** (M11n). That's the behaviour we want in the product, even though it scores as a fail here.
+- R05 cost $2.06 over 45 calls and still ended in needs-review. Sonnet solved it for $0.90.
+- Fable 5.1 was not run, at the owner's call (10-17).
+
+## Comparison
+
+| | Haiku 5.5 | Sonnet 5.5 | Opus 5.5 |
+|---|---|---|---|
+| Base ladder L+R+H (26) | 24/26 | **26/26** | 25/26 |
+| Hard H (10) | 9/10 | **10/10** | **10/10** |
+| Vague + very vague (8) | 6/8 | 4/8 | **7/8** |
+| Image items, with image (4)\* | 4/4 | 4/4 | 4/4 |
+| **All 40** (incl. 2 no-image controls) | 34/40 | 34/40 | **36/40** |
+| Mean $ per task | **$0.016** | $0.179 | $0.430 |
+| Median $ per task | **$0.009** | $0.113 | $0.291 |
+| Hard task mean $ | **$0.024** | $0.275 | $0.646 |
+| Mean minutes, hard | 2.6 | **2.1** | 3.3 |
+| Run total (40 tasks) | **$0.66** | $7.17 | $17.22 |
+
+\* The M table counts 6 items; this row counts only the 4 with the image, since the no-image controls are expected to fail.
+
+Earlier configurations on the same 26-item ladder: gpt-5-mini 24/26 at ≈ $0.04 per task; free mode with credit (Gemini Flash-Lite plus gpt-5-mini) 24/26 at ≈ $0.012 of credit; no-credit Gemini + Groq in progress, at $0.
+
+Total spent on this evaluation: **≈ $25.2** of the $60 cap (platform ledger $2.42 → $27.62).
+
+## What it means for a free plan on our key
+
+The free plan allows 3 tasks a day. Per user, at full use, with these measured averages:
+
+| Model on every role | Per task | 3 tasks/day, every day (30 days) | $0.20 trial covers | Pro's $3/month covers |
+|---|---|---|---|---|
+| Haiku 5.5 | $0.016 | ≈ $1.45 | ≈ 12 tasks | ≈ 185 tasks |
+| Sonnet 5.5 | $0.18 | ≈ $16 | ≈ 1 task | ≈ 17 tasks |
+| Opus 5.5 | $0.43 | ≈ $39 | 0 tasks (one hard task is ~$0.65) | ≈ 7 tasks |
+
+**Recommendation.**
+
+1. **Free plan and trial on Haiku 5.5.** At 1–2 cents a task it is at least as good as everything we measured before on easy, real-repo and hard work, and a maxed-out free user costs under $1.50 a month. The trial's $0.20 becomes ~12 tasks instead of 2, so `TRIAL_TASK_CAP_USD` and the "2 tasks" copy should change if the trial moves to Haiku.
+2. **Pro and credit packs on Sonnet 5.5.** It's the only model that passed the whole ladder (incl. R05), and the fastest on hard items. $3 a month buys ~17 tasks, so Pro's included usage should either grow or route easy issues to Haiku.
+3. **Opus 5.5 only for vague issues**, when the spec check flags the issue as unclear (7/8 vs 4/8). Escalating there costs ~$0.35–0.75 per vague task, against ~$0.13–0.26 on Sonnet.
+4. **Prompting gap (all models):** vague-issue misses were confident wrong readings, not crashes, and models rarely asked. The intake should push harder to ask when the spec check finds open questions.
+
+Caveats:
+- One run per item.
+- Our eval repos are small; on larger real repos expect the R-set costs (Haiku $0.04, Sonnet $0.34, Opus $0.75 mean).
+- The simulated user is Haiku for every model.
+- Effort `medium` throughout. `low` would be cheaper and is untested.
+- Mixed routing (e.g. Sonnet planning + Haiku executing) is untested.
