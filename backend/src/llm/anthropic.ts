@@ -160,14 +160,20 @@ export type ClaudeCall = {
   tools?: ToolDef[]
   maxOutputTokens: number
   jsonMode?: boolean
+  /** The caller needs a tool call every turn. Forced tool_choice is a 400 on these models, so this is an instruction. */
+  requireTool?: boolean
   effort?: "low" | "medium" | "high" | "xhigh" | "max"
   timeoutMs?: number
 }
 
+/** Constant (cache-stable) instruction for agent loops that must get a tool call on every turn. */
+export const TOOL_REQUIRED_NOTE = "Every response must call one of the provided tools. Never reply with text alone: to ask the user, use ask_user if it is available; when the work is done, call the tool that completes it (submit_plan when planning, finish when implementing)."
+
+
 export async function claudeChat(call: ClaudeCall): Promise<ClaudeResult> {
   const { system, messages } = toAnthropic(call.messages, call.model)
   const tools = toAnthropicTools(call.tools)
-  const sys = call.jsonMode ? `${system}\n\nRespond with only a single JSON object — no prose and no code fences.`.trim() : system
+  const sys = [system, call.requireTool && tools ? TOOL_REQUIRED_NOTE : "", call.jsonMode ? "Respond with only a single JSON object — no prose and no code fences." : ""].filter(Boolean).join("\n\n")
   // Thinking counts toward max_tokens: leave room so a long think doesn't truncate the tool call.
   const maxTokens = Math.min(64_000, Math.max(16_000, call.maxOutputTokens * 2))
   const body = {

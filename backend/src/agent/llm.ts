@@ -262,6 +262,7 @@ async function callClaude(spec: ModelSpec, opts: CallOptions, keyOwner: LedgerEn
         ...(opts.tools ? { tools: opts.tools } : {}),
         maxOutputTokens: opts.maxOutputTokens,
         ...(opts.jsonMode ? { jsonMode: true } : {}),
+        ...(opts.toolChoice === "required" ? { requireTool: true } : {}),
         effort,
         ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}),
       })
