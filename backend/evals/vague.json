@@ -1,7 +1,50 @@
 [
-  { "id": "V02-divide", "base": "L02-divide-zero", "title": "divide by zero", "body": "Dividing by zero gives a weird result." },
-  { "id": "V06-filters", "base": "L06-books-filters", "title": "Filter books", "body": "Users want to filter the book list." },
-  { "id": "V07-quote", "base": "L07-quote-validation", "title": "Quote endpoint crashes", "body": "POST /cart/quote sometimes returns 500." },
-  { "id": "V10-pagination", "base": "L10-pagination", "title": "Books endpoint returns too much data", "body": "" },
-  { "id": "VH01-persistence", "base": "H01-persistence", "title": "Inventory changes are lost on restart", "body": "" }
+  {
+    "id": "V02-divide",
+    "base": "L02-divide-zero",
+    "title": "divide by zero",
+    "body": "Dividing by zero gives a weird result."
+  },
+  {
+    "id": "V06-filters",
+    "base": "L06-books-filters",
+    "title": "Filter books",
+    "body": "Users want to filter the book list."
+  },
+  {
+    "id": "V07-quote",
+    "base": "L07-quote-validation",
+    "title": "Quote endpoint crashes",
+    "body": "POST /cart/quote sometimes returns 500."
+  },
+  {
+    "id": "V10-pagination",
+    "base": "L10-pagination",
+    "title": "Books endpoint returns too much data",
+    "body": ""
+  },
+  {
+    "id": "VH01-persistence",
+    "base": "H01-persistence",
+    "title": "Inventory changes are lost on restart",
+    "body": ""
+  },
+  {
+    "id": "VV10-pagination",
+    "base": "L10-pagination",
+    "title": "book list too big",
+    "body": "The book list is getting huge."
+  },
+  {
+    "id": "VVH04-csv-import",
+    "base": "H04-csv-import",
+    "title": "bulk import",
+    "body": "We need a way to load lots of books at once."
+  },
+  {
+    "id": "VVH06-history-slow",
+    "base": "H06-issue9-pagination-search",
+    "title": "History is slow",
+    "body": "History and the dashboard get slow when there are many tasks."
+  }
 ]
