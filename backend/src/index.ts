@@ -23,10 +23,19 @@ import { startJanitor } from './agent/janitor.js';
 import { startCatalogRefresh } from './llm/catalog.js';
 import { flushEventsToDb } from './repositories/eventRepository.js';
 import { flushLlmCalls } from './repositories/llmCallRepository.js';
-import { useRedisForSpend } from './agent/spend.js';
+import { setPoolAlertNotifier, useRedisForSpend } from './agent/spend.js';
 import { createRedisClient } from './config/redis.js';
 
 useRedisForSpend(() => createRedisClient());
+// Free-pool spend alerts (70/90/100% of the month, today full) can also go to a Slack or Discord
+// incoming webhook the owner configures; they are always logged and shown on the owner's pool page.
+if (process.env.POOL_ALERT_WEBHOOK_URL) {
+  const url = process.env.POOL_ALERT_WEBHOOK_URL;
+  setPoolAlertNotifier(async (a) => {
+    const text = `${a.level === 'critical' ? '🔴' : '🟠'} Pullwright: ${a.message}`;
+    await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, content: text }), signal: AbortSignal.timeout(10_000) });
+  });
+}
 
 // WORKER_MODE: "both" (default, single process), "api" (HTTP only), "worker" (sandbox host only).
 const MODE = (process.env.WORKER_MODE ?? "both") as "both" | "api" | "worker"

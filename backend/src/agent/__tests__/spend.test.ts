@@ -13,7 +13,7 @@ vi.mock("../../repositories/llmCallRepository.js", () => ({
   sumPoolSpend: async () => 0,
 }))
 
-const { SpendLedger, SpendLimitError } = await import("../spend.js")
+const { SpendLedger, SpendLimitError, setPoolAlertNotifier } = await import("../spend.js")
 
 let redis: Redis
 let available = true
@@ -111,6 +111,48 @@ describe("budgeted pools (promo keys)", () => {
     const err = await l.reserve("m1", "pool", 0.06, 5, "anthropic").catch((e) => e)
     expect(err.scope).toBe("pool")
     expect(err.message).toMatch(/monthly/)
+  })
+})
+
+describe("pool spend alerts", () => {
+  const poolEntry = (taskId: string, costUsd: number) => ({
+    taskId, keyOwner: "pool" as const, provider: "anthropic", model: "claude-haiku-5-5", purpose: "run", inputTokens: 1, cachedInputTokens: 0, outputTokens: 1, costUsd,
+  })
+  beforeEach(() => {
+    process.env.ANTHROPIC_POOL_MONTHLY_USD = "10"
+    process.env.ANTHROPIC_POOL_DAILY_USD = "100"
+    process.env.FREE_CLAUDE_TASK_CAP_USD = "0.15"
+  })
+
+  it("raises 70% and 90% of the month once each, and notifies", async (ctx) => {
+    if (!available) ctx.skip()
+    const seen: string[] = []
+    setPoolAlertNotifier((a) => void seen.push(`${a.scope}:${Math.round(a.pct * 100)}:${a.level}`))
+    const l = new SpendLedger(redis, dir(), 100, 50)
+    await l.record(poolEntry("a1", 6.5)) // 65%: nothing
+    expect(await l.poolAlerts()).toEqual([])
+    await l.record(poolEntry("a2", 1.0)) // 75%: 70%
+    await l.record(poolEntry("a3", 0.1)) // 76%: nothing new
+    await l.record(poolEntry("a4", 1.6)) // 92%: 90%
+    expect(seen).toEqual(["month:70:warn", "month:90:critical"])
+    const alerts = await l.poolAlerts()
+    expect(alerts.map((a) => Math.round(a.pct * 100))).toEqual([90, 70]) // newest first
+    expect(alerts[0]!.message).toMatch(/90% of this month's budget \(\$9\.20 of \$10\.00\)/)
+    setPoolAlertNotifier(null)
+  })
+
+  it("raises 'full for today' once when the day can't fit another free task", async (ctx) => {
+    if (!available) ctx.skip()
+    process.env.ANTHROPIC_POOL_MONTHLY_USD = "1000"
+    process.env.ANTHROPIC_POOL_DAILY_USD = "1"
+    const l = new SpendLedger(redis, dir(), 100, 50)
+    await l.record(poolEntry("d1", 0.8)) // 0.8 + 0.15 < 1: nothing
+    expect(await l.poolAlerts()).toEqual([])
+    await l.record(poolEntry("d2", 0.1)) // 0.9 + 0.15 > 1: full
+    await l.record(poolEntry("d3", 0.05))
+    const alerts = await l.poolAlerts()
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0]).toMatchObject({ scope: "day", level: "critical" })
   })
 })
 

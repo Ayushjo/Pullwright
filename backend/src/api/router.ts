@@ -18,10 +18,11 @@ import { HOLDS_SLOT, taskStore, TERMINAL, type TaskState } from "../agent/store.
 import { admissionKeys, admit, limitsFor, pruneActive, refund, startsUsed, WINDOW_MS } from "../entitlements/admission.js"
 import { createRedisClient } from "../config/redis.js"
 import type { Redis } from "ioredis"
-import { getSpendLedger } from "../agent/spend.js"
+import { getSpendLedger, poolBudget, POOL_ALERT_THRESHOLDS } from "../agent/spend.js"
 import { getEntitlement } from "../billing/index.js"
 import { creditSummary } from "../billing/credits.js"
-import { canUseFree, freeAllowance } from "../billing/freeAllowance.js"
+import { canUseFree, freeAllowance, FREE_CLAUDE } from "../billing/freeAllowance.js"
+import { isOwnerLogin } from "../auth/owners.js"
 import { diffStat, diffVs, restoreCheckpoint, tasksRoot } from "../agent/git.js"
 import { filterPatch, metricsOf, spec, taskCap } from "../agent/pipeline.js"
 import { configuredLanes, getGateway } from "../llm/lanes.js"
@@ -675,6 +676,41 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
       nextSlotAt: used >= limits.tasksPerDay && oldest[1] ? Number(oldest[1]) + WINDOW_MS : null,
       maxActive: limits.maxActive,
       active,
+    })
+  })
+
+  // Owner-only: the free Claude pool (spend vs budget, projection, free-task usage, alerts).
+  router.get("/admin/pool", async (req, res) => {
+    if (!req.isOperator && !isOwnerLogin(req.session?.login)) return res.status(403).json({ error: "Owner only" })
+    const ledger = getSpendLedger()
+    const now = new Date()
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+    const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate()
+    const elapsedDays = Math.max(1 / 24, (now.getTime() - monthStart.getTime()) / 86_400_000)
+    const budget = poolBudget("anthropic")
+    const spent = budget ? await ledger.poolSpent("anthropic") : { dayUsd: 0, monthUsd: 0 }
+    const db = isDatabaseEnabled() ? getPrisma() : null
+    const freeWhere = { createdAt: { gte: monthStart }, options: { path: ["fundedBy"], equals: "free_claude" } }
+    const [freeTasks, freeUsers] = db
+      ? await Promise.all([db.task.count({ where: freeWhere }), db.task.groupBy({ by: ["userId"], where: freeWhere }).then((g) => g.length)])
+      : [0, 0]
+    res.json({
+      pool: budget
+        ? {
+            name: "anthropic",
+            model: FREE_CLAUDE.model(),
+            monthlyUsd: budget.monthlyUsd,
+            dailyUsd: Number.isFinite(budget.dailyUsd) ? budget.dailyUsd : null,
+            spentMonthUsd: spent.monthUsd,
+            spentDayUsd: spent.dayUsd,
+            projectedMonthUsd: (spent.monthUsd / elapsedDays) * daysInMonth,
+            thresholds: POOL_ALERT_THRESHOLDS,
+          }
+        : null,
+      allowance: { enabled: FREE_CLAUDE.enabled(), tasksPerMonth: FREE_CLAUDE.tasksPerMonth(), taskCapUsd: FREE_CLAUDE.taskCapUsd() },
+      usage: { freeTasks, freeUsers, avgCostUsd: freeTasks ? spent.monthUsd / freeTasks : null },
+      alerts: await ledger.poolAlerts(30),
+      webhook: Boolean(process.env.POOL_ALERT_WEBHOOK_URL),
     })
   })
 

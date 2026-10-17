@@ -28,6 +28,7 @@ const { claimTrial } = await import("../trial.js")
 const old = async () => new Date("2020-01-01")
 
 beforeEach(() => {
+  process.env.TRIAL_ENABLED = "1" // .env turns the trial off now that the monthly allowance replaces it
   entries.length = 0
   users.clear()
   clock = new Date("2026-10-08T12:00:00Z")
@@ -71,6 +72,5 @@ describe("free trial", () => {
   it("can be switched off", async () => {
     process.env.TRIAL_ENABLED = "0"
     expect(await claimTrial("u1", "tok", clock, old)).toMatchObject({ ok: false, code: "disabled" })
-    delete process.env.TRIAL_ENABLED
   })
 })

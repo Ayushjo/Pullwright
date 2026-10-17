@@ -4,6 +4,7 @@ import logger from "../logger.js"
 import { createRedisClient } from "../config/redis.js"
 import { SessionStore, SESSION_COOKIE } from "../auth/session.js"
 import { upsertUserByGithubId } from "../repositories/userRepository.js"
+import { isOwnerLogin } from "../auth/owners.js"
 import { isDatabaseEnabled } from "../db/prisma.js"
 
 const GITHUB_AUTHORIZE = "https://github.com/login/oauth/authorize"
@@ -216,6 +217,7 @@ export function createOAuthRouter(sessionStore: SessionStore) {
         login,
         name,
         avatarUrl,
+        ...(isOwnerLogin(login) ? { isOwner: true } : {}),
       },
     })
   })

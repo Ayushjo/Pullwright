@@ -98,6 +98,17 @@ export function nextUtcDay(now = Date.now()): number {
   const d = new Date(now)
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1)
 }
+/** A spend alert on a budgeted pool: crossing 70/90/100% of the month, or filling today's budget. */
+export type PoolAlert = { ts: string; pool: string; scope: "month" | "day"; pct: number; spentUsd: number; budgetUsd: number; level: "warn" | "critical"; message: string }
+export const POOL_ALERT_THRESHOLDS = [0.7, 0.9, 1.0]
+const K_ALERTS = "pw:alerts:pool"
+type Notifier = (a: PoolAlert) => void | Promise<void>
+let notifier: Notifier | null = null
+/** Where alerts go besides the log and the owner's page (e.g. a Slack/Discord webhook), set at startup. */
+export function setPoolAlertNotifier(n: Notifier | null) {
+  notifier = n
+}
+
 function nextUtcMonth(now = Date.now()): number {
   const d = new Date(now)
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)
@@ -316,6 +327,50 @@ export class SpendLedger {
     return hold
   }
 
+  /**
+   * Raise each threshold once per period: 70/90/100% of the month, and 100% of the day. Each fires
+   * exactly once (SET NX per pool/period/threshold), goes to the log, the owner's alert list, and the
+   * notifier if one is set.
+   */
+  async checkPoolAlerts(pool: string, now = new Date()): Promise<PoolAlert[]> {
+    const budget = poolBudget(pool)
+    if (!budget || !this.redis) return []
+    const [d, mo] = await Promise.all([this.redis.get(kPoolDay(pool, now)), this.redis.get(kPoolMonth(pool, now))])
+    const day = Number(d ?? 0)
+    const month = Number(mo ?? 0)
+    const raised: PoolAlert[] = []
+    const fire = async (scope: "month" | "day", pct: number, spentUsd: number, budgetUsd: number, period: string) => {
+      const key = `pw:alert:pool:${pool}:${period}:${scope}:${Math.round(pct * 100)}`
+      if ((await this.redis!.set(key, "1", "EX", 40 * 24 * 3600, "NX")) !== "OK") return
+      const level = pct >= 0.9 ? "critical" : "warn"
+      const message =
+        scope === "day"
+          ? `Today's ${pool} free pool is used up ($${spentUsd.toFixed(2)} of $${budgetUsd.toFixed(2)}); free tasks pause until 00:00 UTC.`
+          : `The ${pool} free pool has used ${Math.round(pct * 100)}% of this month's budget ($${spentUsd.toFixed(2)} of $${budgetUsd.toFixed(2)}).`
+      const a: PoolAlert = { ts: now.toISOString(), pool, scope, pct, spentUsd, budgetUsd, level, message }
+      await this.redis!.multi().lpush(K_ALERTS, JSON.stringify(a)).ltrim(K_ALERTS, 0, 99).exec()
+      raised.push(a)
+    }
+    if (Number.isFinite(budget.monthlyUsd) && budget.monthlyUsd > 0) {
+      for (const t of POOL_ALERT_THRESHOLDS) if (month >= t * budget.monthlyUsd) await fire("month", t, month, budget.monthlyUsd, now.toISOString().slice(0, 7))
+    }
+    // "Full for today" = less room left than one more free task needs.
+    if (Number.isFinite(budget.dailyUsd) && budget.dailyUsd > 0 && day + Number(process.env.FREE_CLAUDE_TASK_CAP_USD ?? 0.15) > budget.dailyUsd) {
+      await fire("day", 1, day, budget.dailyUsd, now.toISOString().slice(0, 10))
+    }
+    for (const a of raised) {
+      console.warn(`[pool alert] ${a.message}`)
+      await Promise.resolve(notifier?.(a)).catch(() => {})
+    }
+    return raised
+  }
+
+  /** The most recent pool alerts, newest first. */
+  async poolAlerts(limit = 30): Promise<PoolAlert[]> {
+    if (!this.redis) return []
+    return (await this.redis.lrange(K_ALERTS, 0, limit - 1)).map((x) => JSON.parse(x) as PoolAlert)
+  }
+
   /** What a pool has spent today and this month (UTC), counting calls in flight. */
   async poolSpent(pool: string): Promise<{ dayUsd: number; monthUsd: number }> {
     await this.seedPool(pool)
@@ -385,6 +440,7 @@ export class SpendLedger {
       m.incrbyfloat(kTask(entry.taskId), entry.costUsd).expire(kTask(entry.taskId), TASK_TTL)
       m.incr(kCalls(entry.taskId)).expire(kCalls(entry.taskId), TASK_TTL)
       await m.exec()
+      if (entry.keyOwner === "pool") await this.checkPoolAlerts(entry.provider).catch(() => {})
     }
     if (hold) await this.release(hold)
     queueLlmCall({ ...entry, createdAt: new Date(full.ts), ...(extra?.userId ? { userId: extra.userId } : {}), ...(extra?.durationMs !== undefined ? { durationMs: extra.durationMs } : {}) })
