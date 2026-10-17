@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowRight, ArrowUpRight, CircleDot, Sparkles } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Check, CircleDot, GitPullRequest, Sparkles } from 'lucide-react'
 import { Button } from '../components/ui'
 import Logo from '../components/svgs/Logo'
 import SiteNav from '../components/site/SiteNav'
@@ -8,7 +8,7 @@ import SiteFooter from '../components/site/SiteFooter'
 import { Frame } from '../components/site/Layout'
 import { MonoLabel } from '../components/site/Typography'
 import ProductShot from '../components/site/ProductShot'
-import { HeroMock, CodeMock, PlanMock, ReviewMock, ShipMock } from '../components/site/home/Mocks'
+import { HeroMock, CodeMock, PlanMock, PrCard, ReviewMock, ShipMock, ChecksMock } from '../components/site/home/Mocks'
 import { BuiltOn, ClosingCta, Demo, Features, Keys, Safety, Steps } from '../components/site/home/Sections'
 import { DEMO_REPLAY_URL } from '../content/site'
 import { useSeo } from '../lib/seo'
@@ -567,11 +567,331 @@ function HeroSignal() {
   )
 }
 
+/* ═════════════ Round 3: V4's look, four different page structures (bookmarks round 2) ═════════════ */
+
+const SerifH1 = ({ children, className }: { children: ReactNode; className?: string }) => (
+  <h1 className={cn('text-balance leading-[0.98] tracking-[-0.02em] text-foreground', className)} style={{ fontFamily: SERIF }}>
+    {children}
+  </h1>
+)
+const HEADLINE = (
+  <>
+    Hand it an issue. <br />
+    Get a <em className="text-primary">pull request.</em>
+  </>
+)
+
+/** A real run (Ayushjo/devin-test-app #3 → PR #4) as a timeline: the product itself, not a picture of it. */
+const TIMELINE = [
+  ['0:00', 'Read the issue', 'Add a modulo(a, b) helper to math.js', 'done'],
+  ['0:09', 'Mapped the repo', '6 files · node + node:test', 'done'],
+  ['0:14', 'Plan approved', '5 requirements · 2 files', 'done'],
+  ['0:31', 'Edited src/math.js', '+12 −0 · syntax-checked', 'done'],
+  ['0:40', 'Edited test/math.test.js', '+3 −1', 'done'],
+  ['0:52', 'npm test', '18 passed · 0 new failures', 'done'],
+  ['1:04', 'Independent review', '5 / 5 requirements met', 'done'],
+  ['1:06', 'Waiting for you', 'Read the diff, then publish', 'wait'],
+] as const
+
+function LiveRun() {
+  return (
+    <div className="overflow-hidden rounded-[20px] border border-black/[.08] bg-card shadow-[0_30px_80px_-40px_rgba(25,40,80,0.35)]">
+      <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-3.5">
+        <div className="min-w-0">
+          <p className="truncate text-[13px] text-foreground">Add a modulo(a, b) helper to math.js</p>
+          <p className="font-mono text-[10.5px] text-muted-foreground">Ayushjo/devin-test-app · issue #3</p>
+        </div>
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-pill border border-green-200 bg-green-50 px-2 py-0.5 text-[11px] text-success">
+          <span className="h-1.5 w-1.5 rounded-full bg-success" /> Ready
+        </span>
+      </div>
+      <ol className="px-5 py-4">
+        {TIMELINE.map(([t, title, sub, k], i) => (
+          <li key={i} className="relative flex gap-4 pb-4 last:pb-0">
+            {i < TIMELINE.length - 1 && <span aria-hidden className="absolute left-[46px] top-5 h-full w-px bg-hairline" />}
+            <span className="w-8 shrink-0 pt-px font-mono text-[10.5px] tabular-nums text-muted-foreground">{t}</span>
+            <span className={cn('relative z-10 mt-0.5 flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full', k === 'wait' ? 'bg-primary' : 'bg-success')}>
+              {k === 'wait' ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
+            </span>
+            <div className="min-w-0">
+              <p className={cn('text-[13.5px] leading-tight', k === 'wait' ? 'text-primary' : 'text-foreground')}>{title}</p>
+              <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">{sub}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <div className="flex items-center justify-between gap-3 border-t border-hairline bg-background/60 px-5 py-3">
+        <p className="font-mono text-[11px] text-muted-foreground">$0.047 · 1m 06s · 2 files</p>
+        <Button variant="primary" shape="pill" className="h-8 px-3.5 text-[13px]">
+          <GitPullRequest className="h-3.5 w-3.5" /> Publish PR
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** Eval results per model (docs/architecture/claude-eval.md), as spec cards — Anthropic's release-card layout. */
+const MODELS = [
+  { name: 'Haiku 5.5', role: 'Free tasks', rows: [['Solved', '34 / 40'], ['Hard issues', '9 / 10'], ['Vague issues', '6 / 8'], ['Avg cost', '$0.016']] },
+  { name: 'Sonnet 5.5', role: 'Credits', rows: [['Solved', '34 / 40'], ['Hard issues', '10 / 10'], ['Base ladder', '26 / 26'], ['Avg cost', '$0.18']] },
+  { name: 'Opus 5.5', role: 'Vague issues', rows: [['Solved', '36 / 40'], ['Hard issues', '10 / 10'], ['Vague issues', '7 / 8'], ['Avg cost', '$0.43']] },
+]
+function EvalCards() {
+  return (
+    <section className="border-t border-hairline px-gutter py-16 md:px-12 md:py-24">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <h2 className="text-title font-normal text-foreground">
+          Measured, <Serif className="text-muted-foreground">not promised.</Serif>
+        </h2>
+        <p className="max-w-sm text-sm text-muted-foreground">The same 40 issues — easy, hard, real repos, screenshots, vague — run on each model. Hidden tests decide pass or fail.</p>
+      </div>
+      <div className="mt-10 grid gap-4 md:grid-cols-3">
+        {MODELS.map((m) => (
+          <article key={m.name} className="flex flex-col rounded-[18px] bg-[#e9edf3] p-6">
+            <p className="text-[22px] tracking-[-0.02em] text-foreground">{m.name}</p>
+            <p className="text-[15px] text-muted-foreground">{m.role}</p>
+            <dl className="mt-8 divide-y divide-black/[.08] border-y border-black/[.08]">
+              {m.rows.map(([k, v]) => (
+                <div key={k} className="flex items-center justify-between py-2.5">
+                  <dt className="font-mono text-[11px] uppercase tracking-[0.08em] text-foreground/70">{k}</dt>
+                  <dd className="text-[15px] tabular-nums text-foreground">{v}</dd>
+                </div>
+              ))}
+            </dl>
+            <Button variant="primary" shape="pill" className="mt-6 h-9 self-start bg-foreground px-4 text-[13px]">
+              See the runs <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/* ── V10 · Split: words left, the live run right (claude.com, Anthropic, Vercel) ── */
+function HeroSplit() {
+  const [url, setUrl] = useState('')
+  return (
+    <section className="overflow-hidden px-gutter pb-16 pt-14 md:px-12 md:pb-24 md:pt-20">
+      <div className="grid items-center gap-12 lg:grid-cols-[1fr_minmax(0,500px)] xl:gap-20">
+        <div>
+          <MonoLabel dot>Autonomous PR agent</MonoLabel>
+          <SerifH1 className="mt-6 text-[clamp(3rem,6vw,5.4rem)]">{HEADLINE}</SerifH1>
+          <p className="mt-6 max-w-lg text-lead text-muted-foreground">It plans, edits in a sandbox, runs your tests and gets a second opinion. Nothing ships until you approve it.</p>
+          <div className="mt-9 max-w-xl">
+            <IssueBox value={url} onChange={setUrl} />
+            <Chips onPick={() => setUrl(DEMO_ISSUE)} />
+            <p className="mt-5 text-sm text-muted-foreground">
+              Free to start — no key, no card.{' '}
+              <Link to={DEMO_REPLAY_URL} className="text-primary hover:underline">Watch this run →</Link>
+            </p>
+          </div>
+        </div>
+        <LiveRun />
+      </div>
+    </section>
+  )
+}
+
+/* ── V11 · Manifesto: V4's hero, then a narrow story told in labelled stanzas (zeromaintenanceengineer, Anthropic) ── */
+const STANZAS = [
+  { tag: 'The backlog', text: <>Every repo has issues nobody gets to. <em className="text-primary">Small, clear, and still open</em> months later.</>, media: null },
+  { tag: 'The plan', text: <>Pullwright reads the issue, maps the repo and writes a plan you can edit — before a single line changes.</>, media: <PlanMock /> },
+  { tag: 'The work', text: <>It edits in a sandbox with no network and no secrets, and runs <em className="text-primary">your</em> tests after every change.</>, media: <CodeMock /> },
+  { tag: 'The second opinion', text: <>A separate reviewer checks the diff against every requirement. Anything missing goes back before you see it.</>, media: <ReviewMock /> },
+  { tag: 'The catch', text: <><em className="text-primary">Nothing ships without you.</em> Read the diff, drop what you don't want, publish.</>, media: <ShipMock /> },
+]
+function Manifesto() {
+  return (
+    <section className="border-t border-hairline px-gutter py-20 md:px-12 md:py-28">
+      <div className="mx-auto max-w-2xl text-center">
+        {STANZAS.map((s, i) => (
+          <div key={s.tag} className={cn(i > 0 && 'mt-16')}>
+            {i > 0 && <p aria-hidden className="mb-16 font-mono text-[11px] text-faint">↓</p>}
+            <span className="inline-block rounded-[4px] border border-primary/30 bg-primary/[.06] px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-[0.1em] text-primary">{s.tag}</span>
+            <p className="mt-5 text-balance text-[clamp(1.6rem,3vw,2.3rem)] leading-[1.18] tracking-[-0.01em] text-foreground" style={{ fontFamily: SERIF }}>{s.text}</p>
+            {s.media && (
+              <div className="mx-auto mt-8 max-w-xl text-left">
+                <ProductShot backdrop="sky">{s.media}</ProductShot>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/* ── V12 · Index: V4's hero, then numbered chapters with staggered columns (neon.tech) ── */
+const COLS = [
+  { t: 'Plan.', d: 'Every requirement pulled from the issue, the files it will touch. You approve.', m: <PlanMock />, off: 'lg:mt-0' },
+  { t: 'Code.', d: 'Small edits, each syntax-checked and reverted if it breaks.', m: <CodeMock />, off: 'lg:mt-16' },
+  { t: 'Test.', d: 'Your tests and type-checks in a sandbox, before and after.', m: <ChecksMock />, off: 'lg:mt-32' },
+  { t: 'Review.', d: 'A second model checks the diff against each requirement.', m: <ReviewMock />, off: 'lg:mt-10' },
+  { t: 'Ship.', d: 'You publish. The PR opens from your account, linked to the issue.', m: <ShipMock />, off: 'lg:mt-24' },
+]
+function IndexHead({ n, tag, strong, rest }: { n: string; tag: string; strong: string; rest: string }) {
+  return (
+    <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
+      <div>
+        <p className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-foreground"><span className="h-1.5 w-1.5 bg-primary" />{tag}</p>
+        <p className="mt-2 font-mono text-[88px] leading-none tracking-[-0.06em] text-black/[.08]">{n}</p>
+      </div>
+      <h2 className="max-w-4xl text-[clamp(1.8rem,3.4vw,2.9rem)] font-normal leading-[1.1] tracking-[-0.03em] text-foreground">
+        {strong} <span className="text-muted-foreground">{rest}</span>
+      </h2>
+    </div>
+  )
+}
+function IndexChapters() {
+  return (
+    <>
+      <section className="border-t border-hairline px-gutter py-16 md:px-12 md:py-24">
+        <IndexHead n="01" tag="How it works" strong="Not autocomplete." rest="Pullwright takes one issue all the way to a reviewed pull request, and stops for you twice." />
+        <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
+          {COLS.map((c) => (
+            <div key={c.t} className={c.off}>
+              <p className="text-[15px] leading-snug text-foreground">
+                {c.t} <span className="text-muted-foreground">{c.d}</span>
+              </p>
+              <div className="relative mt-4 h-[210px] overflow-hidden rounded-lg border border-hairline bg-[radial-gradient(120%_90%_at_20%_10%,#dbe8ff_0%,#eef3fb_45%,#e9ecef_100%)]">
+                <div className="absolute left-3 top-3 w-[420px] origin-top-left scale-[0.52]">{c.m}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="border-t border-hairline px-gutter pt-16 md:px-12 md:pt-24">
+        <IndexHead n="02" tag="Your models" strong="Free to start." rest="Claude Haiku on us for your first tasks, then your own keys or credits — any provider you already use." />
+      </section>
+    </>
+  )
+}
+
+/* ── V13 · Playground: short headline, then the product you can poke, epoch-style metric cards, sticky CTA bar (youform, learn-ui) ── */
+const STEPS5 = ['Paste', 'Plan', 'Code', 'Review', 'Publish']
+function HeroPlayground() {
+  const [url, setUrl] = useState(DEMO_ISSUE)
+  return (
+    <section className="overflow-hidden px-gutter pb-16 pt-14 md:px-12 md:pb-20 md:pt-20">
+      <div className="text-center">
+        <MonoLabel dot>Autonomous PR agent · free to start</MonoLabel>
+        <SerifH1 className="mx-auto mt-6 max-w-4xl text-[clamp(2.8rem,6vw,5rem)]">{HEADLINE}</SerifH1>
+        <p className="mx-auto mt-5 max-w-xl text-lead text-muted-foreground">Below is a real run. Pick an example or paste your own issue.</p>
+      </div>
+      <div className="mx-auto mt-10 max-w-5xl">
+        <div className="overflow-hidden rounded-[20px] border border-black/10 bg-card shadow-[0_40px_90px_-50px_rgba(25,40,80,0.45)]">
+          <div className="flex flex-col gap-3 border-b border-hairline p-3 md:flex-row md:items-center">
+            <div className="flex-1"><IssueBox value={url} onChange={setUrl} /></div>
+            <div className="flex items-center gap-1 overflow-x-auto rounded-pill bg-black/[.04] p-1 text-[12.5px]">
+              {STEPS5.map((s, i) => (
+                <span key={s} className={cn('whitespace-nowrap rounded-pill px-3 py-1.5', i === 4 ? 'bg-foreground text-background' : 'text-foreground/60')}>
+                  <span className="mr-1 font-mono text-[10px] opacity-60">{i + 1}</span>{s}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="grid gap-6 bg-[radial-gradient(120%_90%_at_20%_10%,#dbe8ff_0%,#eef3fb_45%,#e9ecef_100%)] p-5 md:grid-cols-[1fr_300px] md:p-8">
+            <HeroMock floatingPr={false} />
+            <div className="hidden md:block"><PrCard /></div>
+          </div>
+        </div>
+        <div className="mt-3 flex items-center justify-between">
+          <Chips onPick={() => setUrl(DEMO_ISSUE)} />
+          <Link to={DEMO_REPLAY_URL} className="hidden shrink-0 items-center gap-1 text-sm text-foreground md:inline-flex">Open the full replay <ArrowUpRight className="h-3.5 w-3.5" /></Link>
+        </div>
+      </div>
+      <div className="mx-auto mt-16 grid max-w-5xl gap-4 md:grid-cols-3">
+        {[
+          ['34 / 40', 'issues solved on the free model', 'Hard and vague issues, hidden tests', 'Eval'],
+          ['$0.016', 'average model cost per task', 'Claude Haiku 5.5, measured', 'Cost'],
+          ['0', 'pull requests opened without approval', 'You publish, every time', 'Safety'],
+        ].map(([n, l, d, tag]) => (
+          <div key={l} className="rounded-[16px] border border-hairline bg-card p-5">
+            <p className="text-sm text-foreground">{l}</p>
+            <p className="mt-3 text-[40px] leading-none tracking-[-0.03em] text-foreground"><span className="mr-1 text-primary">↑</span>{n}</p>
+            <p className="mt-3 text-sm text-muted-foreground">{d}</p>
+            <span className="mt-4 inline-flex items-center gap-1.5 rounded-pill bg-primary/[.08] px-2.5 py-1 text-[12px] text-primary"><span className="h-1.5 w-1.5 rounded-full bg-primary" />{tag}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+function StickyCta() {
+  return (
+    <div className="fixed inset-x-0 bottom-4 z-40 px-4">
+      <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 rounded-[16px] border border-black/10 bg-card/95 px-4 py-3 shadow-[0_20px_50px_-25px_rgba(0,0,0,0.35)] backdrop-blur">
+        <p className="text-sm text-foreground">
+          Issue in, PR out. <span className="text-muted-foreground" style={{ fontFamily: SERIF, fontStyle: 'italic', fontSize: '1.1em' }}>Free to start.</span>
+        </p>
+        <Button variant="primary" shape="pill" className="h-9 px-4 text-[13px]">Start free <ArrowRight className="h-3.5 w-3.5" /></Button>
+      </div>
+    </div>
+  )
+}
+
+/** Round-3 pages: their own top, then the sections that were already liked. */
+function Round3({ v }: { v: string }) {
+  const tail = (
+    <>
+      <Keys />
+      <Safety />
+      <ClosingCta onStart={() => {}} />
+      <SiteFooter />
+    </>
+  )
+  const body =
+    v === '10' ? (
+      <>
+        <HeroSplit />
+        <BuiltOn />
+        <EvalCards />
+        <Steps />
+        {tail}
+      </>
+    ) : v === '11' ? (
+      <>
+        <HeroPrompt topOnly />
+        <div className="px-gutter pb-14 md:px-12"><StatsRow /></div>
+        <Manifesto />
+        <Features />
+        {tail}
+      </>
+    ) : v === '12' ? (
+      <>
+        <HeroPrompt topOnly />
+        <ShotAndStats />
+        <IndexChapters />
+        <Keys />
+        <Safety />
+        <ClosingCta onStart={() => {}} />
+        <SiteFooter />
+      </>
+    ) : (
+      <>
+        <HeroPlayground />
+        <BuiltOn />
+        <Features />
+        <Steps />
+        {tail}
+        <StickyCta />
+      </>
+    )
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <SiteNav />
+      <Frame>{body}</Frame>
+    </div>
+  )
+}
+
 export default function LandingLab() {
   const { v = '1' } = useParams()
   useSerifFont()
   useLabFonts()
   useSeo({ title: `Landing lab ${v}`, description: 'Internal landing page variants.', noindex: true })
+  if (Number(v) >= 10) return <Round3 v={v} />
   const rest = (
     <>
       {v !== '3' && <BuiltOn />}

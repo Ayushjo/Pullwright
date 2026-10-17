@@ -84,3 +84,11 @@ Source: the owner's X bookmarks (246 saved posts, read in Brave). Bookmarks that
 - Replace any vague claim with **eval numbers** in a quiet stats row.
 - A **numbered pipeline** (01 Plan → 02 Code in sandbox → 03 Tests → 04 Independent review → 05 You approve) with real UI crops, CodeRabbit-style.
 - One dark variant to compare against the current light one (Devin/Cursor are light-warm; CodeRabbit/Graphite/Linear dark).
+
+## Round 2 — 14 more sites, for layout (10-17)
+
+neon.tech (numbered chapters: a giant faded "01" beside a two-tone sentence-headline, then staggered columns of text-over-visual) · epoch.ai (metric cards with ↑ big number, one-line meaning, tag chip; a carousel) · youform.com (a real, usable product embedded right under the hero; "Open in a new tab"; a sticky bottom CTA bar; stats with tinted icon chips) · anthropic.com (headline left, small serif paragraph right; release cards with mono key/value rows and a black pill button) · claude.com (split: headline and sign-in left, the live product on the right) · vercel.com (one object as the hero, feature list as quiet text on the right) · yellow.ai (photo hero, chat widget docked at the bottom) · district.in (content rails) · learn-kernels.com (book cover + chapter index) · manixh.vercel.app / sahilcodex.vercel.app (one narrow column, bracketed mono section labels) · zeromaintenanceengineer.in (a manifesto: one centred serif column, labelled stanzas "THE PROBLEM / THE COST", nothing else) · eightfold.ai (split hero with a framed photo) · chalksnboard.com.
+
+**Why the earlier versions read as "AI template":** centred hero → soft gradient → mock window → 4-stat row → 3-card grid is the default structure every generated landing page uses. The layouts that felt designed each committed to one structural idea instead: the product on the right (Claude), a story column (Zero Maintenance), numbered chapters (Neon), the product as a playground (Youform).
+
+Round 3 lab pages (V4's look kept): V10 split + live run timeline + eval spec cards · V11 manifesto stanzas · V12 numbered chapters with staggered columns · V13 playground + metric cards + sticky CTA bar.
