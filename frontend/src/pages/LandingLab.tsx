@@ -339,12 +339,28 @@ const THEMES: Record<string, React.CSSProperties> = {
     '--font-sans': "'Inter Tight', system-ui, sans-serif",
   } as React.CSSProperties,
   midnight: {
-    '--background': '#08080a', '--background-rgb': '8 8 10', '--foreground': '#f3f3f5', '--foreground-rgb': '243 243 245',
-    '--card': '#121216', '--card-foreground': '#f3f3f5', '--popover': '#121216', '--popover-foreground': '#f3f3f5',
-    '--secondary': '#1b1b21', '--muted': '#1b1b21', '--elevated': '#1b1b21', '--accent': '#1b1b21', '--input': '#26262c',
-    '--primary': '#8f7cff', '--primary-rgb': '143 124 255', '--ring': '#8f7cff',
+    '--background': '#08090b', '--background-rgb': '8 9 11', '--foreground': '#f3f3f5', '--foreground-rgb': '243 243 245',
+    '--card': '#111317', '--card-foreground': '#f3f3f5', '--popover': '#111317', '--popover-foreground': '#f3f3f5',
+    '--secondary': '#1b1b1f', '--muted': '#1b1b1f', '--elevated': '#1b1b1f', '--accent': '#1b1b1f', '--input': '#26262b',
+    '--primary': '#4d8dff', '--primary-rgb': '77 141 255', '--primary-foreground': '#ffffff', '--ring': '#4d8dff',
     '--muted-foreground': 'rgba(243,243,245,.56)', '--faint': 'rgba(243,243,245,.36)', '--hairline': 'rgba(255,255,255,.07)', '--border': 'rgba(255,255,255,.1)',
-    '--font-sans': "'Geist', system-ui, sans-serif",
+    '--font-sans': "'Geist', system-ui, sans-serif", '--g1': '43 127 255', '--g2': '110 190 255', '--g1a': '.26', '--grad': 'linear-gradient(92deg, #ffffff 0%, #d6e6ff 30%, #7fb0ff 65%, #2b7fff 100%)',
+  } as React.CSSProperties,
+  ember: {
+    '--background': '#0b0a09', '--background-rgb': '11 10 9', '--foreground': '#f3f3f5', '--foreground-rgb': '243 243 245',
+    '--card': '#151310', '--card-foreground': '#f3f3f5', '--popover': '#151310', '--popover-foreground': '#f3f3f5',
+    '--secondary': '#1b1b1f', '--muted': '#1b1b1f', '--elevated': '#1b1b1f', '--accent': '#1b1b1f', '--input': '#26262b',
+    '--primary': '#ff7a3d', '--primary-rgb': '255 122 61', '--primary-foreground': '#140802', '--ring': '#ff7a3d',
+    '--muted-foreground': 'rgba(243,243,245,.56)', '--faint': 'rgba(243,243,245,.36)', '--hairline': 'rgba(255,255,255,.07)', '--border': 'rgba(255,255,255,.1)',
+    '--font-sans': "'Geist', system-ui, sans-serif", '--g1': '255 106 43', '--g2': '255 184 92', '--g1a': '.22', '--grad': 'linear-gradient(92deg, #ffffff 0%, #ffe2c8 30%, #ffa065 65%, #ff6a2b 100%)',
+  } as React.CSSProperties,
+  graphite: {
+    '--background': '#09090a', '--background-rgb': '9 9 10', '--foreground': '#f3f3f5', '--foreground-rgb': '243 243 245',
+    '--card': '#121214', '--card-foreground': '#f3f3f5', '--popover': '#121214', '--popover-foreground': '#f3f3f5',
+    '--secondary': '#1b1b1f', '--muted': '#1b1b1f', '--elevated': '#1b1b1f', '--accent': '#1b1b1f', '--input': '#26262b',
+    '--primary': '#3ddc84', '--primary-rgb': '61 220 132', '--primary-foreground': '#03140a', '--ring': '#3ddc84',
+    '--muted-foreground': 'rgba(243,243,245,.56)', '--faint': 'rgba(243,243,245,.36)', '--hairline': 'rgba(255,255,255,.07)', '--border': 'rgba(255,255,255,.1)',
+    '--font-sans': "'Geist', system-ui, sans-serif", '--g1': '255 255 255', '--g2': '255 255 255', '--g1a': '.07', '--grad': 'linear-gradient(180deg, #ffffff 0%, #ffffff 40%, #8b8b93 100%)',
   } as React.CSSProperties,
   signal: {
     '--background': '#ecebe7', '--background-rgb': '236 235 231', '--foreground': '#0d0d0d', '--foreground-rgb': '13 13 13',
@@ -355,13 +371,16 @@ const THEMES: Record<string, React.CSSProperties> = {
 }
 
 const THEME_CSS = `
-.theme-ink, .theme-midnight, .theme-signal { font-family: var(--font-sans); }
+.theme-ink, .theme-dark, .theme-signal { font-family: var(--font-sans); }
 .theme-ink h1, .theme-ink h2 { font-family: 'Instrument Serif', Georgia, serif; font-weight: 400; letter-spacing: -0.015em; }
 .theme-ink h2 { font-size: clamp(2.3rem, 4.4vw, 3.6rem); line-height: 1.02; }
 .theme-ink [class*="bg-[radial-gradient"] { background: radial-gradient(120% 90% at 15% 0%, #f2d9c2 0%, #ece2d2 48%, #e5ddcf 100%) !important; }
-.theme-midnight h1, .theme-midnight h2 { font-weight: 500; letter-spacing: -0.04em; }
-.theme-midnight [class*="bg-[radial-gradient"] { background: radial-gradient(120% 90% at 20% 0%, rgba(143,124,255,.24) 0%, #121217 55%, #0d0d11 100%) !important; }
-.theme-midnight [class*="border-black/"] { border-color: rgba(255,255,255,.1) !important; }
+.theme-dark h1, .theme-dark h2 { font-weight: 500; letter-spacing: -0.04em; }
+.theme-dark [class*="bg-[radial-gradient"] { background: radial-gradient(120% 90% at 20% 0%, rgb(var(--g1) / .16) 0%, var(--card) 55%, var(--background) 100%) !important; }
+.theme-dark .bg-green-50 { background: rgba(61,220,132,.1) !important; }
+.theme-dark .border-green-200 { border-color: rgba(61,220,132,.28) !important; }
+.theme-dark .text-green-900 { color: #a6f0c6 !important; }
+.theme-dark [class*="border-black/"] { border-color: rgba(255,255,255,.1) !important; }
 .theme-signal h1, .theme-signal h2 { font-family: 'Space Grotesk', sans-serif; text-transform: uppercase; font-weight: 500; letter-spacing: -0.045em; line-height: .95; }
 .theme-signal .font-mono { font-family: 'Geist Mono', monospace; }
 .theme-signal [class*="bg-[radial-gradient"] { background: #dfded9 radial-gradient(rgba(13,13,13,.16) 1px, transparent 1px) 0 0 / 14px 14px !important; }
@@ -450,16 +469,16 @@ function HeroMidnight() {
   const [url, setUrl] = useState('')
   return (
     <section className="relative overflow-hidden">
-      <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(55% 45% at 50% 0%, rgba(143,124,255,.30), transparent 70%), radial-gradient(35% 30% at 88% 18%, rgba(43,127,255,.16), transparent 70%), radial-gradient(30% 30% at 8% 40%, rgba(255,120,180,.08), transparent 70%)' }} />
+      <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(55% 45% at 50% 0%, rgb(var(--g1) / var(--g1a)), transparent 70%), radial-gradient(30% 28% at 88% 16%, rgb(var(--g2) / .10), transparent 70%)' }} />
       <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.06]" style={{ backgroundImage: 'linear-gradient(white 1px, transparent 1px), linear-gradient(90deg, white 1px, transparent 1px)', backgroundSize: '64px 64px', maskImage: 'radial-gradient(60% 50% at 50% 20%, black, transparent)', WebkitMaskImage: 'radial-gradient(60% 50% at 50% 20%, black, transparent)' }} />
       <div className="relative px-gutter pb-6 pt-16 text-center md:px-12 md:pt-24">
         <Announce dark />
         <h1 className="mx-auto mt-8 max-w-5xl text-balance text-[clamp(3rem,7.4vw,6.25rem)] leading-[0.98] text-foreground">
           Issue in. <br />
-          <span className="bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(92deg, #ffffff 0%, #c9c0ff 35%, #8f7cff 70%, #5b8cff 100%)' }}>Pull request out.</span>
+          <span className="bg-clip-text text-transparent" style={{ backgroundImage: 'var(--grad)' }}>Pull request out.</span>
         </h1>
         <p className="mx-auto mt-6 max-w-xl text-lead text-muted-foreground">The agent that plans, codes in a sandbox, runs your tests and gets an independent review. The PR opens only when you approve it.</p>
-        <div className="mx-auto mt-10 max-w-2xl rounded-[23px] p-px shadow-[0_0_90px_-25px_rgba(143,124,255,.75)]" style={{ background: 'linear-gradient(135deg, rgba(143,124,255,.9), rgba(255,255,255,.08) 40%, rgba(255,255,255,.06) 60%, rgba(91,140,255,.8))' }}>
+        <div className="mx-auto mt-10 max-w-2xl rounded-[23px] p-px" style={{ background: 'linear-gradient(135deg, rgb(var(--primary-rgb) / .85), rgba(255,255,255,.08) 40%, rgba(255,255,255,.06) 60%, rgb(var(--g2) / .55))', boxShadow: '0 0 90px -30px rgb(var(--primary-rgb) / .6)' }}>
           <PromptCard dark value={url} onChange={setUrl} />
         </div>
         <Chips dark center onPick={() => setUrl(DEMO_ISSUE)} />
@@ -573,11 +592,12 @@ export default function LandingLab() {
         <Frame>{rest}</Frame>
       </div>
     )
-  const theme = ({ '5': 'ink', '6': 'midnight', '7': 'signal' } as Record<string, string>)[v]
+  const theme = ({ '5': 'ink', '6': 'midnight', '7': 'signal', '8': 'ember', '9': 'graphite' } as Record<string, string>)[v]
+  const dark = theme === 'midnight' || theme === 'ember' || theme === 'graphite'
   const hero =
-    v === '2' ? <HeroPrompt /> : v === '4' ? <><HeroPrompt topOnly /><ShotAndStats /></> : v === '5' ? <HeroInk /> : v === '6' ? <HeroMidnight /> : v === '7' ? <HeroSignal /> : <HeroRefined />
+    v === '2' ? <HeroPrompt /> : v === '4' ? <><HeroPrompt topOnly /><ShotAndStats /></> : v === '5' ? <HeroInk /> : v === '6' || v === '8' || v === '9' ? <HeroMidnight /> : v === '7' ? <HeroSignal /> : <HeroRefined />
   return (
-    <div className={cn('min-h-screen bg-background text-foreground', theme && `theme-${theme}`)} style={theme ? THEMES[theme] : undefined}>
+    <div className={cn('min-h-screen bg-background text-foreground', theme && `theme-${theme}`, dark && 'theme-dark')} style={theme ? THEMES[theme] : undefined}>
       {theme && <style>{THEME_CSS}</style>}
       <SiteNav />
       <Frame>
