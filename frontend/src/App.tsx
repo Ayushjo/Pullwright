@@ -12,6 +12,7 @@ import Replay from './pages/Replay'
 import Settings from './pages/Settings'
 import Wallet from './pages/Wallet'
 import Pricing from './pages/Pricing'
+import Privacy from './pages/Privacy'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { identifyUser, installAnalytics, trackPageView } from './lib/analytics'
 import { ToastProvider } from './components/ui'
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="/tasks/:id" element={<RouteGuard><TaskView /></RouteGuard>} />
             <Route path="/r/:id"     element={<Replay />} />
             <Route path="/pricing"   element={<Pricing />} />
+            <Route path="/privacy"   element={<Privacy />} />
             <Route path="/settings"  element={<RouteGuard><Settings /></RouteGuard>} />
             <Route path="/wallet"    element={<RouteGuard><Wallet /></RouteGuard>} />
             <Route path="/admin/pool" element={<RouteGuard><Pool /></RouteGuard>} />

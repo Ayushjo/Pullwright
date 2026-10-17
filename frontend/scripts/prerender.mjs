@@ -12,7 +12,7 @@ import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { preview } from 'vite'
 
-const ROUTES = ['/', '/pricing', '/login']
+const ROUTES = ['/', '/pricing', '/privacy', '/login']
 const dist = path.resolve('dist')
 
 if (process.env.PRERENDER === '0') {

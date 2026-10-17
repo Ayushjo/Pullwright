@@ -26,6 +26,7 @@ const COLUMNS: { title: string; links: { label: string; to: string; external?: b
     links: [
       { label: 'GitHub', to: REPO_URL, external: true },
       { label: 'Changelog', to: '/#shipped' },
+      { label: 'Privacy', to: '/privacy' },
     ],
   },
 ]
