@@ -14,6 +14,7 @@ import {
   type WalletProvider,
 } from "../wallet/credentials.js"
 import { walletCapability } from "../wallet/routing.js"
+import { track } from "../analytics/track.js"
 
 const AddKey = z.object({
   key: z.string().trim().min(16).max(400),
@@ -61,8 +62,12 @@ export function createWalletRouter() {
     if (!provider) return res.status(400).json({ error: "We don't recognise that key. Pick the provider and try again." })
     if (!GUIDES[provider].pattern.test(key)) return res.status(400).json({ error: `That doesn't look like a ${GUIDES[provider].name} key (${GUIDES[provider].placeholder}).` })
     const checked = await checkKey(provider, key)
-    if ("error" in checked) return res.status(400).json({ error: checked.error })
+    if ("error" in checked) {
+      track("key_rejected", { userId, req, props: { provider } })
+      return res.status(400).json({ error: checked.error })
+    }
     await saveWalletKey(userId, provider, key, checked)
+    track("key_added", { userId, req, props: { provider, tier: (checked as { tier?: string }).tier ?? null } })
     res.json({ ...(await view(userId)), added: provider })
   })
 
@@ -84,6 +89,7 @@ export function createWalletRouter() {
     const provider = String(req.params.provider) as WalletProvider
     if (!WALLET_PROVIDERS.includes(provider)) return res.status(400).json({ error: "Unknown provider" })
     await deleteWalletKey(userId, provider)
+    track("key_removed", { userId, req, props: { provider } })
     res.json(await view(userId))
   })
 

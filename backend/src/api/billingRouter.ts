@@ -20,6 +20,7 @@ import {
 } from "../billing/index.js"
 import { creditSummary, ledgerHistory } from "../billing/credits.js"
 import { claimTrial, trialStatus } from "../billing/trial.js"
+import { track } from "../analytics/track.js"
 
 const Checkout = z.object({ kind: z.enum(["pro", "pack"]).default("pro") })
 
@@ -75,6 +76,7 @@ export function createBillingRouter() {
     const userId = needUser(req, res)
     if (!userId) return
     const r = await claimTrial(userId, req.session?.accessToken)
+    track(r.ok ? "trial_claimed" : "trial_refused", { userId, req, props: r.ok ? { usd: r.usd } : { code: r.code } })
     if (!r.ok) return res.status(r.code === "sold_out_today" ? 429 : 409).json({ error: r.error, code: r.code })
     res.json({ ...r, summary: await creditSummary(userId) })
   })
@@ -85,7 +87,9 @@ export function createBillingRouter() {
     try {
       const user = await getPrisma().user.findUniqueOrThrow({ where: { id: userId } })
       const { kind } = Checkout.parse(req.body ?? {})
-      res.json({ url: await createCheckout({ id: user.id, login: user.login, email: user.email, name: user.name }, kind) })
+      const url = await createCheckout({ id: user.id, login: user.login, email: user.email, name: user.name }, kind)
+      track("checkout_started", { userId, req, props: { kind } })
+      res.json({ url })
     } catch (err) {
       res.status(400).json({ error: (err as Error).message })
     }

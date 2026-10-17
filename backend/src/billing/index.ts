@@ -8,6 +8,7 @@ import { createRedisClient } from "../config/redis.js"
 import type { Redis } from "ioredis"
 import { creditSummary, grantCredit, type CreditSummary } from "./credits.js"
 import { canUseFree, freeAllowance, FREE_CLAUDE, type FreeAllowance } from "./freeAllowance.js"
+import { track } from "../analytics/track.js"
 
 /**
  * Plans, entitlements, bring-your-own-key and Dodo Payments.
@@ -407,6 +408,7 @@ async function applyPayment(db: ReturnType<typeof getPrisma>, p: DodoPayment): P
     expiresAt: new Date(Date.now() + PACK.validDays * 86_400_000),
     note: `${packs} credit pack${packs > 1 ? "s" : ""}`,
   })
+  if (res === "granted") track("purchase", { userId, props: { kind: "credit_pack", packs, creditUsd: +(PACK.creditUsd * packs).toFixed(2) } })
   return res === "granted" ? { result: "processed" } : { result: "ignored", note: "already credited" }
 }
 
@@ -439,8 +441,11 @@ async function applyEvent(db: ReturnType<typeof getPrisma>, ev: DodoEvent): Prom
     cancelAtPeriodEnd: Boolean(d.cancel_at_next_billing_date),
     ...(d.next_billing_date ? { currentPeriodEnd: new Date(d.next_billing_date) } : {}),
   }
+  const before = existing?.status
   await db.subscription.upsert({ where: { userId }, create: { userId, ...fields }, update: fields })
   logger.info(`Billing: ${ev.type} for user ${userId}`)
+  // One event per real change of state (webhook retries and return-page syncs repeat the same state).
+  if (status && status !== before) track(`subscription_${status}`, { userId, props: { event: ev.type, plan: plan?.tier ?? null } })
   return { result: "processed" }
 }
 

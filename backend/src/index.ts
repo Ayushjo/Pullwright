@@ -24,6 +24,7 @@ import { startCatalogRefresh } from './llm/catalog.js';
 import { flushEventsToDb } from './repositories/eventRepository.js';
 import { flushLlmCalls } from './repositories/llmCallRepository.js';
 import { setPoolAlertNotifier, useRedisForSpend } from './agent/spend.js';
+import { createAnalyticsRouter } from './api/analyticsRouter.js';
 import { createRedisClient } from './config/redis.js';
 
 useRedisForSpend(() => createRedisClient());
@@ -67,6 +68,8 @@ if (MODE !== "worker") {
   const sessionStore = new SessionStore();
   app.use("/api/public", createPublicRouter(eventLog));
   app.use("/api", attachSession(sessionStore));
+  // Public analytics collect (POST /api/t): after the session (to know who), before routers that require auth.
+  app.use("/api", createAnalyticsRouter());
   app.use("/api/auth", createOAuthRouter(sessionStore));
   app.use("/api", createBillingRouter());
   app.use("/api", createWalletRouter());

@@ -23,6 +23,7 @@ import { getEntitlement } from "../billing/index.js"
 import { creditSummary } from "../billing/credits.js"
 import { canUseFree, freeAllowance, FREE_CLAUDE } from "../billing/freeAllowance.js"
 import { isOwnerLogin } from "../auth/owners.js"
+import { track } from "../analytics/track.js"
 import { diffStat, diffVs, restoreCheckpoint, tasksRoot } from "../agent/git.js"
 import { filterPatch, metricsOf, spec, taskCap } from "../agent/pipeline.js"
 import { configuredLanes, getGateway } from "../llm/lanes.js"
@@ -168,7 +169,20 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     res.status(201).json({ taskId: s.taskId, status: s.status })
   })
 
-  router.post("/task", createLimiter, async (req, res) => {
+  /** Record every refusal on the task route (402 no key/credit, 429 limits) with its code. */
+  const trackRefusals = (req: Request, res: Response, next: () => void) => {
+    const json = res.json.bind(res)
+    res.json = (body: unknown) => {
+      if (res.statusCode === 402 || res.statusCode === 429) {
+        const code = (body as { code?: string } | null)?.code ?? (res.statusCode === 429 ? "rate_limited" : "payment_required")
+        track("limit_hit", { userId: req.session?.userId ?? null, req, props: { status: res.statusCode, code } })
+      }
+      return json(body)
+    }
+    next()
+  }
+
+  router.post("/task", trackRefusals, createLimiter, async (req, res) => {
     const parsed = CreateTask.safeParse(req.body)
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request" })
     if (!req.isOperator && !req.session?.userId && isDatabaseEnabled()) {
@@ -268,6 +282,11 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
           throw err
         })
         logger.info(`Task created ${s.taskId} for ${s.owner}/${s.repo}#${s.issueNumber}${req.session?.login ? ` by ${req.session.login}` : ""}`)
+        track("task_created", {
+          userId: req.session?.userId ?? null,
+          req,
+          props: { taskId: s.taskId, keyKind: keyChoice.keyKind, fundedBy: keyChoice.fundedBy ?? null, queueClass, tier, autoApprove: s.options.autoApprove, consent: Boolean(parsed.data.allowTraining) },
+        })
         res.status(201).json({ taskId: s.taskId, status: s.status, issueUrl: s.issueUrl, issueNumber: s.issueNumber, createdAt: s.createdAt })
       } finally {
         if (admitKey) await taskStore.releaseLock(admitKey, admitOwner)

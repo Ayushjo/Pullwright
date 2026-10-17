@@ -7,6 +7,7 @@ import type { TaskRegistry } from "../store/taskRegistry.js"
 import { createTaskInDb, saveMetricsToDb, syncTaskStateToDb } from "../repositories/taskRepository.js"
 import { recordTaskUsage } from "../repositories/usageRepository.js"
 import { recordTaskSpend } from "../billing/credits.js"
+import { track } from "../analytics/track.js"
 import logger from "../logger.js"
 import { Pipeline, metricsOf, type StageName } from "./pipeline.js"
 import { parseIssueUrl } from "./git.js"
@@ -87,8 +88,25 @@ const STAGE_FROM: Record<StageName, TaskStatus[]> = {
 }
 const LOCK_MS = 90_000
 
+/** Task outcomes for analytics: each (task, outcome) is recorded once per process. */
+const OUTCOMES = new Set(["ready", "needs_review", "failed", "cancelled", "published", "awaiting_approval", "needs_input", "parked"])
+const tracked = new Set<string>()
+function trackOutcome(s: TaskState) {
+  if (!s.userId || !OUTCOMES.has(s.status)) return
+  const key = `${s.taskId}:${s.status}`
+  if (tracked.has(key)) return
+  tracked.add(key)
+  if (tracked.size > 100_000) tracked.clear()
+  const name = s.status === "published" ? "pr_published" : s.status === "awaiting_approval" ? "plan_ready" : s.status === "needs_input" ? "asked_user" : s.status === "parked" ? "task_parked" : "task_finished"
+  track(name, {
+    userId: s.userId,
+    props: { taskId: s.taskId, status: s.status, costUsd: Number(s.costUsd.toFixed(6)), llmCalls: s.llmCalls, fundedBy: s.options.fundedBy ?? null, keyKind: s.options.keyKind ?? null, ...(s.failureReason ? { reason: s.failureReason.slice(0, 120) } : {}) },
+  })
+}
+
 export function makeStatusSink(registry: TaskRegistry) {
   return async (s: TaskState) => {
+    trackOutcome(s)
     s.costUsd = getSpendLedger().taskSpent(s.taskId)
     // Only tasks created as credit-funded are ever debited (one ledger row per task, kept at its spend).
     if (s.userId && s.options.fundedBy === "credits" && s.costUsd > 0) {

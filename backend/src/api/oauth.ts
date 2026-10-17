@@ -5,6 +5,8 @@ import { createRedisClient } from "../config/redis.js"
 import { SessionStore, SESSION_COOKIE } from "../auth/session.js"
 import { upsertUserByGithubId } from "../repositories/userRepository.js"
 import { isOwnerLogin } from "../auth/owners.js"
+import { track } from "../analytics/track.js"
+import { getPrisma } from "../db/prisma.js"
 import { isDatabaseEnabled } from "../db/prisma.js"
 
 const GITHUB_AUTHORIZE = "https://github.com/login/oauth/authorize"
@@ -127,6 +129,7 @@ export function createOAuthRouter(sessionStore: SessionStore) {
           logger.error("GitHub /user response missing id — cannot persist user")
         } else {
           try {
+            const existed = await getPrisma().user.findUnique({ where: { githubId: BigInt(user.id) }, select: { id: true } }).catch(() => null)
             const persisted = await upsertUserByGithubId({
               githubId: BigInt(user.id),
               login: user.login,
@@ -137,6 +140,7 @@ export function createOAuthRouter(sessionStore: SessionStore) {
             })
             if (persisted) {
               userId = persisted
+              track(existed ? "login" : "signup", { userId: persisted, req, props: { login: user.login } })
               logger.info(`User persisted to Postgres: ${user.login} (${persisted})`)
             } else {
               logger.error(`User upsert returned null for ${user.login}`)
