@@ -8,6 +8,7 @@ import { ApiError, claimTrial, createTask, getBilling, getCredits, type BillingI
 import { fadeUp, stagger } from '../lib/motion'
 import CapacityMeter from '../components/wallet/CapacityMeter'
 import FreeClaudeMeter from '../components/billing/FreeClaudeMeter'
+import { useSeo } from '../lib/seo'
 
 const STEPS = [
   { icon: GitBranch, label: 'You approve the plan' },
@@ -17,6 +18,7 @@ const STEPS = [
 
 
 export default function NewTask() {
+  useSeo({ title: 'New task', description: 'Pullwright — your tasks, keys and plan.', noindex: true })
   const [url, setUrl] = useState(() => new URLSearchParams(window.location.search).get('url') ?? '')
   const [error, setError] = useState('')
   const [errorCode, setErrorCode] = useState<string | null>(null)

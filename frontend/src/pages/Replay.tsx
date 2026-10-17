@@ -13,6 +13,7 @@ import SiteNav from '../components/site/SiteNav'
 import SiteFooter from '../components/site/SiteFooter'
 import { Frame, Section } from '../components/site/Layout'
 import { MonoLabel, TwoToneHeading } from '../components/site/Typography'
+import { useSeo } from '../lib/seo'
 
 type PublicTask = {
   title: string
@@ -38,6 +39,11 @@ const HIDDEN = new Set(['llm_call', 'cost', 'checkpoint', 'metrics_update', 'pha
 export default function Replay() {
   const { id } = useParams<{ id: string }>()
   const [task, setTask] = useState<PublicTask | null>(null)
+  useSeo({
+    title: task ? `Replay: ${task.title}` : 'Replay a real run',
+    description: task ? `Watch Pullwright turn ${task.repo}#${task.issueNumber} into a reviewed pull request — the plan, the edits, the tests and the review, step by step.` : 'Watch a real Pullwright run, from GitHub issue to reviewed pull request.',
+    path: `/r/${id ?? ''}`,
+  })
   const [events, setEvents] = useState<TaskEvent[]>([])
   const [shown, setShown] = useState(0)
   const [playing, setPlaying] = useState(true)

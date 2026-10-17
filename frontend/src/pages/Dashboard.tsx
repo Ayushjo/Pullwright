@@ -13,6 +13,7 @@ import CapacityMeter from '../components/wallet/CapacityMeter'
 import { useAuth } from '../context/AuthContext'
 import type { TaskStatus, TaskRegistryEntry } from '../types/task'
 import { fadeUp, stagger } from '../lib/motion'
+import { useSeo } from '../lib/seo'
 
 /* ── Count-up hook ── */
 function useCountUp(target: number, duration = 600) {
@@ -86,6 +87,7 @@ function matches(filter: Filter, status: TaskStatus): boolean {
 
 /* ── Main export ── */
 export default function Dashboard() {
+  useSeo({ title: 'Dashboard', description: 'Pullwright — your tasks, keys and plan.', noindex: true })
   const { user } = useAuth()
   const [filter, setFilter] = useState<Filter>('all')
   const [allTasks, setAllTasks] = useState<StoredTask[]>([])

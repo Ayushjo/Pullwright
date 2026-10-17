@@ -15,8 +15,19 @@ import ProductShot from '../components/site/ProductShot'
 import { HeroMock } from '../components/site/home/Mocks'
 import { BuiltOn, ClosingCta, Demo, Features, Keys, Safety, Shipped, Steps } from '../components/site/home/Sections'
 import { DEMO_REPLAY_URL } from '../content/site'
+import { SITE_URL, softwareJsonLd, useSeo } from '../lib/seo'
 
 export default function Home() {
+  useSeo({
+    title: 'Pullwright — GitHub issue in, reviewed pull request out',
+    description: 'Hand Pullwright a GitHub issue. It plans the change, edits and runs your tests in a sandbox, gets an independent review, and opens the pull request when you approve. Free to start — no key, no card.',
+    path: '/',
+    jsonLd: [
+      softwareJsonLd,
+      { '@type': 'Organization', name: 'Pullwright', url: SITE_URL, logo: `${SITE_URL}/pullwright.png` },
+      { '@type': 'WebSite', name: 'Pullwright', url: SITE_URL },
+    ],
+  })
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()

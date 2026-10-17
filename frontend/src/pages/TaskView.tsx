@@ -27,6 +27,7 @@ import {
 } from '../api/client'
 import { statusMeta } from '../lib/status'
 import { cn } from '../lib/cn'
+import { useSeo } from '../lib/seo'
 
 type TabKey = 'activity' | 'changes' | 'review'
 
@@ -45,6 +46,7 @@ function useElapsed(startIso?: string, endIso?: string) {
 }
 
 export default function TaskViewRoute() {
+  useSeo({ title: 'Task', description: 'A Pullwright task.', noindex: true })
   const { id } = useParams<{ id: string }>()
   // Keyed so navigating between tasks starts from a clean slate.
   return <TaskView key={id} taskId={id ?? ''} />

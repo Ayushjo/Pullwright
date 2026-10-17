@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /history
+Disallow: /tasks/
+Disallow: /settings
+Disallow: /wallet
+Disallow: /admin/
+
+Sitemap: https://pullwright.iayush.com/sitemap.xml

@@ -7,6 +7,7 @@ import CapacityMeter from '../components/wallet/CapacityMeter'
 import CreditsCard from '../components/billing/CreditsCard'
 import FreeClaudeMeter, { modelLabel } from '../components/billing/FreeClaudeMeter'
 import { claimTrial, getBilling, getCredits, getWallet, openBillingPortal, startCheckout, syncBilling, type BillingInfo, type CreditsView, type WalletView } from '../api/client'
+import { useSeo } from '../lib/seo'
 
 /** White card with a mono title over a hairline. */
 function Section({ title, id, className = '', children }: { title: string; id?: string; className?: string; children: React.ReactNode }) {
@@ -19,6 +20,7 @@ function Section({ title, id, className = '', children }: { title: string; id?: 
 }
 
 export default function Settings() {
+  useSeo({ title: 'Settings', description: 'Pullwright — your tasks, keys and plan.', noindex: true })
   const { push } = useToast()
   const [info, setInfo] = useState<BillingInfo | null>(null)
   const [error, setError] = useState<string | null>(null)

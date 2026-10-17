@@ -8,6 +8,7 @@ import { listTasks, getTaskMetrics } from '../api/client'
 import type { TaskRegistryEntry, TaskStatus } from '../types/task'
 import { fadeUp, stagger } from '../lib/motion'
 import { statusMeta } from '../lib/status'
+import { useSeo } from '../lib/seo'
 
 /* ── helpers ── */
 function timeAgo(iso: string) {
@@ -239,6 +240,7 @@ function matches(filter: Filter, status: TaskStatus): boolean {
 
 /* ── Main export ── */
 export default function History() {
+  useSeo({ title: 'History', description: 'Pullwright — your tasks, keys and plan.', noindex: true })
   const [tasks, setTasks] = useState<TaskRegistryEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')

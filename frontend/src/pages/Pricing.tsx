@@ -13,6 +13,7 @@ import SiteFooter from '../components/site/SiteFooter'
 import { Frame, Section } from '../components/site/Layout'
 import { ArrowLink, MonoLabel, TwoToneHeading } from '../components/site/Typography'
 import { COMPARE, FAQ, WAYS, type Way } from '../content/plans'
+import { softwareJsonLd, useSeo } from '../lib/seo'
 
 function PlanColumn({ way, onCta, busy }: { way: Way; onCta: (w: Way) => void; busy: boolean }) {
   const solid = way.id !== 'keys'
@@ -93,6 +94,15 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 }
 
 export default function Pricing() {
+  useSeo({
+    title: 'Pricing — free with Claude, your own keys, or Pro',
+    description: 'Start free with 10 Claude tasks a month and no key, go unlimited with a free Gemini key, bring your own paid keys, or get Pro for $8/month with Claude Sonnet usage included.',
+    path: '/pricing',
+    jsonLd: [
+      softwareJsonLd,
+      { '@type': 'FAQPage', mainEntity: FAQ.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) },
+    ],
+  })
   const { user } = useAuth()
   const navigate = useNavigate()
   const [checkout, setCheckout] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null })

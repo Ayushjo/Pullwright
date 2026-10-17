@@ -10,6 +10,7 @@ import CapabilityStrip from '../components/wallet/CapabilityStrip'
 import ProviderCard from '../components/wallet/ProviderCard'
 import { HandKey, HandUnderline } from '../components/hand/Scribbles'
 import { PROVIDER_NAMES } from '../components/wallet/detect'
+import { useSeo } from '../lib/seo'
 
 /** Two short notes under the key box: privacy, and the no-keys alternative. */
 function NotesBox() {
@@ -36,6 +37,7 @@ function NotesBox() {
 }
 
 export default function Wallet() {
+  useSeo({ title: 'Keys', description: 'Pullwright — your tasks, keys and plan.', noindex: true })
   const { push } = useToast()
   const [view, setView] = useState<WalletView | null>(null)
   const [error, setError] = useState<string | null>(null)

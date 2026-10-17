@@ -12,6 +12,7 @@ import { MonoLabel, TwoToneHeading } from '../components/site/Typography'
 import ProductShot from '../components/site/ProductShot'
 import { HeroMock } from '../components/site/home/Mocks'
 import { HandUnderline } from '../components/hand/Scribbles'
+import { useSeo } from '../lib/seo'
 
 const ASKS = [
   { icon: GithubMark, text: 'Read the issues you send it and open PRs on repos you choose' },
@@ -21,6 +22,7 @@ const ASKS = [
 
 /** Sign in and sign up are the same step: the first GitHub sign-in creates the account. */
 export default function Login() {
+  useSeo({ title: 'Sign in or sign up', description: 'Connect GitHub to run Pullwright on your repos. Signing in creates your account — it’s free, with 10 Claude tasks a month and no key needed.', path: '/login' })
   const { user, loading, login } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()

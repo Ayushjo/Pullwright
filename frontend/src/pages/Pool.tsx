@@ -5,6 +5,7 @@ import AppShell from '../components/AppShell'
 import { Badge, PageHeader } from '../components/ui'
 import { getPoolAdmin, type PoolAdmin, type PoolAlert } from '../api/client'
 import { cn } from '../lib/cn'
+import { useSeo } from '../lib/seo'
 
 const usd = (n: number) => `$${n > 0 && n < 1 ? n.toFixed(3) : n < 10 ? n.toFixed(2) : n.toFixed(0)}`
 const level = (pct: number) => (pct >= 0.9 ? 'critical' : pct >= 0.7 ? 'warn' : 'ok')
@@ -54,6 +55,7 @@ function AlertRow({ a }: { a: PoolAlert }) {
 }
 
 export default function Pool() {
+  useSeo({ title: 'Free pool', description: 'Pullwright — your tasks, keys and plan.', noindex: true })
   const [data, setData] = useState<PoolAdmin | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
