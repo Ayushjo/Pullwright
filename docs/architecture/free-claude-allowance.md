@@ -71,7 +71,6 @@ Private repos need no training-consent prompt on this path: the Anthropic API do
 ## Open
 
 - Promo-credit terms: confirm the credits may serve end users, and when unused credit expires.
-- Alerts at 70% and 90% of the monthly pool (today it shows only in `/api/budget`-style reads).
 
 ## End-to-end GUI run (10-17, Brave, owner signed in as a normal user, wallet keys paused then restored)
 
@@ -85,3 +84,27 @@ Private repos need no training-consent prompt on this path: the Anthropic API do
 
 - **Queue:** the free task went to the paid queue because the test account is Pro (`tier === "pro"`), which is the intended policy. A free account's allowance tasks queue as free.
 - **Copy fixes from the run:** singular copy for a one-task allowance, and the model shown as "Haiku 5.5".
+
+## Spend alerts and the owner's pool page (10-17)
+
+**Thresholds** (`SpendLedger.checkPoolAlerts`): after every recorded pool call, alerts fire at **70%, 90% and 100% of the month**, and **"today full"** when the day can't fit one more capped free task. Each fires **once per period**: a Redis `SET NX` on `pw:alert:pool:<pool>:<period>:<scope>:<pct>`, so it can't repeat or race across workers. Levels: warn (70%) and critical (≥ 90%, and day full).
+
+**Where alerts go:**
+- the server log (`[pool alert] …`);
+- the owner's alert list (`pw:alerts:pool`, latest 100);
+- optionally `POOL_ALERT_WEBHOOK_URL`, a Slack or Discord incoming webhook (posts `{text, content}`). It's off until the owner sets it.
+
+**API:** `GET /api/admin/pool`, open to the owner (`OPERATOR_GITHUB_LOGINS`) or the operator token. It returns budget, month and today spend, month-end projection, thresholds, free tasks this month (count, users, average cost) and recent alerts. `/api/auth/me` now carries `isOwner`.
+
+**UI:**
+- **Free pool** page (`/admin/pool`, **Pool** in the nav for owners only):
+  - month card: big number, a bar with 70% and 90% marks that turns amber then red, and a projection line that turns amber or red when the pace would overshoot;
+  - today card;
+  - free-tasks card (count, users, average per task, allowance, model);
+  - alert timeline, with the webhook on or off;
+  - refreshes every 30 s.
+- **Dashboard banner** for owners past 70% (amber; red past 90%) or when today is full, linking to the pool page.
+
+**Tests:** `spend.test.ts` (+2) checks that 70% and 90% each fire once with the notifier called, that a third call adds nothing, and that "full for today" fires once.
+
+**Live check:** with the budget temporarily at $0.003, the real $0.0022 spent was 75%. The real check fired the 70% alert once, the page showed an amber bar, the badge "Past 70%", a red projection (144%) and the alert row, and the dashboard banner appeared. The budget was then restored to $80 and the test alert deleted.
