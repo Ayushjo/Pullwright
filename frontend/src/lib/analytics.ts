@@ -18,7 +18,9 @@ const SESSION_IDLE_MS = 30 * 60_000
 let queue: Ev[] = []
 let timer: ReturnType<typeof setTimeout> | null = null
 let signedIn = false
+// This page load's attribution (UTM tags, external referrer): a new touch even mid-session, sent once.
 let landing: { referrer?: string; utm?: Record<string, string> } | null = null
+let landingSent = false
 
 const safe = <T,>(f: () => T, fallback: T): T => {
   try {
@@ -85,13 +87,14 @@ function flush() {
 
 export function trackEvent(name: string, props?: Record<string, unknown>) {
   if (typeof window === 'undefined' || navigator.webdriver || optedOut()) return // no prerender / automation noise
-  const s = sessionId()
-  if (s.fresh || !landing) captureLanding()
+  sessionId() // keeps the session alive
+  if (!landing) captureLanding()
   const ev: Ev = { name, path: location.pathname, ts: Date.now(), ...(props ? { props } : {}) }
-  // The session's attribution rides on its first event (the server keeps it per row).
-  if (s.fresh && landing) {
+  // The page load's attribution rides on its first event (the server keeps it per row).
+  if (!landingSent && landing && (landing.referrer || landing.utm)) {
     if (landing.referrer) ev.referrer = landing.referrer
     if (landing.utm) ev.utm = landing.utm
+    landingSent = true
   }
   queue.push(ev)
   if (queue.length >= 10) flush()
@@ -105,10 +108,13 @@ export function identifyUser(login: string | null) {
   signedIn = Boolean(login)
   if (!login) return
   const key = `pw_ident:${login}`
-  if (safe(() => localStorage.getItem(key), null)) return
-  trackEvent('identify')
-  flush()
-  safe(() => localStorage.setItem(key, '1'), undefined)
+  if (safe(() => localStorage.getItem(key), null) || navigator.webdriver) return
+  flush() // earlier page views first, so the server can attach them
+  // Sent on its own and marked done only once the server has it (a failed send retries next load).
+  const body = JSON.stringify({ anonId: anonId(), sessionId: sessionId().id, events: [{ name: 'identify', path: location.pathname, ts: Date.now() }] })
+  void fetch(`${API_BASE}/api/t`, { method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true, credentials: 'include' })
+    .then((r) => r.ok && safe(() => localStorage.setItem(key, '1'), undefined))
+    .catch(() => {})
 }
 
 let installed = false
