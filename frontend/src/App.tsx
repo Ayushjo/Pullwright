@@ -13,6 +13,7 @@ import Settings from './pages/Settings'
 import Wallet from './pages/Wallet'
 import Pricing from './pages/Pricing'
 import Privacy from './pages/Privacy'
+import LandingLab from './pages/LandingLab'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { identifyUser, installAnalytics, trackPageView } from './lib/analytics'
 import { ToastProvider } from './components/ui'
@@ -51,6 +52,7 @@ export default function App() {
             <Route path="/r/:id"     element={<Replay />} />
             <Route path="/pricing"   element={<Pricing />} />
             <Route path="/privacy"   element={<Privacy />} />
+            {import.meta.env.DEV && <Route path="/lab/:v" element={<LandingLab />} />}
             <Route path="/settings"  element={<RouteGuard><Settings /></RouteGuard>} />
             <Route path="/wallet"    element={<RouteGuard><Wallet /></RouteGuard>} />
             <Route path="/admin/pool" element={<RouteGuard><Pool /></RouteGuard>} />
