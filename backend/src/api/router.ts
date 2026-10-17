@@ -24,6 +24,7 @@ import { creditSummary } from "../billing/credits.js"
 import { canUseFree, freeAllowance, FREE_CLAUDE } from "../billing/freeAllowance.js"
 import { isOwnerLogin } from "../auth/owners.js"
 import { track } from "../analytics/track.js"
+import { analyticsReport } from "../analytics/report.js"
 import { diffStat, diffVs, restoreCheckpoint, tasksRoot } from "../agent/git.js"
 import { filterPatch, metricsOf, spec, taskCap } from "../agent/pipeline.js"
 import { configuredLanes, getGateway } from "../llm/lanes.js"
@@ -696,6 +697,14 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
       maxActive: limits.maxActive,
       active,
     })
+  })
+
+  // Owner-only: product analytics over the last N days (default 30, max 180).
+  router.get("/admin/analytics", async (req, res) => {
+    if (!req.isOperator && !isOwnerLogin(req.session?.login)) return res.status(403).json({ error: "Owner only" })
+    if (!isDatabaseEnabled()) return res.status(503).json({ error: "No database" })
+    const days = Math.min(180, Math.max(1, Number(req.query.days ?? 30) || 30))
+    res.json(await analyticsReport(days))
   })
 
   // Owner-only: the free Claude pool (spend vs budget, projection, free-task usage, alerts).
