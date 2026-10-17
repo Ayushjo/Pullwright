@@ -64,6 +64,10 @@ model User {
   lastLoginAt DateTime @default(now()) @map("last_login_at") @db.Timestamptz(6)
   /// GitHub account creation date (trial eligibility: accounts at least 30 days old).
   githubCreatedAt DateTime? @map("github_created_at") @db.Timestamptz(6)
+  /// Where the user first came from (first anonymous visit before signup): referrer, landing page, UTM tags.
+  firstTouch  Json?     @map("first_touch")
+  /// Last time the user did anything (throttled; signed-in activity, not every request).
+  lastSeenAt  DateTime? @map("last_seen_at") @db.Timestamptz(6)
 
   tasks         Task[]
   apiKeys       ApiKey[]
@@ -71,6 +75,7 @@ model User {
   usageRecords  UsageRecord[]
   orgMemberships OrganizationMember[]
   credits       CreditEntry[]
+  events        AnalyticsEvent[]
 
   @@map("users")
 }
@@ -339,4 +344,39 @@ model ApiKey {
 
   @@unique([userId, provider])
   @@map("api_keys")
+}
+
+/// First-party product analytics: one row per event, from the browser (page views, clicks) or the
+/// server (signup, task created/finished, PR published, checkout, purchase, limit hit…). No IP address
+/// is stored; country comes from the CDN header. anonId is a random per-browser id (localStorage),
+/// linked to userId at sign-in so the pre-signup journey attaches to the account.
+model AnalyticsEvent {
+  id          BigInt   @id @default(autoincrement())
+  ts          DateTime @default(now()) @db.Timestamptz(6)
+  name        String
+  /// "client" (browser) or "server".
+  source      String
+  userId      String?  @map("user_id") @db.Uuid
+  anonId      String?  @map("anon_id") @db.Uuid
+  sessionId   String?  @map("session_id")
+  path        String?
+  referrer    String?
+  utmSource   String?  @map("utm_source")
+  utmMedium   String?  @map("utm_medium")
+  utmCampaign String?  @map("utm_campaign")
+  utmTerm     String?  @map("utm_term")
+  utmContent  String?  @map("utm_content")
+  country     String?
+  device      String?
+  browser     String?
+  os          String?
+  props       Json?
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([ts])
+  @@index([name, ts])
+  @@index([userId, ts])
+  @@index([anonId, ts])
+  @@map("analytics_events")
 }
