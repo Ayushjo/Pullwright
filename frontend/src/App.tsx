@@ -5,6 +5,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import NewTask from './pages/NewTask'
 import Pool from './pages/Pool'
+import Analytics from './pages/Analytics'
 import TaskView from './pages/TaskView'
 import History from './pages/History'
 import Replay from './pages/Replay'
@@ -17,7 +18,7 @@ import { ToastProvider } from './components/ui'
 import RouteGuard from './components/RouteGuard'
 
 /** Page views on every route change (after the page has set its title) and identify after sign-in. */
-function Analytics() {
+function AnalyticsTracker() {
   const { pathname } = useLocation()
   const { user, loading } = useAuth()
   useEffect(() => installAnalytics(), [])
@@ -38,7 +39,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
-          <Analytics />
+          <AnalyticsTracker />
           <Routes>
             <Route path="/"          element={<Home />} />
             <Route path="/login"     element={<Login />} />
@@ -51,6 +52,7 @@ export default function App() {
             <Route path="/settings"  element={<RouteGuard><Settings /></RouteGuard>} />
             <Route path="/wallet"    element={<RouteGuard><Wallet /></RouteGuard>} />
             <Route path="/admin/pool" element={<RouteGuard><Pool /></RouteGuard>} />
+            <Route path="/admin/analytics" element={<RouteGuard><Analytics /></RouteGuard>} />
             <Route path="*"          element={<Navigate to="/" replace />} />
           </Routes>
         </ToastProvider>

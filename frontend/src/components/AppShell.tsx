@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { LayoutDashboard, History, Plus, LogOut, Settings, KeyRound, Gauge } from 'lucide-react'
+import { LayoutDashboard, History, Plus, LogOut, Settings, KeyRound, Gauge, BarChart3 } from 'lucide-react'
 import Logo from './svgs/Logo'
 import Button from './ui/Button'
 import { useAuth } from '../context/AuthContext'
@@ -17,7 +17,7 @@ const NAV = [
 ] as const
 
 /** The owner also sees the free-pool page (spend, alerts). */
-const navFor = (isOwner?: boolean) => (isOwner ? [...NAV, { to: '/admin/pool', label: 'Pool', icon: Gauge }] : NAV)
+const navFor = (isOwner?: boolean) => (isOwner ? [...NAV, { to: '/admin/analytics', label: 'Analytics', icon: BarChart3 }, { to: '/admin/pool', label: 'Pool', icon: Gauge }] : NAV)
 
 const MOBILE_BOTTOM_NAV: {
   to: string

@@ -297,3 +297,19 @@ export type PoolAdmin = {
   webhook: boolean
 }
 export const getPoolAdmin = () => request<PoolAdmin>('/api/admin/pool')
+
+/* ── Owner: product analytics ── */
+export type AnalyticsReport = {
+  days: number
+  since: string
+  totals: { visitors: number; sessions: number; pageViews: number; signups: number; activeUsers: number; tasksCreated: number; prsPublished: number; purchases: number }
+  daily: { day: string; visitors: number; signups: number; tasks: number }[]
+  funnel: { stage: string; count: number }[]
+  sources: { source: string; sessions: number; signups: number }[]
+  pages: { path: string; views: number; visitors: number }[]
+  devices: { device: string; visitors: number }[]
+  countries: { country: string; visitors: number }[]
+  refusals: { code: string; count: number }[]
+  recentSignups: { login: string; createdAt: string; lastSeenAt: string | null; tasks: number; firstTouch: unknown }[]
+}
+export const getAnalytics = (days = 30) => request<AnalyticsReport>(`/api/admin/analytics?days=${days}`)
