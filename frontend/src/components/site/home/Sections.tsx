@@ -199,7 +199,7 @@ export function ClosingCta({ onStart }: { onStart: () => void }) {
     <Section inner="py-24 md:py-36 text-center">
       <TwoToneHeading size="display" muted="Stop triaging by hand." strong="Let Pullwright open the PR." className="mx-auto max-w-3xl" />
       <div className="mt-9 flex flex-wrap justify-center gap-3">
-        <Button variant="primary" shape="pill" size="lg" onClick={onStart}>
+        <Button variant="primary" shape="pill" size="lg" data-track="start_free" data-track-where="home_footer" onClick={onStart}>
           Start free
         </Button>
         <Link to="/pricing">

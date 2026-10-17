@@ -94,16 +94,16 @@ export default function Home() {
                       aria-label="GitHub issue URL"
                       className="flex-1 min-w-0 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground/80"
                     />
-                    <Button type="submit" variant="primary" shape="pill" loading={loading} className="hidden sm:inline-flex h-9 px-4">
+                    <Button type="submit" variant="primary" shape="pill" loading={loading} className="hidden sm:inline-flex h-9 px-4" data-track="hero_submit" data-track-where="hero">
                       {user ? 'Start' : 'Sign in'}
                       {!loading && <ArrowRight className="w-4 h-4" />}
                     </Button>
                   </label>
-                  <Button type="submit" variant="primary" shape="pill" size="lg" loading={loading} className="sm:hidden h-12">
+                  <Button type="submit" variant="primary" shape="pill" size="lg" loading={loading} className="sm:hidden h-12" data-track="hero_submit" data-track-where="hero_mobile">
                     {user ? 'Start' : 'Sign in'}
                     {!loading && <ArrowRight className="w-4 h-4" />}
                   </Button>
-                  <Link to={DEMO_REPLAY_URL} className="sm:w-auto">
+                  <Link to={DEMO_REPLAY_URL} className="sm:w-auto" data-track="watch_replay" data-track-where="hero">
                     <Button variant="outline" shape="pill" size="lg" className="h-12 w-full" tabIndex={-1}>
                       Watch a replay
                     </Button>

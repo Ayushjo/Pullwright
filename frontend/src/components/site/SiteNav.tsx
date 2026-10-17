@@ -66,10 +66,10 @@ export default function SiteNav() {
     </Button>
   ) : (
     <>
-      <Button variant="outline" shape="pill" size="sm" onClick={() => login('/dashboard')} className="px-4">
+      <Button variant="outline" shape="pill" size="sm" data-track="login" data-track-where="nav" onClick={() => login('/dashboard')} className="px-4">
         Login
       </Button>
-      <Button variant="primary" shape="pill" size="sm" onClick={() => login('/wallet')} className="px-4">
+      <Button variant="primary" shape="pill" size="sm" data-track="start_free" data-track-where="nav" onClick={() => login('/wallet')} className="px-4">
         Start free
       </Button>
     </>

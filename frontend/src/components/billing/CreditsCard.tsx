@@ -52,7 +52,7 @@ export default function CreditsCard({
             </Button>
           )}
           {pack.enabled ? (
-            <Button size="sm" className="rounded-none px-4" loading={busy === 'pack'} onClick={onBuy}>
+            <Button size="sm" className="rounded-none px-4" data-track="buy_pack" data-track-where="settings" loading={busy === 'pack'} onClick={onBuy}>
               Buy {usd(pack.creditUsd)} credit — {usd(pack.priceUsd)}
             </Button>
           ) : (

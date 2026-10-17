@@ -43,7 +43,7 @@ function PlanColumn({ way, onCta, busy }: { way: Way; onCta: (w: Way) => void; b
 
       <p className="mt-5 text-[15px] leading-relaxed text-muted-foreground">{way.blurb}</p>
 
-      <Button variant={solid ? 'primary' : 'outline'} className="mt-6 w-full h-11 rounded-md text-[15px] self-end" loading={busy} onClick={() => onCta(way)}>
+      <Button variant={solid ? 'primary' : 'outline'} className="mt-6 w-full h-11 rounded-md text-[15px] self-end" data-track="plan_cta" data-track-plan={way.id} loading={busy} onClick={() => onCta(way)}>
         {busy ? 'Opening checkout…' : way.cta.label}
       </Button>
 

@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useEffect } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -10,15 +11,34 @@ import Replay from './pages/Replay'
 import Settings from './pages/Settings'
 import Wallet from './pages/Wallet'
 import Pricing from './pages/Pricing'
-import { AuthProvider } from './context/AuthContext'
+import { AuthProvider, useAuth } from './context/AuthContext'
+import { identifyUser, installAnalytics, trackPageView } from './lib/analytics'
 import { ToastProvider } from './components/ui'
 import RouteGuard from './components/RouteGuard'
+
+/** Page views on every route change (after the page has set its title) and identify after sign-in. */
+function Analytics() {
+  const { pathname } = useLocation()
+  const { user, loading } = useAuth()
+  useEffect(() => installAnalytics(), [])
+  useEffect(() => {
+    if (loading) return
+    identifyUser(user?.login ?? null)
+  }, [user?.login, loading])
+  useEffect(() => {
+    if (loading) return
+    const t = setTimeout(trackPageView, 50)
+    return () => clearTimeout(t)
+  }, [pathname, loading])
+  return null
+}
 
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
+          <Analytics />
           <Routes>
             <Route path="/"          element={<Home />} />
             <Route path="/login"     element={<Login />} />

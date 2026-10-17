@@ -182,7 +182,7 @@ export default function Replay() {
         <Section inner="py-20 md:py-28 text-center">
           <TwoToneHeading muted="Seen enough?" strong="Run it on your own issue." className="mx-auto max-w-2xl" />
           <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <Button variant="primary" shape="pill" size="lg" onClick={() => (user ? navigate('/tasks/new') : login('/wallet'))}>
+            <Button variant="primary" shape="pill" size="lg" data-track="start_free" data-track-where="replay_footer" onClick={() => (user ? navigate('/tasks/new') : login('/wallet'))}>
               Start free
             </Button>
             <Link to="/pricing">

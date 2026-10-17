@@ -68,7 +68,7 @@ export default function Login() {
               </motion.p>
 
               <motion.div variants={fadeUp} className="mt-8">
-                <Button variant="primary" shape="pill" size="lg" className="w-full h-12 text-[15px] gap-2.5" onClick={() => login(target)} disabled={loading} loading={loading}>
+                <Button variant="primary" shape="pill" size="lg" className="w-full h-12 text-[15px] gap-2.5" data-track="github_signin" data-track-where="login" onClick={() => login(target)} disabled={loading} loading={loading}>
                   <GithubMark className="w-5 h-5" />
                   Continue with GitHub
                 </Button>

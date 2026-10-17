@@ -117,7 +117,7 @@ export default function Settings() {
                     Manage billing
                   </Button>
                 ) : info?.paymentsEnabled ? (
-                  <Button size="sm" shape="pill" className="px-4" loading={busy === 'checkout'} onClick={() => run('checkout', async () => void (window.location.href = (await startCheckout()).url))}>
+                  <Button size="sm" shape="pill" className="px-4" data-track="upgrade_pro" data-track-where="settings" loading={busy === 'checkout'} onClick={() => run('checkout', async () => void (window.location.href = (await startCheckout()).url))}>
                     Upgrade to Pro — $8/mo
                   </Button>
                 ) : (
