@@ -3,6 +3,7 @@ import Home from './pages/Home'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import NewTask from './pages/NewTask'
+import Pool from './pages/Pool'
 import TaskView from './pages/TaskView'
 import History from './pages/History'
 import Replay from './pages/Replay'
@@ -29,6 +30,7 @@ export default function App() {
             <Route path="/pricing"   element={<Pricing />} />
             <Route path="/settings"  element={<RouteGuard><Settings /></RouteGuard>} />
             <Route path="/wallet"    element={<RouteGuard><Wallet /></RouteGuard>} />
+            <Route path="/admin/pool" element={<RouteGuard><Pool /></RouteGuard>} />
             <Route path="*"          element={<Navigate to="/" replace />} />
           </Routes>
         </ToastProvider>

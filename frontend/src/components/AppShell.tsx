@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { LayoutDashboard, History, Plus, LogOut, Settings, KeyRound } from 'lucide-react'
+import { LayoutDashboard, History, Plus, LogOut, Settings, KeyRound, Gauge } from 'lucide-react'
 import Logo from './svgs/Logo'
 import Button from './ui/Button'
 import { useAuth } from '../context/AuthContext'
@@ -15,6 +15,9 @@ const NAV = [
   { to: '/wallet', label: 'Keys', icon: KeyRound },
   { to: '/settings', label: 'Settings', icon: Settings },
 ] as const
+
+/** The owner also sees the free-pool page (spend, alerts). */
+const navFor = (isOwner?: boolean) => (isOwner ? [...NAV, { to: '/admin/pool', label: 'Pool', icon: Gauge }] : NAV)
 
 const MOBILE_BOTTOM_NAV: {
   to: string
@@ -117,7 +120,7 @@ export function UserMenu() {
               <p className="text-xs text-muted-foreground truncate">@{user.login}</p>
             </div>
             <div className="md:hidden py-0.5 border-b border-border mb-0.5">
-              {NAV.map(({ to, label, icon: Icon }) => (
+              {navFor(user.isOwner).map(({ to, label, icon: Icon }) => (
                 <Link
                   key={to}
                   to={to}
@@ -197,6 +200,7 @@ export { MobileBottomNav }
 
 export function TopNav() {
   const { pathname } = useLocation()
+  const { user: me } = useAuth()
 
   return (
     <header className="sticky top-0 z-nav bg-background/80 backdrop-blur-md border-b border-hairline">
@@ -204,7 +208,7 @@ export function TopNav() {
         <Logo height={28} className="shrink-0 mr-4" />
 
         <nav className="hidden md:flex flex-1 items-center gap-0.5" aria-label="Main">
-          {NAV.map(({ to, label, icon }) => (
+          {navFor(me?.isOwner).map(({ to, label, icon }) => (
             <NavLink
               key={to}
               to={to}

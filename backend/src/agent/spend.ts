@@ -343,10 +343,11 @@ export class SpendLedger {
       const key = `pw:alert:pool:${pool}:${period}:${scope}:${Math.round(pct * 100)}`
       if ((await this.redis!.set(key, "1", "EX", 40 * 24 * 3600, "NX")) !== "OK") return
       const level = pct >= 0.9 ? "critical" : "warn"
+      const $ = (n: number) => `$${n > 0 && n < 1 ? n.toFixed(3) : n.toFixed(2)}`
       const message =
         scope === "day"
-          ? `Today's ${pool} free pool is used up ($${spentUsd.toFixed(2)} of $${budgetUsd.toFixed(2)}); free tasks pause until 00:00 UTC.`
-          : `The ${pool} free pool has used ${Math.round(pct * 100)}% of this month's budget ($${spentUsd.toFixed(2)} of $${budgetUsd.toFixed(2)}).`
+          ? `Today's ${pool} free pool is used up (${$(spentUsd)} of ${$(budgetUsd)}); free tasks pause until 00:00 UTC.`
+          : `The ${pool} free pool has used ${Math.round(pct * 100)}% of this month's budget (${$(spentUsd)} of ${$(budgetUsd)}).`
       const a: PoolAlert = { ts: now.toISOString(), pool, scope, pct, spentUsd, budgetUsd, level, message }
       await this.redis!.multi().lpush(K_ALERTS, JSON.stringify(a)).ltrim(K_ALERTS, 0, 99).exec()
       raised.push(a)

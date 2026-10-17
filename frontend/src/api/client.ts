@@ -156,7 +156,7 @@ export const getPublicTask = (taskId: string) => request<Record<string, unknown>
 export const getPublicEvents = (taskId: string) => request<TaskEvent[]>(`/api/public/task/${taskId}/events`)
 
 /* ── Auth ── */
-export type AuthUser = { login: string; name?: string; avatarUrl: string }
+export type AuthUser = { login: string; name?: string; avatarUrl: string; isOwner?: boolean }
 
 export async function getMe(): Promise<AuthUser | null> {
   try {
@@ -277,3 +277,23 @@ export const deleteWalletKey = (provider: WalletProvider) => request<WalletView>
 /* ── Capacity (free plan: 3 starts per rolling 24 h) ── */
 export type Capacity = { tier: 'free' | 'pro'; tasksPerDay: number; used: number; left: number; nextSlotAt: number | null; maxActive: number; active: number }
 export const getCapacity = () => request<Capacity>('/api/capacity')
+
+/* ── Owner: the free Claude pool ── */
+export type PoolAlert = { ts: string; pool: string; scope: 'month' | 'day'; pct: number; spentUsd: number; budgetUsd: number; level: 'warn' | 'critical'; message: string }
+export type PoolAdmin = {
+  pool: {
+    name: string
+    model: string
+    monthlyUsd: number
+    dailyUsd: number | null
+    spentMonthUsd: number
+    spentDayUsd: number
+    projectedMonthUsd: number
+    thresholds: number[]
+  } | null
+  allowance: { enabled: boolean; tasksPerMonth: number; taskCapUsd: number }
+  usage: { freeTasks: number; freeUsers: number; avgCostUsd: number | null }
+  alerts: PoolAlert[]
+  webhook: boolean
+}
+export const getPoolAdmin = () => request<PoolAdmin>('/api/admin/pool')

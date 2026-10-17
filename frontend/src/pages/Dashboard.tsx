@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Inbox } from 'lucide-react'
 import AppShell from '../components/AppShell'
 import { Button, EmptyState, PageHeader, Tabs, Skeleton, type TabItem } from '../components/ui'
+import PoolBanner from '../components/billing/PoolBanner'
 import TaskCard from '../components/TaskCard'
 import type { StoredTask } from '../store/taskStore'
 import { statusMeta } from '../lib/status'
@@ -154,6 +155,7 @@ export default function Dashboard() {
 
   return (
     <AppShell>
+      <PoolBanner />
       <PageHeader
         title={`${greeting()}${user?.name ?? user?.login ? `, ${user.name ?? user.login}` : ''}`}
         description="Here’s everything your agent has been working on."
