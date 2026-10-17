@@ -1,0 +1,4 @@
+# Cloudflare Pages: prerendered public pages, then the SPA shell for every app route.
+/pricing   /pricing/index.html   200
+/login     /login/index.html     200
+/*         /app.html             200

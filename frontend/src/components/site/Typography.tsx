@@ -29,7 +29,13 @@ export function TwoToneHeading({
   return (
     <Tag className={cn('font-normal text-foreground text-balance', size === 'display' ? 'text-display' : 'text-title', className)}>
       {strongFirst ? main : grey}
-      {muted && strong && <br />}
+      {/* The space keeps the two lines separate words for search engines and screen readers. */}
+      {muted && strong && (
+        <>
+          {' '}
+          <br />
+        </>
+      )}
       {strongFirst ? grey : main}
     </Tag>
   )
