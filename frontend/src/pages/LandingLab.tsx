@@ -754,8 +754,8 @@ function IndexChapters() {
               <p className="text-[15px] leading-snug text-foreground">
                 {c.t} <span className="text-muted-foreground">{c.d}</span>
               </p>
-              <div className="relative mt-4 h-[210px] overflow-hidden rounded-lg border border-hairline bg-[radial-gradient(120%_90%_at_20%_10%,#dbe8ff_0%,#eef3fb_45%,#e9ecef_100%)]">
-                <div className="absolute left-3 top-3 w-[420px] origin-top-left scale-[0.52]">{c.m}</div>
+              <div className="relative mt-4 h-[270px] overflow-hidden rounded-lg border border-hairline bg-[radial-gradient(120%_90%_at_20%_10%,#dbe8ff_0%,#eef3fb_45%,#e9ecef_100%)] sm:h-[230px] lg:h-[210px]">
+                <div className="absolute left-3 top-3 w-[420px] origin-top-left scale-[0.75] sm:scale-[0.6] lg:scale-[0.52]">{c.m}</div>
               </div>
             </div>
           ))}
