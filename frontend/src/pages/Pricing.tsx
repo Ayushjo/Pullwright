@@ -68,6 +68,41 @@ function Cell({ v }: { v: string | boolean }) {
   return <span>{v}</span>
 }
 
+/** The comparison on phones: a three-way switch, then that plan's values as a two-column list. */
+function CompareMobile() {
+  const [i, setI] = useState(WAYS.findIndex((w) => w.id === 'free'))
+  return (
+    <div className="mt-8 md:hidden">
+      <div role="tablist" aria-label="Plan" className="grid grid-cols-3 gap-1 rounded-pill border border-hairline bg-card p-1">
+        {WAYS.map((w, k) => (
+          <button
+            key={w.id}
+            role="tab"
+            aria-selected={k === i}
+            onClick={() => setI(k)}
+            className={cn('min-h-9 rounded-pill px-2 text-[13px] transition-colors', k === i ? 'bg-foreground text-background' : 'text-muted-foreground')}
+          >
+            {w.name}
+          </button>
+        ))}
+      </div>
+      <dl className="mt-6">
+        {COMPARE.map((r) => (
+          <Fragment key={r.label}>
+            {r.group && <MonoLabel className="mt-7 mb-1 block">{r.group}</MonoLabel>}
+            <div className="flex items-center justify-between gap-6 border-b border-hairline py-3.5">
+              <dt className="text-[15px] text-foreground">{r.label}</dt>
+              <dd className="flex shrink-0 justify-end text-right text-[15px] text-muted-foreground">
+                <Cell v={r.values[i]!} />
+              </dd>
+            </div>
+          </Fragment>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
 function FaqItem({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false)
   return (
@@ -157,7 +192,9 @@ export default function Pricing() {
         <Frame>
         <Section id="compare" divider={false}>
           <TwoToneHeading muted="Compare" strong="side by side" />
-          <div className="mt-10 -mx-gutter md:mx-0 overflow-x-auto">
+          {/* Phones: pick a plan, read one column. */}
+          <CompareMobile />
+          <div className="mt-10 hidden md:block overflow-x-auto">
             <table className="w-full min-w-[640px] text-left border-collapse">
               <thead>
                 <tr className="border-b border-hairline">
@@ -182,7 +219,7 @@ export default function Pricing() {
                       </tr>
                     )}
                     <tr className="border-b border-hairline">
-                      <th scope="row" className="sticky left-0 z-[1] bg-background py-3.5 pl-gutter md:pl-0 pr-4 text-[15px] font-normal text-foreground">
+                      <th scope="row" className="sticky left-0 z-[1] bg-background border-b border-hairline py-3.5 pl-gutter md:pl-0 pr-4 text-[15px] font-normal text-foreground">
                         {r.label}
                       </th>
                       {r.values.map((v, i) => (
@@ -205,7 +242,7 @@ export default function Pricing() {
         <Section divider={false} inner="py-14 md:py-16">
           <div className="grid gap-8 md:grid-cols-2 md:items-center">
             <ul className="flex flex-wrap gap-x-7 gap-y-2 text-lg text-foreground/45 order-2 md:order-1">
-              {['Google Gemini', 'Groq', 'Vercel AI Gateway', 'OpenRouter', 'OpenAI'].map((n) => (
+              {['Anthropic Claude', 'Google Gemini', 'OpenAI', 'OpenRouter', 'Groq', 'Vercel AI Gateway'].map((n) => (
                 <li key={n}>{n}</li>
               ))}
             </ul>

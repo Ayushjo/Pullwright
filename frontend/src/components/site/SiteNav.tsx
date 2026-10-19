@@ -76,20 +76,20 @@ export default function SiteNav() {
 
   const linkCls = (active: boolean) =>
     cn(
-      'px-3 py-1.5 rounded-pill text-sm transition-colors',
+      'px-3 py-1.5 rounded-pill text-sm transition-colors whitespace-nowrap',
       active ? 'text-foreground bg-foreground/[.06]' : 'text-foreground/80 hover:text-foreground hover:bg-foreground/[.05]',
     )
 
   const cta = user ? (
-    <Button variant="primary" shape="pill" size="sm" onClick={() => navigate('/dashboard')} className="px-4">
+    <Button variant="primary" shape="pill" size="sm" onClick={() => navigate('/dashboard')} className="px-4 whitespace-nowrap">
       Dashboard
     </Button>
   ) : (
     <>
-      <Button variant="outline" shape="pill" size="sm" data-track="login" data-track-where="nav" onClick={() => login('/dashboard')} className="px-4">
+      <Button variant="outline" shape="pill" size="sm" data-track="login" data-track-where="nav" onClick={() => login('/dashboard')} className="px-4 whitespace-nowrap">
         Login
       </Button>
-      <Button variant="primary" shape="pill" size="sm" data-track="start_free" data-track-where="nav" onClick={() => login('/wallet')} className="px-4">
+      <Button variant="primary" shape="pill" size="sm" data-track="start_free" data-track-where="nav" onClick={() => login('/wallet')} className="px-4 whitespace-nowrap">
         Start free
       </Button>
     </>
@@ -118,7 +118,7 @@ export default function SiteNav() {
             <Link to={DEMO_REPLAY_URL} className={linkCls(pathname.startsWith('/r/'))} onMouseEnter={close}>
               Replay
             </Link>
-            <a href={REPO_URL} target="_blank" rel="noreferrer" className={linkCls(false)} onMouseEnter={close}>
+            <a href={REPO_URL} target="_blank" rel="noreferrer" className={cn(linkCls(false), 'hidden lg:inline-flex')} onMouseEnter={close}>
               GitHub
             </a>
           </nav>
