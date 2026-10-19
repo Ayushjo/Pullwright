@@ -1,19 +1,20 @@
-import { useEffect } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Home from './pages/Home'
 import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
-import NewTask from './pages/NewTask'
-import Pool from './pages/Pool'
-import Analytics from './pages/Analytics'
-import TaskView from './pages/TaskView'
-import History from './pages/History'
-import Replay from './pages/Replay'
-import Settings from './pages/Settings'
-import Wallet from './pages/Wallet'
 import Pricing from './pages/Pricing'
 import Privacy from './pages/Privacy'
-import LandingLab from './pages/LandingLab'
+// Public, prerendered pages load with the bundle; app pages (and the dev-only lab) load on demand.
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const NewTask = lazy(() => import('./pages/NewTask'))
+const Pool = lazy(() => import('./pages/Pool'))
+const Analytics = lazy(() => import('./pages/Analytics'))
+const TaskView = lazy(() => import('./pages/TaskView'))
+const History = lazy(() => import('./pages/History'))
+const Replay = lazy(() => import('./pages/Replay'))
+const Settings = lazy(() => import('./pages/Settings'))
+const Wallet = lazy(() => import('./pages/Wallet'))
+const LandingLab = lazy(() => import('./pages/LandingLab'))
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { identifyUser, installAnalytics, trackPageView } from './lib/analytics'
 import { ToastProvider } from './components/ui'
@@ -42,6 +43,7 @@ export default function App() {
       <AuthProvider>
         <ToastProvider>
           <AnalyticsTracker />
+          <Suspense fallback={<div className="min-h-screen bg-background" />}>
           <Routes>
             <Route path="/"          element={<Home />} />
             <Route path="/login"     element={<Login />} />
@@ -59,6 +61,7 @@ export default function App() {
             <Route path="/admin/analytics" element={<RouteGuard><Analytics /></RouteGuard>} />
             <Route path="*"          element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
