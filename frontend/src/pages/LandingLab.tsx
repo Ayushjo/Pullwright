@@ -735,7 +735,7 @@ function IndexHead({ n, tag, strong, rest }: { n: string; tag: string; strong: s
     <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
       <div>
         <p className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-foreground"><span className="h-1.5 w-1.5 bg-primary" />{tag}</p>
-        <p className="mt-2 font-mono text-[88px] leading-none tracking-[-0.06em] text-black/[.08]">{n}</p>
+        <p className="mt-2 font-mono text-[88px] leading-none tracking-[-0.06em] text-foreground/[.08]">{n}</p>
       </div>
       <h2 className="max-w-4xl text-[clamp(1.8rem,3.4vw,2.9rem)] font-normal leading-[1.1] tracking-[-0.03em] text-foreground">
         {strong} <span className="text-muted-foreground">{rest}</span>
@@ -886,11 +886,215 @@ function Round3({ v }: { v: string }) {
   )
 }
 
+/* ═════════════ Round 4: the liked pieces (centred hero, "01" chapters, measured cards), black bands, phone-sized chapters ═════════════ */
+
+/** A full-bleed black band: the design tokens re-pointed to dark, so real sections render inside it unchanged. */
+const BAND_VARS = {
+  '--background': '#0a0a0b', '--background-rgb': '10 10 11', '--foreground': '#f4f4f5', '--foreground-rgb': '244 244 245',
+  '--card': '#141416', '--card-foreground': '#f4f4f5', '--popover': '#141416', '--popover-foreground': '#f4f4f5',
+  '--secondary': '#1c1c1f', '--muted': '#1c1c1f', '--elevated': '#1c1c1f', '--accent': '#1c1c1f', '--input': '#27272a',
+  '--primary': '#4d8dff', '--primary-rgb': '77 141 255', '--ring': '#4d8dff',
+  '--muted-foreground': 'rgba(244,244,245,.58)', '--faint': 'rgba(244,244,245,.36)', '--hairline': 'rgba(255,255,255,.08)', '--border': 'rgba(255,255,255,.1)',
+} as React.CSSProperties
+const BAND_CSS = `
+.band-dark [class*="bg-[radial-gradient"] { background: radial-gradient(120% 90% at 20% 0%, rgba(43,127,255,.16) 0%, #141416 55%, #0f0f11 100%) !important; }
+.band-dark [class*="border-black/"] { border-color: rgba(255,255,255,.1) !important; }
+.band-dark .bg-green-50 { background: rgba(61,220,132,.1) !important; }
+.band-dark .border-green-200 { border-color: rgba(61,220,132,.28) !important; }
+.band-dark .text-green-900 { color: #a6f0c6 !important; }
+.band-dark .bg-background\/60 { background: rgba(255,255,255,.03) !important; }
+.no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { scrollbar-width: none; }
+`
+function DarkBand({ children }: { children: ReactNode }) {
+  return (
+    <div className="band-dark bg-background text-foreground" style={BAND_VARS}>
+      <Frame>{children}</Frame>
+    </div>
+  )
+}
+
+/** "01 · Not autocomplete": staggered columns on desktop; on phones a swipe carousel, tabs, or an accordion. */
+function ChapterOne({ phone }: { phone: 'carousel' | 'tabs' | 'accordion' }) {
+  const [tab, setTab] = useState(0)
+  const shot = (m: ReactNode, h = 'h-[210px]', scale = 'scale-[0.52]') => (
+    <div className={cn('relative mt-4 overflow-hidden rounded-lg border border-hairline bg-[radial-gradient(120%_90%_at_20%_10%,#dbe8ff_0%,#eef3fb_45%,#e9ecef_100%)]', h)}>
+      <div className={cn('absolute left-3 top-3 w-[420px] origin-top-left', scale)}>{m}</div>
+    </div>
+  )
+  const desktop = (
+    <div className="mt-14 hidden grid-cols-5 gap-5 lg:grid">
+      {COLS.map((c) => (
+        <div key={c.t} className={c.off}>
+          <p className="text-[15px] leading-snug text-foreground">{c.t} <span className="text-muted-foreground">{c.d}</span></p>
+          {shot(c.m)}
+        </div>
+      ))}
+    </div>
+  )
+  const mobile =
+    phone === 'carousel' ? (
+      <div className="lg:hidden">
+        <div className="no-scrollbar -mx-gutter mt-10 flex snap-x snap-mandatory scroll-pl-[22px] md:scroll-pl-12 gap-3 overflow-x-auto px-gutter pb-2 md:-mx-12 md:px-12">
+          {COLS.map((c, i) => (
+            <div key={c.t} className="w-[80%] shrink-0 snap-start sm:w-[46%]">
+              <p className="font-mono text-[11px] text-muted-foreground">{String(i + 1).padStart(2, '0')} / 05</p>
+              <p className="mt-2 text-[15px] leading-snug text-foreground">{c.t} <span className="text-muted-foreground">{c.d}</span></p>
+              {shot(c.m, 'h-[230px]', 'scale-[0.66]')}
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Swipe →</p>
+      </div>
+    ) : phone === 'tabs' ? (
+      <div className="mt-10 lg:hidden">
+        <div className="no-scrollbar -mx-gutter flex gap-1.5 overflow-x-auto px-gutter md:-mx-12 md:px-12">
+          {COLS.map((c, i) => (
+            <button key={c.t} onClick={() => setTab(i)} className={cn('shrink-0 rounded-pill border px-3.5 py-1.5 text-[13px]', i === tab ? 'border-foreground bg-foreground text-background' : 'border-hairline text-foreground/70')}>
+              <span className="mr-1.5 font-mono text-[10px] opacity-60">{i + 1}</span>{c.t.replace('.', '')}
+            </button>
+          ))}
+        </div>
+        <p className="mt-5 text-[15px] leading-snug text-muted-foreground">{COLS[tab]!.d}</p>
+        {shot(COLS[tab]!.m, 'h-[270px]', 'scale-[0.78]')}
+      </div>
+    ) : (
+      <ol className="mt-10 divide-y divide-hairline border-y border-hairline lg:hidden">
+        {COLS.map((c, i) => (
+          <li key={c.t} className="py-4">
+            <button onClick={() => setTab(i)} className="flex w-full items-baseline gap-3 text-left">
+              <span className="font-mono text-[11px] text-muted-foreground">{String(i + 1).padStart(2, '0')}</span>
+              <span className="flex-1 text-[17px] text-foreground">{c.t.replace('.', '')}</span>
+              <span className="text-muted-foreground">{i === tab ? '−' : '+'}</span>
+            </button>
+            {i === tab && (
+              <div className="pl-7">
+                <p className="mt-2 text-[15px] leading-snug text-muted-foreground">{c.d}</p>
+                {shot(c.m, 'h-[250px]', 'scale-[0.72]')}
+              </div>
+            )}
+          </li>
+        ))}
+      </ol>
+    )
+  return (
+    <section className="px-gutter py-16 md:px-12 md:py-24">
+      <IndexHead n="01" tag="How it works" strong="Not autocomplete." rest="Pullwright takes one issue all the way to a reviewed pull request, and stops for you twice." />
+      {desktop}
+      {mobile}
+    </section>
+  )
+}
+
+/** "Measured, not promised": three cards on desktop, a swipe row on phones; light or on a black band. */
+function Measured({ dark, divider = true }: { dark?: boolean; divider?: boolean }) {
+  return (
+    <section className={cn('px-gutter py-16 md:px-12 md:py-24', divider && 'border-t border-hairline')}>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <h2 className="text-title font-normal text-foreground">
+          Measured, <Serif className="text-muted-foreground">not promised.</Serif>
+        </h2>
+        <p className="max-w-sm text-sm text-muted-foreground">The same 40 issues — easy, hard, real repos, screenshots, vague — run on each model. Hidden tests decide pass or fail.</p>
+      </div>
+      <div className="no-scrollbar -mx-gutter mt-10 flex snap-x snap-mandatory scroll-pl-[22px] md:scroll-pl-12 gap-3 overflow-x-auto px-gutter md:mx-0 md:grid md:grid-cols-3 md:gap-4 md:overflow-visible md:px-0">
+        {MODELS.map((m) => (
+          <article key={m.name} className={cn('flex w-[82%] shrink-0 snap-start flex-col rounded-[18px] p-6 md:w-auto', dark ? 'border border-white/[.08] bg-[#141416]' : 'bg-[#e9edf3]')}>
+            <p className="text-[22px] tracking-[-0.02em] text-foreground">{m.name}</p>
+            <p className="text-[15px] text-muted-foreground">{m.role}</p>
+            <dl className={cn('mt-8 divide-y border-y', dark ? 'divide-white/[.08] border-white/[.08]' : 'divide-black/[.08] border-black/[.08]')}>
+              {m.rows.map(([k, val]) => (
+                <div key={k} className="flex items-center justify-between py-2.5">
+                  <dt className="font-mono text-[11px] uppercase tracking-[0.08em] text-foreground/70">{k}</dt>
+                  <dd className="text-[15px] tabular-nums text-foreground">{val}</dd>
+                </div>
+              ))}
+            </dl>
+            <button className={cn('mt-6 inline-flex h-9 items-center gap-1.5 self-start rounded-pill px-4 text-[13px]', dark ? 'bg-white text-black' : 'bg-foreground text-white')}>
+              See the runs <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/** A black statement band between light sections (Vercel, Linear): one line, one number row. */
+function DarkStatement() {
+  return (
+    <section className="px-gutter py-20 text-center md:px-12 md:py-28">
+      <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">The rule</p>
+      <p className="mx-auto mt-6 max-w-4xl text-balance text-[clamp(2.2rem,5vw,4.2rem)] leading-[1.02] tracking-[-0.02em] text-foreground" style={{ fontFamily: SERIF }}>
+        Nothing reaches your repo <em className="text-primary">until you say so.</em>
+      </p>
+      <div className="mx-auto mt-12 grid max-w-3xl grid-cols-3 gap-px overflow-hidden rounded-lg border border-hairline bg-[rgba(255,255,255,.08)]">
+        {[['0', 'PRs without approval'], ['No network', 'in the sandbox'], ['Hard caps', 'on every task']].map(([a, b]) => (
+          <div key={b} className="bg-background px-3 py-5 sm:px-5">
+            <p className="text-[clamp(1.1rem,2.6vw,1.6rem)] tracking-[-0.02em] text-foreground">{a}</p>
+            <p className="mt-1 text-[12px] text-muted-foreground sm:text-sm">{b}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function Round4({ v }: { v: string }) {
+  const hero = (
+    <Frame>
+      <HeroPrompt topOnly />
+    </Frame>
+  )
+  let body: ReactNode
+  if (v === '14')
+    // Light hero → black chapters (swipe on phones) → light measured + keys → black safety rule → light close.
+    body = (
+      <>
+        <Frame><HeroPrompt topOnly /><ShotAndStats /></Frame>
+        <DarkBand><ChapterOne phone="carousel" /></DarkBand>
+        <Frame><Measured divider={false} /><Keys /></Frame>
+        <DarkBand><DarkStatement /></DarkBand>
+        <Frame><Safety /><ClosingCta onStart={() => {}} /><SiteFooter /></Frame>
+      </>
+    )
+  else if (v === '15')
+    // Light hero → black measured → light chapters (tabs on phones) → black close and footer.
+    body = (
+      <>
+        {hero}
+        <Frame><BuiltOn /></Frame>
+        <DarkBand><Measured dark divider={false} /></DarkBand>
+        <Frame><ChapterOne phone="tabs" /><Keys /><Safety /></Frame>
+        <DarkBand><ClosingCta onStart={() => {}} /><SiteFooter /></DarkBand>
+      </>
+    )
+  else
+    // Light hero + product → one long black act: chapters (accordion on phones), measured, the rule → light keys and close.
+    body = (
+      <>
+        <Frame><HeroPrompt topOnly /><ShotAndStats /></Frame>
+        <DarkBand>
+          <ChapterOne phone="accordion" />
+          <Measured dark />
+          <div className="border-t border-hairline"><DarkStatement /></div>
+        </DarkBand>
+        <Frame><Keys /><Safety /><ClosingCta onStart={() => {}} /><SiteFooter /></Frame>
+      </>
+    )
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <style>{BAND_CSS}</style>
+      <SiteNav />
+      {body}
+    </div>
+  )
+}
+
 export default function LandingLab() {
   const { v = '1' } = useParams()
   useSerifFont()
   useLabFonts()
   useSeo({ title: `Landing lab ${v}`, description: 'Internal landing page variants.', noindex: true })
+  if (Number(v) >= 14) return <Round4 v={v} />
   if (Number(v) >= 10) return <Round3 v={v} />
   const rest = (
     <>
