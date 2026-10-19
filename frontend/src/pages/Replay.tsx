@@ -113,7 +113,7 @@ export default function Replay() {
           <MonoLabel dot>Live replay · sped up · no model is called</MonoLabel>
           <h1 className="mt-4 font-serif text-[36px] sm:text-[52px] font-normal leading-[1.02] tracking-[-0.02em] text-foreground max-w-4xl">{task?.title ?? 'Loading…'}</h1>
           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
-            <a href={task?.issueUrl} target="_blank" rel="noreferrer" className="font-mono text-[13px] hover:text-foreground">
+            <a href={task?.issueUrl} target="_blank" rel="noreferrer" className="inline-block py-1 font-mono text-[13px] hover:text-foreground">
               {task?.repo} #{task?.issueNumber}
             </a>
             <Badge tone={meta.tone} dot>

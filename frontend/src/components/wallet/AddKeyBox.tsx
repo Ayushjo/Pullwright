@@ -87,7 +87,7 @@ export default function AddKeyBox({
             spellCheck={false}
             aria-label="API key"
             placeholder="Paste a key — AIza…, gsk_…, vck_…, sk-or-…"
-            className="flex-1 min-w-0 h-full bg-transparent px-2.5 text-sm font-mono outline-none placeholder:font-sans placeholder:text-muted-foreground/80"
+            className="flex-1 min-w-0 self-stretch bg-transparent px-2.5 text-sm font-mono outline-none placeholder:font-sans placeholder:text-muted-foreground/80"
           />
           <AnimatePresence>
             {detected && (

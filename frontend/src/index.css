@@ -254,3 +254,17 @@
 .band-dark .text-green-900 { color: #a6f0c6 !important; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { scrollbar-width: none; }
+
+/*
+ * Tap targets: on touch screens and narrow windows every button, tab and icon link is at least 32 px tall
+ * (WCAG 2.5.8 asks for 24; 32 is comfortable for a thumb). Mouse users on wide screens keep the compact sizes.
+ */
+@media (pointer: coarse), (max-width: 1023px) {
+  button:not(.tap-exempt),
+  [role='button']:not(.tap-exempt),
+  [role='tab']:not(.tap-exempt),
+  a.inline-flex:not(.tap-exempt),
+  a.flex:not(.tap-exempt) {
+    min-height: 32px;
+  }
+}

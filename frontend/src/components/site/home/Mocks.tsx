@@ -24,7 +24,7 @@ function FeedLine({ line, i, animate }: { line: (typeof FEED)[number]; i: number
   const body =
     line.k === 'phase' ? (
       <div className="flex items-center gap-2 pt-1">
-        <span className="font-mono text-[9.5px] tracking-[0.08em] text-muted-foreground">{line.t}</span>
+        <span className="font-mono text-[10px] tracking-[0.08em] text-muted-foreground">{line.t}</span>
         <span className="text-[10.5px] text-muted-foreground truncate">· {line.d}</span>
         <span className="flex-1 h-px bg-hairline" />
       </div>
@@ -96,17 +96,17 @@ export function HeroMock({ floatingPr = true }: { floatingPr?: boolean }) {
       <Window title="Add a modulo(a, b) helper to math.js · Ayushjo/devin-test-app" className="max-w-[860px]">
         <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] min-h-[300px]">
           <aside className="hidden sm:block border-r border-hairline bg-background/60 p-3.5">
-            <p className="font-mono text-[9.5px] tracking-[0.08em] text-muted-foreground">CHECKLIST</p>
+            <p className="font-mono text-[10px] tracking-[0.08em] text-muted-foreground">CHECKLIST</p>
             <ul className="mt-2.5 space-y-2">
               {['modulo(a, b) in math.js', 'Throws on b = 0', 'Exported with the others', 'Tests for both cases', 'Existing tests still pass'].map((r, i) => (
                 <li key={r} className="flex items-start gap-2 text-[11.5px] text-foreground/80">
-                  <span className="font-mono text-[9.5px] text-muted-foreground mt-px">R{i + 1}</span>
+                  <span className="font-mono text-[10px] text-muted-foreground mt-px">R{i + 1}</span>
                   <Check className="w-3.5 h-3.5 text-success shrink-0" />
                   <span className="leading-tight">{r}</span>
                 </li>
               ))}
             </ul>
-            <p className="mt-5 font-mono text-[9.5px] tracking-[0.08em] text-muted-foreground">STATUS</p>
+            <p className="mt-5 font-mono text-[10px] tracking-[0.08em] text-muted-foreground">STATUS</p>
             <span className="mt-2 inline-flex items-center gap-1.5 rounded-pill border border-green-200 bg-green-50 text-success text-[11px] px-2 py-0.5">
               <span className="w-1.5 h-1.5 rounded-full bg-success" />
               Ready to publish
@@ -145,7 +145,7 @@ export function ChecksMock() {
     <Window title="Sandbox · no network" className="h-full">
       <div className="p-4 space-y-3 text-[12px]">
         <div className="flex items-center gap-2 text-muted-foreground">
-          <span className="font-mono text-[9.5px] tracking-[0.08em]">BASELINE</span>
+          <span className="font-mono text-[10px] tracking-[0.08em]">BASELINE</span>
           <span className="flex-1 h-px bg-hairline" />
         </div>
         <div className="flex items-center gap-2">
@@ -153,7 +153,7 @@ export function ChecksMock() {
           <span className="text-success">18 passed</span>
         </div>
         <div className="flex items-center gap-2 text-muted-foreground pt-1">
-          <span className="font-mono text-[9.5px] tracking-[0.08em]">AFTER EDITS</span>
+          <span className="font-mono text-[10px] tracking-[0.08em]">AFTER EDITS</span>
           <span className="flex-1 h-px bg-hairline" />
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -231,11 +231,11 @@ export function ParkedMock() {
       </div>
       <div className="mt-4 space-y-1.5 pl-6">
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-          <span className="font-mono text-[9.5px] tracking-[0.08em]">PAUSED</span>
+          <span className="font-mono text-[10px] tracking-[0.08em]">PAUSED</span>
           <span className="flex-1 h-px bg-hairline" />
         </div>
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-          <span className="font-mono text-[9.5px] tracking-[0.08em]">RESUMED</span>
+          <span className="font-mono text-[10px] tracking-[0.08em]">RESUMED</span>
           <span className="truncate">· step 23 of 60</span>
           <span className="flex-1 h-px bg-hairline" />
         </div>
@@ -256,7 +256,7 @@ export function ScreenshotMock() {
           <div className="mt-2 h-2.5 w-9 bg-red-300/70 rounded-sm" />
         </div>
         <div className="min-w-0">
-          <p className="font-mono text-[9.5px] tracking-[0.08em] text-muted-foreground">PULLWRIGHT READ THIS AS</p>
+          <p className="font-mono text-[10px] tracking-[0.08em] text-muted-foreground">PULLWRIGHT READ THIS AS</p>
           <p className="mt-1.5 text-[11.5px] text-foreground/85 leading-snug">Cart shows "Total: $NaN" after a fixed discount code is applied.</p>
         </div>
       </div>
@@ -269,7 +269,7 @@ export function ScreenshotMock() {
 export function AssumptionsMock() {
   return (
     <Window chrome={false} className="h-full p-4">
-      <p className="font-mono text-[9.5px] tracking-[0.08em] text-primary">ASSUMPTIONS — PICK ONE</p>
+      <p className="font-mono text-[10px] tracking-[0.08em] text-primary">ASSUMPTIONS — PICK ONE</p>
       <p className="mt-2 text-[12px] text-foreground leading-snug">"Books endpoint returns too much data"</p>
       <div className="mt-2.5 space-y-1.5">
         {[
@@ -300,7 +300,7 @@ export function PlanMock() {
     <Window title="Plan · awaiting your approval">
       <div className="p-4">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[9.5px] tracking-[0.08em] text-primary">PLAN</span>
+          <span className="font-mono text-[10px] tracking-[0.08em] text-primary">PLAN</span>
           <span className="rounded-pill bg-black/[.05] text-[10.5px] px-2 py-0.5">Small · ~11 requests</span>
           <span className="rounded-pill bg-black/[.05] text-[10.5px] px-2 py-0.5">Clear issue</span>
         </div>
@@ -369,7 +369,7 @@ export function ReviewMock() {
           <p className="text-[11px] text-green-900/70 mt-0.5">A separate review pass checks the diff against every requirement.</p>
         </div>
         <div>
-          <p className="font-mono text-[9.5px] tracking-[0.08em] text-muted-foreground">VALIDATION</p>
+          <p className="font-mono text-[10px] tracking-[0.08em] text-muted-foreground">VALIDATION</p>
           <ul className="mt-1.5 divide-y divide-hairline border-y border-hairline">
             {['Type check', 'Tests (20)', 'No deleted tests', 'Diff matches the plan'].map((c) => (
               <li key={c} className="flex items-center justify-between py-1.5 text-[11.5px]">

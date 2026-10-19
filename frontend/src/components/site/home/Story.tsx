@@ -81,7 +81,7 @@ export function HomeHero({
         <motion.div variants={fadeUp} className="mt-3 flex flex-wrap items-center justify-center gap-2">
           <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Try</span>
           {EXAMPLES.map((e) => (
-            <button key={e} type="button" onClick={() => onUrl(DEMO_ISSUE)} className="rounded-pill border border-hairline bg-card px-3 py-1 text-[13px] text-foreground/75 transition-colors hover:border-black/20 hover:text-foreground" data-track="example_chip" data-track-example={e}>
+            <button key={e} type="button" onClick={() => onUrl(DEMO_ISSUE)} className="min-h-8 rounded-pill border border-hairline bg-card px-3 py-1 text-[13px] text-foreground/75 transition-colors hover:border-black/20 hover:text-foreground" data-track="example_chip" data-track-example={e}>
               {e}
             </button>
           ))}
@@ -195,7 +195,7 @@ export function HowItWorks() {
               role="tab"
               aria-selected={i === tab}
               onClick={() => setTab(i)}
-              className={cn('shrink-0 rounded-pill border px-3.5 py-1.5 text-[13px] transition-colors', i === tab ? 'border-foreground bg-foreground text-background' : 'border-hairline text-foreground/70')}
+              className={cn('min-h-9 shrink-0 rounded-pill border px-3.5 py-1.5 text-[13px] transition-colors', i === tab ? 'border-foreground bg-foreground text-background' : 'border-hairline text-foreground/70')}
             >
               <span className="mr-1.5 font-mono text-[10px] opacity-60">{i + 1}</span>
               {s.t.replace('.', '')}

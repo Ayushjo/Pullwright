@@ -63,18 +63,21 @@ function NavLink({
   }
 
   return (
+    // Tablet widths show icons only (labels from lg up), so the owner's six links never push the bar off-screen.
     <Link
       to={to}
+      aria-label={label}
+      title={label}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-pill transition-colors duration-micro',
+        'flex h-9 items-center gap-1.5 text-sm px-2.5 xl:px-3 rounded-pill transition-colors duration-micro whitespace-nowrap',
         active
           ? 'text-foreground bg-black/[.05]'
           : 'text-foreground/70 hover:text-foreground hover:bg-black/[.04]',
       )}
     >
-      <Icon className="w-4 h-4" strokeWidth={1.75} />
-      {label}
+      <Icon className="w-4 h-4 shrink-0" strokeWidth={1.75} />
+      <span className="hidden lg:inline">{label}</span>
     </Link>
   )
 }
@@ -97,12 +100,12 @@ export function UserMenu() {
       <button
         onClick={() => setOpen((v) => !v)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        className="flex items-center gap-2 rounded-md border border-border bg-card pl-1 pr-2.5 py-1 hover:bg-muted transition-colors duration-micro focus-ring"
+        className="flex h-9 items-center gap-2 rounded-md border border-border bg-card px-1 xl:pr-2.5 hover:bg-muted transition-colors duration-micro focus-ring"
         aria-label="Account menu"
         aria-expanded={open}
       >
         <img src={user.avatarUrl} alt={user.login} className="w-6 h-6 rounded-md" />
-        <span className="text-sm font-medium text-foreground max-w-[88px] truncate hidden sm:inline">
+        <span className="text-sm font-medium text-foreground max-w-[88px] truncate hidden xl:inline">
           {user.login}
         </span>
       </button>
@@ -205,9 +208,9 @@ export function TopNav() {
   return (
     <header className="sticky top-0 z-nav bg-background/80 backdrop-blur-md border-b border-hairline">
       <div className="max-w-frame mx-auto px-gutter md:px-8 h-[52px] flex items-center gap-2">
-        <Logo height={28} className="shrink-0 mr-4" />
+        <Logo height={28} className="shrink-0 mr-2 xl:mr-4" />
 
-        <nav className="hidden md:flex flex-1 items-center gap-0.5" aria-label="Main">
+        <nav className="hidden md:flex flex-1 min-w-0 items-center gap-0.5" aria-label="Main">
           {navFor(me?.isOwner).map(({ to, label, icon }) => (
             <NavLink
               key={to}
