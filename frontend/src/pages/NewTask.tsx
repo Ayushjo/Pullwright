@@ -110,7 +110,7 @@ export default function NewTask() {
                   <span aria-hidden className="w-1.5 h-1.5 bg-primary" />
                   New task
                 </span>
-                <h1 className="mt-3 text-[28px] font-normal leading-tight tracking-[-0.02em] text-foreground">Submit a GitHub issue</h1>
+                <h1 className="mt-3 font-serif text-[38px] sm:text-[44px] font-normal leading-[1.02] tracking-[-0.015em] text-foreground">Hand it an <em className="text-primary">issue.</em></h1>
                 <p className="text-[15px] text-muted-foreground mt-1.5 leading-relaxed">Paste the issue URL — Pullwright takes it from there.</p>
               </div>
 

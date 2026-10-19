@@ -13,7 +13,7 @@ import { AssumptionsMock, ChecksMock, CodeMock, KeysMock, ParkedMock, PlanMock, 
 
 /** Instead of customer logos (we have none): the model providers Pullwright works with, as plain wordmarks. */
 export function BuiltOn() {
-  const names = ['Google Gemini', 'Groq', 'Vercel AI Gateway', 'OpenRouter', 'OpenAI']
+  const names = ['Anthropic Claude', 'Google Gemini', 'OpenAI', 'OpenRouter', 'Groq', 'Vercel AI Gateway']
   return (
     <section className="border-t border-hairline">
       <div className="px-gutter md:px-12 py-8 flex flex-col md:flex-row md:items-center gap-5 md:gap-10">

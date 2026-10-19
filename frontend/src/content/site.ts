@@ -26,16 +26,16 @@ export const PRODUCT_MENU: { group: string; items: { label: string; to: string; 
   {
     group: 'Platform',
     items: [
-      { label: 'Pauses on free quota', to: '/#features' },
+      { label: 'Pauses on free quota', to: '/#how' },
       { label: 'Private repos', to: '/#safety' },
-      { label: 'Screenshots in issues', to: '/#features' },
+      { label: 'Screenshots in issues', to: '/#how' },
     ],
   },
   {
     group: 'Resources',
     items: [
       { label: 'Live replay', to: DEMO_REPLAY_URL },
-      { label: 'Changelog', to: '/#shipped' },
+      { label: 'Changelog', to: `${REPO_URL}/commits/main`, external: true },
       { label: 'GitHub', to: REPO_URL, external: true },
     ],
   },

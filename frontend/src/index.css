@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600&family=Caveat:wght@500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600&family=Caveat:wght@500;600&family=Instrument+Serif:ital@0;1&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -218,3 +218,39 @@
 .skeleton-pulse {
   animation: skeleton-pulse 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
+
+/*
+ * Black band: the design tokens re-pointed to dark, so any real section renders inside it unchanged
+ * (Home's measured cards and closing, Pricing's comparison, Login's product panel, the site footer).
+ */
+.band-dark {
+  --background: #0a0a0b;
+  --background-rgb: 10 10 11;
+  --foreground: #f4f4f5;
+  --foreground-rgb: 244 244 245;
+  --card: #141416;
+  --card-foreground: #f4f4f5;
+  --popover: #141416;
+  --popover-foreground: #f4f4f5;
+  --secondary: #1c1c1f;
+  --muted: #1c1c1f;
+  --elevated: #1c1c1f;
+  --accent: #1c1c1f;
+  --input: #27272a;
+  --primary: #4d8dff;
+  --primary-rgb: 77 141 255;
+  --ring: #4d8dff;
+  --muted-foreground: rgba(244, 244, 245, 0.58);
+  --faint: rgba(244, 244, 245, 0.36);
+  --hairline: rgba(255, 255, 255, 0.08);
+  --border: rgba(255, 255, 255, 0.1);
+  background-color: var(--background);
+  color: var(--foreground);
+}
+.band-dark [class*="bg-[radial-gradient"] { background: radial-gradient(120% 90% at 20% 0%, rgba(43, 127, 255, 0.16) 0%, #141416 55%, #0f0f11 100%) !important; }
+.band-dark [class*="border-black/"] { border-color: rgba(255, 255, 255, 0.1) !important; }
+.band-dark .bg-green-50 { background: rgba(61, 220, 132, 0.1) !important; }
+.band-dark .border-green-200 { border-color: rgba(61, 220, 132, 0.28) !important; }
+.band-dark .text-green-900 { color: #a6f0c6 !important; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }

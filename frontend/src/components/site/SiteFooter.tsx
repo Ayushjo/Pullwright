@@ -8,7 +8,7 @@ const COLUMNS: { title: string; links: { label: string; to: string; external?: b
   {
     title: 'Product',
     links: [
-      { label: 'How it works', to: '/#plan' },
+      { label: 'How it works', to: '/#how' },
       { label: 'Pricing', to: '/pricing' },
       { label: 'Live replay', to: DEMO_REPLAY_URL },
     ],
@@ -25,7 +25,7 @@ const COLUMNS: { title: string; links: { label: string; to: string; external?: b
     title: 'Resources',
     links: [
       { label: 'GitHub', to: REPO_URL, external: true },
-      { label: 'Changelog', to: '/#shipped' },
+      { label: 'Changelog', to: `${REPO_URL}/commits/main`, external: true },
       { label: 'Privacy', to: '/privacy' },
     ],
   },

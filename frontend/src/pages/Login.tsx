@@ -8,7 +8,7 @@ import { fadeUp, stagger } from '../lib/motion'
 import GithubMark from '../components/svgs/GithubMark'
 import SiteNav from '../components/site/SiteNav'
 import { Frame } from '../components/site/Layout'
-import { MonoLabel, TwoToneHeading } from '../components/site/Typography'
+import { MonoLabel } from '../components/site/Typography'
 import ProductShot from '../components/site/ProductShot'
 import { HeroMock } from '../components/site/home/Mocks'
 import { HandUnderline } from '../components/hand/Scribbles'
@@ -56,7 +56,9 @@ export default function Login() {
                 <MonoLabel dot>Sign in or sign up</MonoLabel>
               </motion.div>
               <motion.div variants={fadeUp} className="mt-5">
-                <TwoToneHeading as="h1" muted="Welcome to" strong="Pullwright" className="text-[40px] sm:text-[48px] leading-[1.05] tracking-[-0.03em]" />
+                <h1 className="font-serif text-[48px] sm:text-[60px] font-normal leading-[0.98] tracking-[-0.02em] text-foreground">
+                  Welcome to <em className="text-primary">Pullwright.</em>
+                </h1>
               </motion.div>
               <motion.p variants={fadeUp} className="mt-4 text-[15px] sm:text-base text-muted-foreground leading-relaxed">
                 Connect GitHub to run it on your repos. New here? Signing in creates your account —{' '}
@@ -101,8 +103,10 @@ export default function Login() {
           </div>
 
           {/* What you get */}
-          <div className="flex flex-col justify-center px-gutter md:px-12 py-14 md:py-20 border-t lg:border-t-0 border-hairline overflow-hidden">
-            <TwoToneHeading muted="Issue in." strong="Reviewed PR out." />
+          <div className="band-dark flex flex-col justify-center px-gutter md:px-12 py-14 md:py-20 overflow-hidden">
+            <h2 className="font-serif text-[40px] sm:text-[52px] font-normal leading-[1] tracking-[-0.02em] text-foreground">
+              Issue in. <em className="text-primary">Reviewed PR out.</em>
+            </h2>
             <ul className="mt-6 grid sm:grid-cols-3 gap-x-6 gap-y-3">
               {[
                 [ShieldCheck, 'Plan you approve'],

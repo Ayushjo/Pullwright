@@ -149,7 +149,7 @@ function TaskView({ taskId }: { taskId: string }) {
                 <p className="font-mono text-[11px] text-muted-foreground truncate">
                   {state.source ? repoName : <a href={state.issueUrl} target="_blank" rel="noreferrer" className="hover:underline">{repoName} #{state.issueNumber}</a>}
                 </p>
-                <h1 className="mt-0.5 text-[18px] sm:text-[21px] font-normal tracking-[-0.015em] text-foreground leading-snug line-clamp-2">{state.title}</h1>
+                <h1 className="mt-0.5 font-serif text-[24px] sm:text-[30px] font-normal tracking-[-0.01em] text-foreground leading-[1.08] line-clamp-2">{state.title}</h1>
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">

@@ -12,7 +12,7 @@ import { useAuth } from '../context/AuthContext'
 import SiteNav from '../components/site/SiteNav'
 import SiteFooter from '../components/site/SiteFooter'
 import { Frame, Section } from '../components/site/Layout'
-import { MonoLabel, TwoToneHeading } from '../components/site/Typography'
+import { MonoLabel } from '../components/site/Typography'
 import { useSeo } from '../lib/seo'
 
 type PublicTask = {
@@ -111,7 +111,7 @@ export default function Replay() {
         {/* Title */}
         <section className="px-gutter md:px-12 pt-12 md:pt-16 pb-8">
           <MonoLabel dot>Live replay · sped up · no model is called</MonoLabel>
-          <h1 className="mt-4 text-[30px] sm:text-[40px] font-normal leading-[1.1] tracking-[-0.025em] text-foreground max-w-4xl">{task?.title ?? 'Loading…'}</h1>
+          <h1 className="mt-4 font-serif text-[36px] sm:text-[52px] font-normal leading-[1.02] tracking-[-0.02em] text-foreground max-w-4xl">{task?.title ?? 'Loading…'}</h1>
           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
             <a href={task?.issueUrl} target="_blank" rel="noreferrer" className="font-mono text-[13px] hover:text-foreground">
               {task?.repo} #{task?.issueNumber}
@@ -179,8 +179,13 @@ export default function Replay() {
           </p>
         </section>
 
-        <Section inner="py-20 md:py-28 text-center">
-          <TwoToneHeading muted="Seen enough?" strong="Run it on your own issue." className="mx-auto max-w-2xl" />
+      </Frame>
+      <div className="band-dark">
+        <Frame>
+        <Section divider={false} inner="py-20 md:py-28 text-center">
+          <h2 className="mx-auto max-w-2xl font-serif text-[clamp(2.4rem,5vw,4rem)] font-normal leading-[1] tracking-[-0.02em] text-foreground">
+            Seen enough? <em className="text-primary">Run it on your own issue.</em>
+          </h2>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Button variant="primary" shape="pill" size="lg" data-track="start_free" data-track-where="replay_footer" onClick={() => (user ? navigate('/tasks/new') : login('/wallet'))}>
               Start free
@@ -193,7 +198,8 @@ export default function Replay() {
           </div>
         </Section>
         <SiteFooter />
-      </Frame>
+        </Frame>
+      </div>
     </div>
   )
 }

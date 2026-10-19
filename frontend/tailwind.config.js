@@ -56,6 +56,7 @@ export default {
         sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'Menlo', 'monospace'],
         hand: ['Caveat', '"Comic Sans MS"', 'cursive'],
+        serif: ['"Instrument Serif"', 'Georgia', 'serif'],
       },
       borderRadius: {
         lg: '12px',

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import SiteNav from '../components/site/SiteNav'
 import SiteFooter from '../components/site/SiteFooter'
 import { Frame, Section } from '../components/site/Layout'
-import { MonoLabel, TwoToneHeading } from '../components/site/Typography'
+import { MonoLabel } from '../components/site/Typography'
 import { useSeo } from '../lib/seo'
 
 /**
@@ -159,7 +159,9 @@ export default function Privacy() {
         <Section divider={false} inner="pt-14 md:pt-24 pb-10">
           <MonoLabel dot>Privacy · updated {UPDATED}</MonoLabel>
           <div className="mt-5">
-            <TwoToneHeading as="h1" size="display" muted="What we collect," strong="and why." />
+            <h1 className="font-serif text-[clamp(3rem,6.4vw,5.5rem)] font-normal leading-[0.98] tracking-[-0.02em] text-foreground">
+              What we collect, <em className="text-primary">and why.</em>
+            </h1>
           </div>
           <p className="mt-5 max-w-xl text-lead text-muted-foreground">Written in plain words from what the code actually does. Questions go to {CONTACT}.</p>
           <p className="mt-6 inline-block rounded bg-primary/10 px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.08em] text-primary">Draft — pending review</p>
@@ -192,8 +194,12 @@ export default function Privacy() {
             </div>
           </div>
         </Section>
-        <SiteFooter />
       </Frame>
+      <div className="band-dark">
+        <Frame>
+          <SiteFooter />
+        </Frame>
+      </div>
     </div>
   )
 }

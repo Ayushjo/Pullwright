@@ -124,7 +124,9 @@ export default function Pricing() {
       <Frame>
         {/* Header */}
         <section className="px-gutter md:px-12 pt-14 md:pt-24 pb-10 md:pb-14 grid gap-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-          <TwoToneHeading as="h1" size="display" muted="Pullwright" strong="Plans and pricing" />
+          <h1 className="font-serif text-[clamp(3rem,6.4vw,5.5rem)] font-normal leading-[0.98] tracking-[-0.02em] text-foreground">
+            Plans and <em className="text-primary">pricing.</em>
+          </h1>
           <div className="md:text-right md:pb-2">
             <p className="text-[15px] text-muted-foreground">Free to run with your own keys.</p>
             <Link to="/wallet" className="mt-1.5 inline-block font-mono text-[12px] uppercase tracking-[0.06em] text-primary underline underline-offset-4">
@@ -148,8 +150,12 @@ export default function Pricing() {
           )}
         </section>
 
-        {/* Compare */}
-        <Section id="compare">
+      </Frame>
+
+      {/* Compare, on a black band */}
+      <div className="band-dark">
+        <Frame>
+        <Section id="compare" divider={false}>
           <TwoToneHeading muted="Compare" strong="side by side" />
           <div className="mt-10 -mx-gutter md:mx-0 overflow-x-auto">
             <table className="w-full min-w-[640px] text-left border-collapse">
@@ -191,9 +197,12 @@ export default function Pricing() {
             </table>
           </div>
         </Section>
+        </Frame>
+      </div>
 
+      <Frame>
         {/* Providers */}
-        <Section inner="py-14 md:py-16">
+        <Section divider={false} inner="py-14 md:py-16">
           <div className="grid gap-8 md:grid-cols-2 md:items-center">
             <ul className="flex flex-wrap gap-x-7 gap-y-2 text-lg text-foreground/45 order-2 md:order-1">
               {['Google Gemini', 'Groq', 'Vercel AI Gateway', 'OpenRouter', 'OpenAI'].map((n) => (
@@ -221,8 +230,12 @@ export default function Pricing() {
           </div>
         </Section>
 
-        <SiteFooter />
       </Frame>
+      <div className="band-dark">
+        <Frame>
+          <SiteFooter />
+        </Frame>
+      </div>
     </div>
   )
 }
