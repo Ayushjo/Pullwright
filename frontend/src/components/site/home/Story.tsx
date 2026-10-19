@@ -71,7 +71,7 @@ export function HomeHero({
               <span className={chip}>Ask before guessing</span>
               <span className={cn(chip, 'hidden sm:inline')}>Review: on</span>
             </div>
-            <Button type="submit" variant="primary" shape="pill" loading={loading} className="h-10 px-5" data-track="hero_submit" data-track-where="hero">
+            <Button type="submit" variant="primary" shape="pill" loading={loading} className="h-11 w-full px-5 sm:h-10 sm:w-auto" data-track="hero_submit" data-track-where="hero">
               {signedIn ? 'Start' : 'Sign in to start'}
               {!loading && <ArrowRight className="h-4 w-4" />}
             </Button>
@@ -145,10 +145,11 @@ const STEPS = [
   { id: 'ship', t: 'Ship.', d: 'You publish. The PR opens from your account, linked to the issue.', m: <ShipMock />, off: 'lg:mt-24' },
 ]
 
-function Shot({ children, className, scale }: { children: ReactNode; className: string; scale: string }) {
+function Shot({ children, zoom }: { children: ReactNode; zoom: string }) {
+  // CSS zoom (unlike transform: scale) shrinks the layout box too, so the card hugs the mockup with no dead space.
   return (
-    <div className={cn('relative mt-4 overflow-hidden rounded-lg border border-hairline bg-[radial-gradient(120%_90%_at_20%_10%,#dbe8ff_0%,#eef3fb_45%,#e9ecef_100%)]', className)}>
-      <div aria-hidden className={cn('absolute left-3 top-3 w-[420px] origin-top-left', scale)}>
+    <div className="mt-4 overflow-hidden rounded-lg border border-hairline bg-[radial-gradient(120%_90%_at_20%_10%,#dbe8ff_0%,#eef3fb_45%,#e9ecef_100%)] p-3">
+      <div aria-hidden className={cn('w-[420px]', zoom)}>
         {children}
       </div>
     </div>
@@ -182,7 +183,7 @@ export function HowItWorks() {
             <p className="text-[15px] leading-snug text-foreground">
               {s.t} <span className="text-muted-foreground">{s.d}</span>
             </p>
-            <Shot className="h-[210px]" scale="scale-[0.52]">{s.m}</Shot>
+            <Shot zoom="[zoom:0.34] xl:[zoom:0.46]">{s.m}</Shot>
           </div>
         ))}
       </div>
@@ -203,7 +204,7 @@ export function HowItWorks() {
           ))}
         </div>
         <p className="mt-5 text-[15px] leading-snug text-muted-foreground">{cur.d}</p>
-        <Shot className="h-[270px] sm:h-[300px]" scale="scale-[0.78] sm:scale-[0.9]">{cur.m}</Shot>
+        <Shot zoom="[zoom:0.72] min-[430px]:[zoom:0.8] sm:[zoom:1]">{cur.m}</Shot>
       </div>
     </section>
   )

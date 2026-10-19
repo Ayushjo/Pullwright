@@ -35,8 +35,8 @@ const COLUMNS: { title: string; links: { label: string; to: string; external?: b
 export default function SiteFooter() {
   return (
     <footer className="border-t border-hairline">
-      <div className="px-gutter md:px-12 pt-14 pb-10 grid gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
-        <div>
+      <div className="px-gutter md:px-12 pt-14 pb-10 grid grid-cols-2 gap-x-6 gap-y-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
+        <div className="col-span-2 md:col-span-1">
           <Logo height={30} linked={false} animated={false} className="opacity-80" />
           <p className="mt-4 text-sm text-muted-foreground max-w-xs">
             <span className="relative inline-block text-foreground">

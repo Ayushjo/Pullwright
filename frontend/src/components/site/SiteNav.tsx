@@ -46,6 +46,26 @@ export default function SiteNav() {
     }
   }, [sheet])
 
+  // Over a black band (.band-dark) the bar turns dark too, so it never sits as a grey strip on black.
+  const [overDark, setOverDark] = useState(false)
+  useEffect(() => {
+    const check = () => {
+      const y = 26 // the middle of the 52 px bar
+      const bands = [...document.querySelectorAll<HTMLElement>('.band-dark')].filter((el) => !el.closest('header'))
+      setOverDark(bands.some((el) => {
+        const r = el.getBoundingClientRect()
+        return r.top <= y && r.bottom >= y
+      }))
+    }
+    check()
+    window.addEventListener('scroll', check, { passive: true })
+    window.addEventListener('resize', check)
+    return () => {
+      window.removeEventListener('scroll', check)
+      window.removeEventListener('resize', check)
+    }
+  }, [pathname])
+
   const open = () => {
     window.clearTimeout(closeTimer.current)
     setMenu(true)
@@ -57,7 +77,7 @@ export default function SiteNav() {
   const linkCls = (active: boolean) =>
     cn(
       'px-3 py-1.5 rounded-pill text-sm transition-colors',
-      active ? 'text-foreground bg-black/[.05]' : 'text-foreground/80 hover:text-foreground hover:bg-black/[.04]',
+      active ? 'text-foreground bg-foreground/[.06]' : 'text-foreground/80 hover:text-foreground hover:bg-foreground/[.05]',
     )
 
   const cta = user ? (
@@ -77,7 +97,7 @@ export default function SiteNav() {
 
   return (
     <>
-      <header className="sticky top-0 z-nav bg-background/80 backdrop-blur-md border-b border-hairline" onMouseLeave={close}>
+      <header className={cn('sticky top-0 z-nav backdrop-blur-md border-b border-hairline transition-colors duration-300', overDark ? 'band-dark' : 'bg-background/[.92]')} onMouseLeave={close}>
         <div className="mx-auto max-w-frame h-[52px] px-gutter md:px-12 flex items-center gap-2">
           <Logo height={28} className="shrink-0 mr-4" />
 

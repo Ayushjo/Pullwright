@@ -77,10 +77,13 @@ export function IconGrid({
   return (
     <div className={cn('grid grid-cols-1 border-t border-l border-hairline', grid, className)}>
       {items.map(({ icon: Icon, title, line }) => (
-        <div key={title} className="border-b border-r border-hairline p-5 sm:p-6 min-w-0">
-          <Icon className="w-6 h-6 text-foreground/70" />
-          <p className="mt-6 text-[15px] text-foreground">{title}</p>
-          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{line}</p>
+        // Phones: a compact row (icon beside the text); from sm up, a tile with the icon on top.
+        <div key={title} className="grid grid-cols-[24px_1fr] gap-x-4 border-b border-r border-hairline px-5 py-4 sm:block sm:p-6 min-w-0">
+          <Icon className="w-5 h-5 sm:w-6 sm:h-6 mt-0.5 sm:mt-0 text-foreground/70" />
+          <div className="min-w-0">
+            <p className="sm:mt-6 text-[15px] text-foreground">{title}</p>
+            <p className="mt-0.5 sm:mt-1 text-sm leading-relaxed text-muted-foreground">{line}</p>
+          </div>
         </div>
       ))}
     </div>
