@@ -66,9 +66,19 @@ export default function SiteNav() {
     }
   }, [pathname])
 
+  // Hover opens the menu; a click right after that hover must not close it again (it did: the menu
+  // flashed shut for mouse users), so a click only toggles when the menu wasn't just opened by hover.
+  const hoverOpenedAt = useRef(0)
   const open = () => {
     window.clearTimeout(closeTimer.current)
-    setMenu(true)
+    setMenu((was) => {
+      if (!was) hoverOpenedAt.current = Date.now()
+      return true
+    })
+  }
+  const toggle = () => {
+    if (Date.now() - hoverOpenedAt.current < 600) return setMenu(true)
+    setMenu((v) => !v)
   }
   const close = () => {
     closeTimer.current = window.setTimeout(() => setMenu(false), 120)
@@ -105,7 +115,7 @@ export default function SiteNav() {
             <button
               type="button"
               onMouseEnter={open}
-              onClick={() => setMenu((v) => !v)}
+              onClick={toggle}
               aria-expanded={menu}
               className={cn(linkCls(menu), 'inline-flex items-center gap-1')}
             >
@@ -174,7 +184,7 @@ export default function SiteNav() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="hidden md:block fixed inset-0 top-[52px] z-[45] bg-white/40 backdrop-blur-[6px]"
+            className={cn('hidden md:block fixed inset-0 top-[52px] z-[45] backdrop-blur-[6px]', overDark ? 'bg-black/40' : 'bg-white/40')}
             onMouseEnter={close}
             aria-hidden
           />
