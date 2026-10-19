@@ -142,12 +142,13 @@ export default function Replay() {
                 </button>
               ))}
             </div>
-            <MonoLabel className="ml-auto tabular-nums">
+            <MonoLabel className="order-last w-full tabular-nums sm:order-none sm:ml-auto sm:w-auto">
               {shown}/{events.length} events{typeof task?.costUsd === 'number' ? ` · run cost $${task.costUsd.toFixed(4)}` : ''}
             </MonoLabel>
             {task?.prUrl && (
               <a href={task.prUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-pill border border-black/15 px-3 py-1 text-xs text-foreground hover:bg-black/[.04]">
-                Pull request <ArrowUpRight className="w-3.5 h-3.5" />
+                <span className="sm:hidden">PR</span>
+                <span className="hidden sm:inline">Pull request</span> <ArrowUpRight className="w-3.5 h-3.5" />
               </a>
             )}
           </div>

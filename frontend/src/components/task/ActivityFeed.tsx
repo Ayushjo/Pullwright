@@ -40,7 +40,14 @@ type Row =
 function buildRows(events: TaskEvent[]): Row[] {
   const rows: Row[] = []
   let pending: ToolRow | null = null
+  // The same message sent twice in a row (a double send, or a resend while the first was queued) shows once.
+  let lastMsg: { text: string; at: number } | null = null
   for (const ev of events) {
+    if (ev.type === 'user_message') {
+      const at = ev.timestamp ? Date.parse(ev.timestamp) : 0
+      if (lastMsg && lastMsg.text === ev.text && Math.abs(at - lastMsg.at) < 120_000) continue
+      lastMsg = { text: ev.text, at }
+    }
     if (ev.type === 'tool_call') {
       pending = { kind: 'tool', tool: ev.tool, args: ev.args }
       rows.push(pending)
@@ -185,7 +192,7 @@ function EventItem({ ev }: { ev: TaskEvent }) {
       const m = statusMeta(ev.status)
       return (
         <div className="flex items-center gap-2 pt-3 pb-1">
-          <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground">{m.label}</span>
+          <span className="shrink-0 whitespace-nowrap font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground">{m.label}</span>
           {ev.detail && <span className="text-[11px] text-muted-foreground truncate">· {ev.detail}</span>}
           <span className="flex-1 h-px bg-border" />
         </div>
