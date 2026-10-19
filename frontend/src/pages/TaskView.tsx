@@ -140,7 +140,8 @@ function TaskView({ taskId }: { taskId: string }) {
       <div className="rounded-lg border border-hairline bg-card overflow-hidden flex flex-col md:h-[calc(100vh-7.5rem)] md:min-h-[560px]">
         {/* Header */}
         <div className="shrink-0 px-3 sm:px-5 py-3 sm:py-4 border-b border-hairline">
-          <div className="flex items-start justify-between gap-3">
+          {/* Phones: the status sits under the title, so the title gets the full width. */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
             <div className="flex items-start gap-2.5 min-w-0">
               <Link to="/dashboard" aria-label="Back to dashboard" className="w-8 h-8 rounded-pill border border-black/10 bg-card hover:bg-black/[.04] flex items-center justify-center text-muted-foreground shrink-0">
                 <ArrowLeft className="w-4 h-4" />
@@ -149,10 +150,10 @@ function TaskView({ taskId }: { taskId: string }) {
                 <p className="font-mono text-[11px] text-muted-foreground truncate">
                   {state.source ? repoName : <a href={state.issueUrl} target="_blank" rel="noreferrer" className="hover:underline">{repoName} #{state.issueNumber}</a>}
                 </p>
-                <h1 className="mt-0.5 font-serif text-[24px] sm:text-[30px] font-normal tracking-[-0.01em] text-foreground leading-[1.08] line-clamp-2">{state.title}</h1>
+                <h1 className="mt-0.5 font-serif text-[24px] sm:text-[30px] font-normal tracking-[-0.01em] text-foreground leading-[1.08] line-clamp-3 sm:line-clamp-2">{state.title}</h1>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 pl-[42px] sm:pl-0">
               <Badge tone={meta.tone} dot className="tabular-nums">
                 {meta.label}{elapsed ? ` · ${elapsed}` : ''}
               </Badge>

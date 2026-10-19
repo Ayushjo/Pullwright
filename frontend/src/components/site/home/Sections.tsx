@@ -16,7 +16,7 @@ export function BuiltOn() {
   const names = ['Anthropic Claude', 'Google Gemini', 'OpenAI', 'OpenRouter', 'Groq', 'Vercel AI Gateway']
   return (
     <section className="border-t border-hairline">
-      <div className="px-gutter md:px-12 py-8 flex flex-col md:flex-row md:items-center gap-5 md:gap-10">
+      <div className="px-gutter md:px-12 py-8 flex flex-col lg:flex-row lg:items-center gap-5 lg:gap-10">
         <MonoLabel className="shrink-0">Works with the models you already have</MonoLabel>
         <ul className="flex flex-wrap items-center gap-x-8 gap-y-3">
           {names.map((n) => (

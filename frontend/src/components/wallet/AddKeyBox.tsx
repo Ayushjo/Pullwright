@@ -70,7 +70,7 @@ export default function AddKeyBox({
       <div className="flex flex-col sm:flex-row gap-2">
         <div
           className={cn(
-            'relative flex-1 min-w-0 h-11 flex items-center rounded-none border bg-background transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15',
+            'relative flex-1 min-w-0 h-11 flex items-center rounded-md border bg-background transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15',
             error ? 'border-red-300' : 'border-black/15',
           )}
         >

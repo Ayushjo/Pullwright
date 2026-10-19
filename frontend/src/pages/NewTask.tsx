@@ -164,7 +164,7 @@ export default function NewTask() {
                         Try it first: ${trialOffer.toFixed(2)} of usage on our models, enough for 2 tasks. Once per GitHub account, no card.
                       </span>
                     </p>
-                    <Button type="button" size="sm" className="mt-3 rounded-none px-4" loading={claiming} onClick={startTrial}>
+                    <Button type="button" size="sm" className="mt-3 rounded-md px-4" loading={claiming} onClick={startTrial}>
                       Use the free trial for this task
                     </Button>
                   </div>

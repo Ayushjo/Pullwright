@@ -47,12 +47,12 @@ export default function CreditsCard({
         </div>
         <div className="flex flex-wrap gap-2">
           {trial.available && (
-            <Button size="sm" variant="outline" className="rounded-none px-4" loading={busy === 'trial'} onClick={onTrial}>
+            <Button size="sm" variant="outline" className="rounded-md px-4" loading={busy === 'trial'} onClick={onTrial}>
               <Gift className="w-4 h-4" strokeWidth={1.75} /> Try 2 tasks free
             </Button>
           )}
           {pack.enabled ? (
-            <Button size="sm" className="rounded-none px-4" data-track="buy_pack" data-track-where="settings" loading={busy === 'pack'} onClick={onBuy}>
+            <Button size="sm" className="rounded-md px-4" data-track="buy_pack" data-track-where="settings" loading={busy === 'pack'} onClick={onBuy}>
               Buy {usd(pack.creditUsd)} credit — {usd(pack.priceUsd)}
             </Button>
           ) : (

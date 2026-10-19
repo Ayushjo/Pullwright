@@ -33,7 +33,9 @@ function dayLabel(iso: string) {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
 }
 
+/** owner/repo for GitHub issues; "local · name" for local runs (local://name), as on the Dashboard. */
 function repoFromUrl(url: string) {
+  if (url.startsWith('local://')) return url.replace('local://', 'local · ').split('/')[0]!
   return url.replace('https://github.com/', '').split('/').slice(0, 2).join('/')
 }
 
@@ -153,18 +155,22 @@ function TaskRow({ entry }: { entry: TaskRegistryEntry }) {
         aria-expanded={expanded}
         className="w-full text-left px-4 sm:px-5 py-3.5 flex items-center gap-3 group focus-ring"
       >
-        {/* Status badge */}
-        <Badge tone={statusTone(entry.status)} dot className="shrink-0">
-          {statusLabel(entry.status)}
-        </Badge>
+        {/* Status + title: stacked on phones (the title keeps the full width), side by side from sm up */}
+        <div className="min-w-0 flex-1 flex flex-col items-start gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+        {/* A fixed badge column from sm up, so every title starts at the same x */}
+        <div className="shrink-0 sm:w-[132px]">
+          <Badge tone={statusTone(entry.status)} dot>
+            {statusLabel(entry.status)}
+          </Badge>
+        </div>
 
-        {/* Title + repo */}
         <div className="min-w-0 flex-1">
           <p className="text-foreground text-sm font-medium leading-snug line-clamp-2 group-hover:text-primary transition-colors">
             {entry.issueNumber ? `#${entry.issueNumber} — ` : ''}
             {entry.issueTitle || `Task ${entry.taskId.slice(0, 8)}`}
           </p>
           <p className="font-mono text-[11px] text-muted-foreground mt-0.5 truncate">{repo}</p>
+        </div>
         </div>
 
         {/* Time ago */}

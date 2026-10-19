@@ -145,11 +145,11 @@ const STEPS = [
   { id: 'ship', t: 'Ship.', d: 'You publish. The PR opens from your account, linked to the issue.', m: <ShipMock />, off: 'lg:mt-24' },
 ]
 
-function Shot({ children, zoom }: { children: ReactNode; zoom: string }) {
+function Shot({ children, zoom, wide }: { children: ReactNode; zoom: string; wide?: boolean }) {
   // CSS zoom (unlike transform: scale) shrinks the layout box too, so the card hugs the mockup with no dead space.
   return (
     <div className="mt-4 overflow-hidden rounded-lg border border-hairline bg-[radial-gradient(120%_90%_at_20%_10%,#dbe8ff_0%,#eef3fb_45%,#e9ecef_100%)] p-3">
-      <div aria-hidden className={cn('w-[420px]', zoom)}>
+      <div aria-hidden className={cn('w-[420px]', wide && 'sm:w-full sm:max-w-[560px]', zoom)}>
         {children}
       </div>
     </div>
@@ -204,7 +204,7 @@ export function HowItWorks() {
           ))}
         </div>
         <p className="mt-5 text-[15px] leading-snug text-muted-foreground">{cur.d}</p>
-        <Shot zoom="[zoom:0.72] min-[430px]:[zoom:0.8] sm:[zoom:1]">{cur.m}</Shot>
+        <Shot wide zoom="[zoom:0.72] min-[430px]:[zoom:0.8] sm:[zoom:1]">{cur.m}</Shot>
       </div>
     </section>
   )

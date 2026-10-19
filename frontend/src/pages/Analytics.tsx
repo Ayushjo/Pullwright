@@ -129,9 +129,10 @@ export default function Analytics() {
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-hairline bg-hairline sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-hairline bg-hairline lg:grid-cols-5">
             {kpis.map(([label, value, note]) => (
-              <div key={label as string} className="bg-card px-5 py-4">
+              // Five tiles: on two columns the last one spans the row, so no empty grey cell is left.
+              <div key={label as string} className="bg-card px-5 py-4 last:col-span-2 lg:last:col-span-1">
                 <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
                 <p className="mt-2 text-[28px] leading-none tracking-[-0.02em] tabular-nums">{fmt(value as number)}</p>
                 <p className="mt-1.5 text-xs text-muted-foreground">{note}</p>
