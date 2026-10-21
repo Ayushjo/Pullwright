@@ -137,4 +137,4 @@ Restarted 10-18 with `FREE_CLAUDE_ENABLED=0` in `lanes/free-nocredit.env` (a no-
 
 **Takeaways**
 - Free mode solves hard issues about as often as paid mode. What it loses is the second opinion's precision: users get "needs review" more often and have to read the diff themselves.
-- H10's 8-minute limit ate a run that had spent most of its time parked or retrying on free quota. The limit should count working time, not time waiting for quota.
+- H10 stopped at the 8-minute run limit after only 7 model calls. Free-tier calls are slow and often retried, so the limit is probably being consumed by waiting rather than work. Not yet confirmed from the task's events; worth checking before changing the limit.
