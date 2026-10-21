@@ -120,3 +120,21 @@ Profile `lanes/free-nocredit.env` (plan: Gemini Flash pool; execute: Flash-Lite;
 | R04 … H10 | parked on the Flash pool's daily quota at R04 (12 planner calls); the runner then stopped with the session, so it needs a restart from R04 | | | | |
 
 **So far: L 11/11 (with L01–L05: 10/11, the L01 miss is the literal-script hidden test), R01–R03 3/3, all reviewed by Groq, $0.** Matches free-with-credit on every item so far and is better on R03. A user's 3 tasks/day fit the ~100 Flash requests/day; this campaign runs ~10 tasks/day back to back, which is why it parks.
+
+## Update 10-21: H06–H10, the no-credit ladder is complete
+
+Restarted 10-18 with `FREE_CLAUDE_ENABLED=0` in `lanes/free-nocredit.env` (a no-credit run can never fall back to our Anthropic key). It parked on Gemini's daily quota between items and finished on 10-21. **$0 for every item.** Two runner processes overlapped for part of the run, so H07, H08 and H09 have two attempts each; the table uses the final one.
+
+| Item | Hidden test | Outcome | Reviewer |
+|---|---|---|---|
+| H06 pagination + search | ✅ pass | needs review | ✘ rejected (medium) |
+| H07 activity timeline | ✅ pass | needs review | ✘ rejected (high) |
+| H08 log export | ✅ pass | needs review | ✘ rejected (low) |
+| H09 webhooks | ✅ pass | **ready** | ✔ approved (high) |
+| H10 GitHub Enterprise URLs | — | ❌ failed: hit the 8-minute run limit after 7 calls | — |
+
+**Hard set without credit: 9/10 hidden tests pass** (H01–H05 earlier, H06–H09 now). Only 6 of those reached "ready". On H06–H08 the free reviewer (Groq gpt-oss, then the Flash pool) rejected changes that pass the hidden tests. That's the safe direction (a person looks before anything ships), but it's 3 false rejections in 4. With credit, the same items reach "ready".
+
+**Takeaways**
+- Free mode solves hard issues about as often as paid mode. What it loses is the second opinion's precision: users get "needs review" more often and have to read the diff themselves.
+- H10's 8-minute limit ate a run that had spent most of its time parked or retrying on free quota. The limit should count working time, not time waiting for quota.
