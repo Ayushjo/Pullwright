@@ -314,12 +314,34 @@ export async function getTaskDetailFromDb(taskId: string): Promise<{
   createdAt: string
   steps: Step[]
   completedStepIds: number[]
+  // The TaskView fields too, so a task whose working state has been cleaned up still opens (it used to
+  // crash on the missing cost numbers).
+  taskId: string
+  title: string
+  owner: string
+  repo: string
+  costUsd: number
+  capUsd: number
+  llmCalls: number
+  toolCalls: number
+  rejectedFiles: string[]
+  checkpoints: never[]
+  options: { autoApprove: boolean; autoPublish: boolean; draft: boolean }
+  updatedAt: string
+  finishedAt?: string
+  plan?: unknown
+  summary?: string
+  verdict?: unknown
+  stats?: unknown
+  source?: { kind: "local" }
+  /** Its working state is gone (cleaned up): read-only, it can't be published or revised any more. */
+  archived: true
 } | null> {
   if (!isDatabaseEnabled()) return null
 
   const row = await getPrisma().task.findUnique({
     where: { id: taskId },
-    include: { steps: { orderBy: { stepNumber: "asc" } } },
+    include: { steps: { orderBy: { stepNumber: "asc" } }, metrics: true },
   })
   if (!row) return null
 
@@ -350,6 +372,25 @@ export async function getTaskDetailFromDb(taskId: string): Promise<{
     createdAt: row.createdAt.toISOString(),
     steps,
     completedStepIds,
+    taskId,
+    title: row.issueTitle,
+    owner: row.issueUrl.startsWith("local://") ? "" : (row.repoOwner ?? repoName.split("/")[0] ?? ""),
+    repo: row.issueUrl.startsWith("local://") ? row.issueUrl.slice("local://".length).split("/")[0]! : (row.repoName ?? repoName.split("/")[1] ?? ""),
+    costUsd: Number(row.metrics?.costUsd ?? row.costUsd ?? 0),
+    capUsd: Number(row.metrics?.budgetLimitUsd ?? 0),
+    llmCalls: row.metrics?.llmCalls ?? 0,
+    toolCalls: row.metrics?.toolCalls ?? 0,
+    rejectedFiles: [],
+    checkpoints: [],
+    options: { autoApprove: false, autoPublish: false, draft: true, ...((row.options as Record<string, unknown> | null) ?? {}) } as { autoApprove: boolean; autoPublish: boolean; draft: boolean },
+    updatedAt: row.updatedAt.toISOString(),
+    ...(row.completedAt ? { finishedAt: row.completedAt.toISOString() } : {}),
+    ...(row.plan ? { plan: row.plan } : {}),
+    ...(row.summary ? { summary: row.summary } : {}),
+    ...(row.verdict ? { verdict: row.verdict } : {}),
+    ...(row.diffStats ? { stats: row.diffStats } : {}),
+    ...(row.issueUrl.startsWith("local://") ? { source: { kind: "local" as const } } : {}),
+    archived: true,
   }
 }
 

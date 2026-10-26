@@ -63,7 +63,7 @@ function TaskView({ taskId }: { taskId: string }) {
   const status = state?.status ?? 'queued'
   const meta = statusMeta(status)
   const elapsed = useElapsed(state?.startedAt ?? state?.createdAt, meta.active ? undefined : (state?.finishedAt ?? state?.updatedAt))
-  const reviewable = status === 'ready' || status === 'needs_review'
+  const reviewable = (status === 'ready' || status === 'needs_review') && !state?.archived
   const fileCount = state?.stats?.length ?? 0
   const patchFiles = (patch.match(/^diff --git /gm) ?? []).length
 
@@ -81,8 +81,9 @@ function TaskView({ taskId }: { taskId: string }) {
   const editCount = events.filter((e) => e.type === 'checkpoint').length
   useEffect(() => {
     // Refresh when files change, and whenever the Changes tab is opened (the live diff may be newer).
+    if (state?.archived) return // the patch went with the run's sandbox
     if (fileCount > 0 || editCount > 0 || tab === 'changes') void loadDiff()
-  }, [fileCount, editCount, loadDiff, updatedAt, tab])
+  }, [fileCount, editCount, loadDiff, updatedAt, tab, state?.archived])
 
   const act = useCallback(
     async (key: string, fn: () => Promise<unknown>, ok?: string) => {
@@ -154,8 +155,8 @@ function TaskView({ taskId }: { taskId: string }) {
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0 pl-[42px] sm:pl-0">
-              <Badge tone={meta.tone} dot className="tabular-nums">
-                {meta.label}{elapsed ? ` · ${elapsed}` : ''}
+              <Badge tone={state.archived ? 'neutral' : meta.tone} dot className="tabular-nums">
+                {state.archived ? 'Archived' : meta.label}{elapsed ? ` · ${elapsed}` : ''}
               </Badge>
             </div>
           </div>
@@ -163,10 +164,13 @@ function TaskView({ taskId }: { taskId: string }) {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground mr-auto" title="Model spend for this task (hard-capped)">
               <span className="tabular-nums">${state.costUsd.toFixed(4)}</span>
-              <span className="w-16 h-1 rounded-full bg-black/[.07] overflow-hidden">
-                <span className={cn('block h-full rounded-full', costPct > 80 ? 'bg-warning' : 'bg-primary')} style={{ width: `${costPct}%` }} />
-              </span>
-              <span className="tabular-nums">of ${state.capUsd.toFixed(2)} cap · {state.llmCalls} model calls</span>
+              {/* No cap recorded (an archived run): show the spend alone, not a full "over budget" bar. */}
+              {state.capUsd > 0 && (
+                <span className="w-16 h-1 rounded-full bg-black/[.07] overflow-hidden">
+                  <span className={cn('block h-full rounded-full', costPct > 80 ? 'bg-warning' : 'bg-primary')} style={{ width: `${costPct}%` }} />
+                </span>
+              )}
+              {state.capUsd > 0 && <span className="tabular-nums">of ${state.capUsd.toFixed(2)} cap{state.llmCalls ? ` · ${state.llmCalls} model calls` : ''}</span>}
               {state.statusDetail && <span className="hidden md:inline truncate max-w-[320px]">· {state.statusDetail}</span>}
             </div>
             {meta.active && (
@@ -174,7 +178,7 @@ function TaskView({ taskId }: { taskId: string }) {
                 <Square className="w-3 h-3" /> Stop
               </Button>
             )}
-            {(status === 'failed' || status === 'cancelled') && (
+            {(status === 'failed' || status === 'cancelled') && !state.archived && (
               <Button size="sm" variant="outline" shape="pill" loading={busy === 'retry'} onClick={() => act('retry', () => retryTask(taskId), 'Retrying from scratch')}>
                 <RotateCcw className="w-3.5 h-3.5" /> Retry
               </Button>
@@ -316,7 +320,10 @@ function TaskView({ taskId }: { taskId: string }) {
 
               <div className="flex-1 min-h-0 overflow-y-auto">
                 {tab === 'activity' && <ActivityFeed events={events} live={meta.active} loading={!eventsLoaded} followKey={state.status} />}
-                {tab === 'changes' && (
+                {tab === 'changes' && state.archived && (
+                  <p className="p-5 text-sm text-muted-foreground">The full diff isn't kept once a run is archived. The plan, activity and review are still here.</p>
+                )}
+                {tab === 'changes' && !state.archived && (
                   <div className="p-3 sm:p-5">
                     <DiffView
                       patch={patch}
@@ -357,6 +364,18 @@ function TaskView({ taskId }: { taskId: string }) {
                     </div>
                   </div>
                   <Composer placeholder="Ask for changes (e.g. “also add a test for the empty case”)" onSend={(t) => act('feedback', () => sendMessage(taskId, t), 'Sent — the agent is revising')} />
+                </div>
+              )}
+              {state.archived && (status === 'ready' || status === 'needs_review') && (
+                <div className="shrink-0 border-t border-hairline p-3 sm:px-5 bg-background/60 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[12.5px] text-muted-foreground">This run is archived: its sandbox was cleaned up, so it can't be published or revised any more.</p>
+                  {!state.source && (
+                    <Link to={`/tasks/new?url=${encodeURIComponent(state.issueUrl)}`}>
+                      <Button size="sm" shape="pill" className="px-4" tabIndex={-1}>
+                        <RotateCcw className="w-3.5 h-3.5" /> Run it again
+                      </Button>
+                    </Link>
+                  )}
                 </div>
               )}
               {(status === 'running' || status === 'validating') && (

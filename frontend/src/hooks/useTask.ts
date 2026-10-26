@@ -24,7 +24,18 @@ export function useTask(taskId: string) {
       const s = await getTask(taskId)
       if (!s) setNotFound(true)
       else {
-        setState(s)
+        // An older task can come back with fewer fields (its working state was cleaned up): default the
+        // numbers and lists the page reads, so it never crashes on them.
+        setState({
+          ...s,
+          costUsd: s.costUsd ?? 0,
+          capUsd: s.capUsd ?? 0,
+          llmCalls: s.llmCalls ?? 0,
+          toolCalls: s.toolCalls ?? 0,
+          rejectedFiles: s.rejectedFiles ?? [],
+          checkpoints: s.checkpoints ?? [],
+          options: s.options ?? { autoApprove: false, autoPublish: false, draft: true },
+        })
         setNotFound(false)
       }
       setError(null)

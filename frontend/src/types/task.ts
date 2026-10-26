@@ -155,6 +155,8 @@ export type TaskState = {
   startedAt?: string
   finishedAt?: string
   source?: { kind: 'local' }
+  /** Loaded from the database after the run's working state was cleaned up: read-only. */
+  archived?: boolean
 }
 
 export type Task = {
