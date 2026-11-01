@@ -48,6 +48,8 @@ export type LLMResult = {
   cachedInputTokens: number
   outputTokens: number
   durationMs: number
+  /** Time spent waiting out provider rate limits (the gateway sets it); not counted against run time limits. */
+  waitedMs?: number
 }
 
 export type CallOptions = {

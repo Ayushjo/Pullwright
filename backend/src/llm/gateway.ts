@@ -39,7 +39,8 @@ export class NoLaneAvailable extends Error {
 }
 
 export type Send = (spec: ModelSpec, opts: CallOptions) => Promise<LLMResult>
-export type GatewayResult = LLMResult & { lane: Lane; attempts: Attempt[] }
+/** waitedMs: time this call spent waiting out rate limits, which run time limits should not count. */
+export type GatewayResult = LLMResult & { lane: Lane; attempts: Attempt[]; waitedMs: number }
 
 export const laneId = (l: Lane) => `${l.credentialId}|${l.model}`
 const HOUR = 3_600_000
@@ -82,13 +83,16 @@ export class Gateway {
     const inlineWait = this.opts.inlineWaitMs ?? 65_000
     const sleep = this.opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)))
     const attempts: Attempt[] = []
+    let waitedMs = 0
     for (let round = 1; ; round++) {
       const out = await this.round(lanes, call, attempts)
-      if (out.result) return { ...out.result, attempts }
+      if (out.result) return { ...out.result, attempts, waitedMs }
       if (out.lastHardError && out.waitMs === null) throw out.lastHardError
       // Everything is briefly blocked (per-minute limits, a short cooldown): wait here instead of failing.
       if (out.waitMs !== null && out.waitMs <= inlineWait && round < rounds) {
-        await sleep(Math.max(250, out.waitMs))
+        const ms = Math.max(250, out.waitMs)
+        await sleep(ms)
+        waitedMs += ms
         continue
       }
       throw new NoLaneAvailable(out.waitMs === null ? null : Date.now() + out.waitMs, attempts)

@@ -137,4 +137,4 @@ Restarted 10-18 with `FREE_CLAUDE_ENABLED=0` in `lanes/free-nocredit.env` (a no-
 
 **Takeaways**
 - Free mode solves hard issues about as often as paid mode. What it loses is the second opinion's precision: users get "needs review" more often and have to read the diff themselves.
-- H10 stopped at the 8-minute run limit after only 7 model calls. Free-tier calls are slow and often retried, so the limit is probably being consumed by waiting rather than work. Not yet confirmed from the task's events; worth checking before changing the limit.
+- H10 stopped at the 8-minute run limit after only 7 model calls. The code confirms the cause: when every free lane is rate-limited, the gateway waits up to 65 s and retries (3 rounds per call), and that waiting counted against the limit. **Fixed 11-01:** the gateway reports `waitedMs` per call and the loop's time limit counts working time only (tests in `gateway.test.ts` and `loopPark.test.ts`). H10 itself hasn't been re-run yet.

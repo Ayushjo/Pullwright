@@ -78,12 +78,16 @@ export class AgentLoop {
     this.messages.push({ role: "user", content: text })
   }
 
+  /** Rate-limit waiting so far; the time limit counts working time only (free tiers wait a lot). */
+  private waitedMs = 0
+
   async run(): Promise<LoopOutcome> {
     this.started = Date.now()
+    this.waitedMs = 0
     while (true) {
       if (this.hooks.isCancelled && (await this.hooks.isCancelled())) return { status: "cancelled" }
       if (this.steps >= this.limits.maxSteps) return { status: "failed", reason: `Step limit reached (${this.limits.maxSteps} model calls)` }
-      if (Date.now() - this.started > this.limits.maxWallMs) return { status: "failed", reason: `Time limit reached (${Math.round(this.limits.maxWallMs / 60000)} min)` }
+      if (Date.now() - this.started - this.waitedMs > this.limits.maxWallMs) return { status: "failed", reason: `Time limit reached (${Math.round(this.limits.maxWallMs / 60000)} min)` }
 
       const incoming = (await this.hooks.pollUserMessages?.()) ?? []
       for (const m of incoming) this.addUserMessage(`Message from the user (takes priority over the plan where they conflict):\n${m}`)
@@ -117,6 +121,7 @@ export class AgentLoop {
               durationMs: u.durationMs,
             }),
         })
+        this.waitedMs += res.waitedMs ?? 0
       } catch (err) {
         if (err instanceof SpendLimitError) return { status: "failed", reason: `Budget cap reached: ${err.message}` }
         if (err instanceof NoLaneAvailable) {

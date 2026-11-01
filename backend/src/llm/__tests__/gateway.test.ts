@@ -72,6 +72,8 @@ describe("Gateway", () => {
     const r = await g.complete([lane("vercel", "openai/gpt-5-mini", "free_credit")], call())
     expect(r.text).toBe("done")
     expect(slept[0]).toBeGreaterThanOrEqual(59_000)
+    // Reported, so run time limits can leave it out (free tiers used to time out while waiting).
+    expect(r.waitedMs).toBe(slept[0])
   })
 
   it("paces a free-credit lane at its seeded 5 requests per minute without hitting a 429", async (ctx) => {

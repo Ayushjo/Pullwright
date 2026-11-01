@@ -38,3 +38,22 @@ describe("AgentLoop parks when no model lane is available", () => {
     expect(seen!.messages.length).toBe(loop.messages.length)
   })
 })
+
+describe("AgentLoop time limit", () => {
+  // Each call takes 60 ms against a 50 ms limit; what differs is whether that time was rate-limit waiting.
+  const slowCall = (waitedMs: number) => async () => {
+    await new Promise((r) => setTimeout(r, 60))
+    return { ...result([{ id: `c${Math.random()}`, name: "view", rawArgs: '{"path":"a.ts"}' }]), waitedMs }
+  }
+  const tight = { ...limits, maxSteps: 3, maxWallMs: 50 }
+
+  it("counts working time", async () => {
+    const out = await new AgentLoop("t", "run", slowCall(0), "sys", "do it", [view], tight, { emit: () => {} }).run()
+    expect(out).toMatchObject({ status: "failed", reason: expect.stringMatching(/Time limit/) })
+  })
+
+  it("leaves out time spent waiting for rate limits (free tiers timed out while waiting)", async () => {
+    const out = await new AgentLoop("t", "run", slowCall(60), "sys", "do it", [view], tight, { emit: () => {} }).run()
+    expect(out).toMatchObject({ status: "failed", reason: expect.stringMatching(/Step limit/) })
+  })
+})
