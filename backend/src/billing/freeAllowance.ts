@@ -53,12 +53,12 @@ export async function freeTasksUsed(userId: string, now = new Date()): Promise<n
 }
 
 /** Room in the shared pool for one more capped task, today and this month. */
-export async function poolHasRoom(cap = FREE_CLAUDE.taskCapUsd()): Promise<{ open: boolean; opensAt?: number }> {
+export async function poolHasRoom(cap = FREE_CLAUDE.taskCapUsd(), now = new Date()): Promise<{ open: boolean; opensAt?: number }> {
   const budget = poolBudget("anthropic")
   if (!budget) return { open: false }
   const spent = await getSpendLedger().poolSpent("anthropic")
-  if (spent.monthUsd + cap > budget.monthlyUsd) return { open: false, opensAt: nextMonth().getTime() }
-  if (spent.dayUsd + cap > budget.dailyUsd) return { open: false, opensAt: nextUtcDay() }
+  if (spent.monthUsd + cap > budget.monthlyUsd) return { open: false, opensAt: nextMonth(now).getTime() }
+  if (spent.dayUsd + cap > budget.dailyUsd) return { open: false, opensAt: nextUtcDay(now.getTime()) }
   return { open: true }
 }
 
@@ -74,7 +74,7 @@ export async function freeAllowance(userId: string, now = new Date()): Promise<F
   else if ((now.getTime() - user.githubCreatedAt.getTime()) / 86_400_000 < FREE_CLAUDE.minAccountDays()) {
     ineligible = `Free Claude tasks are for GitHub accounts older than ${FREE_CLAUDE.minAccountDays()} days.`
   }
-  const pool = await poolHasRoom()
+  const pool = await poolHasRoom(undefined, now)
   return {
     ...base,
     enabled: true,
