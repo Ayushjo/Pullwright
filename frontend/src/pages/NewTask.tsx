@@ -24,6 +24,9 @@ export default function NewTask() {
   const [errorCode, setErrorCode] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [approvePlan, setApprovePlan] = useState(true)
+  // The hero's chips carry through sign-in as ?ask=0 / ?review=0.
+  const [askFirst, setAskFirst] = useState(() => new URLSearchParams(window.location.search).get('ask') !== '0')
+  const [review, setReview] = useState(() => new URLSearchParams(window.location.search).get('review') !== '0')
   // Private repo + keys that may train on prompts: asked once, per task (server answers 409 private_repo_training).
   const [consent, setConsent] = useState<{ message: string } | null>(null)
   const [allowTraining, setAllowTraining] = useState(false)
@@ -52,7 +55,7 @@ export default function NewTask() {
     setLoading(true)
     setError('')
     try {
-      const { taskId } = await createTask(url.trim(), { autoApprove: !approvePlan, ...(allowTraining ? { allowTraining: true } : {}) })
+      const { taskId } = await createTask(url.trim(), { autoApprove: !approvePlan, ...(askFirst ? {} : { askFirst: false }), ...(review ? {} : { review: false }), ...(allowTraining ? { allowTraining: true } : {}) })
       navigate(`/tasks/${taskId}`)
     } catch (err) {
       const msg = (err as Error).message
@@ -79,7 +82,7 @@ export default function NewTask() {
       setTrialOffer(null)
       setError('')
       pushToast('Free trial added — starting your task.', 'success')
-      const { taskId } = await createTask(url.trim(), { autoApprove: !approvePlan, ...(allowTraining ? { allowTraining: true } : {}) })
+      const { taskId } = await createTask(url.trim(), { autoApprove: !approvePlan, ...(askFirst ? {} : { askFirst: false }), ...(review ? {} : { review: false }), ...(allowTraining ? { allowTraining: true } : {}) })
       navigate(`/tasks/${taskId}`)
     } catch (err) {
       setTrialOffer(null)
@@ -153,6 +156,22 @@ export default function NewTask() {
                   <span>
                     Let me approve the plan before it starts
                     <span className="block text-xs text-muted-foreground">Recommended. Nothing is changed and no PR is opened without your review.</span>
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-2.5 text-[13px] text-foreground cursor-pointer select-none">
+                  <input type="checkbox" checked={askFirst} onChange={(e) => setAskFirst(e.target.checked)} className="mt-0.5 accent-[var(--primary)]" />
+                  <span>
+                    Ask before guessing
+                    <span className="block text-xs text-muted-foreground">If the issue leaves something open, stop and ask you. Off: it decides and says what it assumed.</span>
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-2.5 text-[13px] text-foreground cursor-pointer select-none">
+                  <input type="checkbox" checked={review} onChange={(e) => setReview(e.target.checked)} className="mt-0.5 accent-[var(--primary)]" />
+                  <span>
+                    Independent review
+                    <span className="block text-xs text-muted-foreground">A second model checks the diff against every requirement. Off: your tests and checks only.</span>
                   </span>
                 </label>
 

@@ -40,6 +40,9 @@ const CreateTask = z.object({
   autoApprove: z.boolean().optional(),
   autoPublish: z.boolean().optional(),
   draft: z.boolean().optional(),
+  /** The hero chips: "Ask before guessing" and "Review" (both default on). */
+  askFirst: z.boolean().optional(),
+  review: z.boolean().optional(),
   /** Consent for this task: a private repo may use keys whose free tier trains on prompts. */
   allowTraining: z.boolean().optional(),
 })
@@ -272,6 +275,8 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
               ...(parsed.data.autoApprove !== undefined ? { autoApprove: parsed.data.autoApprove } : {}),
               ...(parsed.data.autoPublish !== undefined ? { autoPublish: parsed.data.autoPublish } : {}),
               ...(parsed.data.draft !== undefined ? { draft: parsed.data.draft } : {}),
+              ...(parsed.data.askFirst === false ? { askFirst: false } : {}),
+              ...(parsed.data.review === false ? { review: false } : {}),
               ...(parsed.data.allowTraining ? { allowTraining: true } : {}),
               ...keyChoice,
               queueClass,

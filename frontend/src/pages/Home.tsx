@@ -23,6 +23,7 @@ export default function Home() {
   })
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
+  const [settings, setSettings] = useState({ askFirst: true, review: true })
   const navigate = useNavigate()
   const { hash } = useLocation()
   const { user, login } = useAuth()
@@ -45,12 +46,12 @@ export default function Home() {
     if (!trimmed) return
     if (!user) {
       // Keep what they typed across the GitHub sign-in round trip.
-      login(`/tasks/new?url=${encodeURIComponent(trimmed)}`)
+      login(`/tasks/new?url=${encodeURIComponent(trimmed)}${settings.askFirst ? '' : '&ask=0'}${settings.review ? '' : '&review=0'}`)
       return
     }
     setLoading(true)
     try {
-      const { taskId } = await createTask(trimmed)
+      const { taskId } = await createTask(trimmed, { ...(settings.askFirst ? {} : { askFirst: false }), ...(settings.review ? {} : { review: false }) })
       navigate(`/tasks/${taskId}`)
     } catch (err) {
       pushToast((err as Error).message, 'error')
@@ -64,7 +65,7 @@ export default function Home() {
     <div className="min-h-screen bg-background text-foreground">
       <SiteNav />
       <Frame>
-        <HomeHero url={url} onUrl={setUrl} onSubmit={handleSubmit} loading={loading} signedIn={Boolean(user)} />
+        <HomeHero url={url} onUrl={setUrl} onSubmit={handleSubmit} loading={loading} signedIn={Boolean(user)} settings={settings} onSettings={setSettings} />
         <BuiltOn />
       </Frame>
       <div className="band-dark">

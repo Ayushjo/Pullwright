@@ -18,6 +18,28 @@ import { cn } from '../../../lib/cn'
 /** An italic serif accent inside sans copy ("not promised.", "pull request."). */
 export const Accent = ({ children, className }: { children: ReactNode; className?: string }) => <em className={cn('font-serif italic font-normal tracking-[-0.01em]', className)}>{children}</em>
 
+/** A settings chip that switches on and off (the hero's "Ask before guessing" and "Review"). */
+function Toggle({ on, onClick, label, hint }: { on: boolean; onClick: () => void; label: string; hint: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      title={hint}
+      onClick={onClick}
+      className={cn(
+        'inline-flex min-h-8 items-center gap-1.5 rounded-pill px-2.5 py-1 transition-colors',
+        on ? 'bg-primary/10 text-primary' : 'bg-black/[.05] text-muted-foreground line-through decoration-black/30',
+      )}
+      data-track="hero_toggle"
+      data-track-setting={label}
+    >
+      <span aria-hidden className={cn('h-1.5 w-1.5 rounded-full', on ? 'bg-primary' : 'border border-current')} />
+      {label}
+    </button>
+  )
+}
+
 const EXAMPLES = ['Fix a failing test', 'Add input validation', 'Bump a dependency', 'Handle an edge case']
 const DEMO_ISSUE = 'https://github.com/Ayushjo/devin-test-app/issues/3'
 
@@ -27,7 +49,11 @@ export function HomeHero({
   onSubmit,
   loading,
   signedIn,
+  settings,
+  onSettings,
 }: {
+  settings: { askFirst: boolean; review: boolean }
+  onSettings: (s: { askFirst: boolean; review: boolean }) => void
   url: string
   onUrl: (v: string) => void
   onSubmit: (e: FormEvent) => void
@@ -65,11 +91,13 @@ export function HomeHero({
           </label>
           <div className="mt-6 flex flex-wrap items-center justify-between gap-2 px-1.5 pb-1">
             <div className="flex flex-wrap items-center gap-1.5 text-[12.5px]">
-              <span className={cn(chip, 'inline-flex items-center gap-1.5')}>
-                <Sparkles className="h-3.5 w-3.5 text-primary" /> Claude Haiku · free
-              </span>
-              <span className={chip}>Ask before guessing</span>
-              <span className={cn(chip, 'hidden sm:inline')}>Review: on</span>
+              {!signedIn && (
+                <span className={cn(chip, 'inline-flex items-center gap-1.5')}>
+                  <Sparkles className="h-3.5 w-3.5 text-primary" /> Claude Haiku · free
+                </span>
+              )}
+              <Toggle on={settings.askFirst} onClick={() => onSettings({ ...settings, askFirst: !settings.askFirst })} label="Ask before guessing" hint="Stop and ask when the issue leaves something open" />
+              <Toggle on={settings.review} onClick={() => onSettings({ ...settings, review: !settings.review })} label="Review" hint="A second model checks the diff against every requirement" />
             </div>
             <Button type="submit" variant="primary" shape="pill" loading={loading} className="h-11 w-full px-5 sm:h-10 sm:w-auto" data-track="hero_submit" data-track-where="hero">
               {signedIn ? 'Start' : 'Sign in to start'}
@@ -100,8 +128,8 @@ export function HomeHero({
 /** Results of the 40-issue eval per model (docs/architecture/claude-eval.md). */
 const MODELS = [
   { name: 'Haiku 5.5', role: 'Free tasks', rows: [['Solved', '34 / 40'], ['Hard issues', '9 / 10'], ['Vague issues', '6 / 8'], ['Avg cost', '$0.016']] },
-  { name: 'Sonnet 5.5', role: 'Credits', rows: [['Solved', '34 / 40'], ['Hard issues', '10 / 10'], ['Base ladder', '26 / 26'], ['Avg cost', '$0.18']] },
-  { name: 'Opus 5.5', role: 'Vague issues', rows: [['Solved', '36 / 40'], ['Hard issues', '10 / 10'], ['Vague issues', '7 / 8'], ['Avg cost', '$0.43']] },
+  { name: 'Sonnet 5.5', role: 'Credits and Pro', rows: [['Solved', '34 / 40'], ['Hard issues', '10 / 10'], ['Base ladder', '26 / 26'], ['Avg cost', '$0.18']] },
+  { name: 'Opus 5.5', role: 'Benchmark only, not offered yet', rows: [['Solved', '36 / 40'], ['Hard issues', '10 / 10'], ['Vague issues', '7 / 8'], ['Avg cost', '$0.43']] },
 ]
 
 /** "Measured, not promised": three spec cards; a swipe row on phones. Meant for a black band. */

@@ -4,7 +4,7 @@ import Home from './pages/Home'
 import Login from './pages/Login'
 import Pricing from './pages/Pricing'
 import Privacy from './pages/Privacy'
-// Public, prerendered pages load with the bundle; app pages (and the dev-only lab) load on demand.
+// Public, prerendered pages load with the bundle; app pages load on demand.
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const NewTask = lazy(() => import('./pages/NewTask'))
 const Pool = lazy(() => import('./pages/Pool'))
@@ -14,7 +14,6 @@ const History = lazy(() => import('./pages/History'))
 const Replay = lazy(() => import('./pages/Replay'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Wallet = lazy(() => import('./pages/Wallet'))
-const LandingLab = lazy(() => import('./pages/LandingLab'))
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { identifyUser, installAnalytics, trackPageView } from './lib/analytics'
 import { ToastProvider } from './components/ui'
@@ -54,7 +53,6 @@ export default function App() {
             <Route path="/r/:id"     element={<Replay />} />
             <Route path="/pricing"   element={<Pricing />} />
             <Route path="/privacy"   element={<Privacy />} />
-            {import.meta.env.DEV && <Route path="/lab/:v" element={<LandingLab />} />}
             <Route path="/settings"  element={<RouteGuard><Settings /></RouteGuard>} />
             <Route path="/wallet"    element={<RouteGuard><Wallet /></RouteGuard>} />
             <Route path="/admin/pool" element={<RouteGuard><Pool /></RouteGuard>} />

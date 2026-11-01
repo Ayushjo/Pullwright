@@ -52,7 +52,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 const post = <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) })
 
-export type CreateTaskOptions = { autoApprove?: boolean; autoPublish?: boolean; draft?: boolean; allowTraining?: boolean }
+export type CreateTaskOptions = { autoApprove?: boolean; autoPublish?: boolean; draft?: boolean; allowTraining?: boolean; askFirst?: boolean; review?: boolean }
 
 export function createTask(issueUrl: string, options: CreateTaskOptions = {}) {
   return post<{ taskId: string; status: string }>('/api/task', { issueUrl, ...options })

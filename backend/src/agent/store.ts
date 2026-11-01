@@ -33,6 +33,11 @@ export type TaskOptions = {
   autoApprove: boolean
   autoPublish: boolean
   draft: boolean
+  /** "Ask before guessing" (default on): stop and ask on open questions. Off: the agent settles them itself
+   *  and states its assumptions. */
+  askFirst?: boolean
+  /** "Review" (default on): the independent second-model review. Off: tests and checks only. */
+  review?: boolean
   model?: string
   /** Which API key pays for this task: the operator's platform key, or the user's own. */
   keyKind?: "platform" | "byok" | "wallet"

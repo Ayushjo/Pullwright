@@ -180,6 +180,8 @@ export async function createTask(input: CreateTaskInput, registry: TaskRegistry)
       autoApprove: input.options?.autoApprove ?? false,
       autoPublish: input.options?.autoPublish ?? false,
       draft: input.options?.draft ?? true,
+      ...(input.options?.askFirst === false ? { askFirst: false } : {}),
+      ...(input.options?.review === false ? { review: false } : {}),
       ...(input.options?.model ? { model: input.options.model } : {}),
       keyKind: input.options?.keyKind ?? "platform",
       ...(input.options?.keyProvider ? { keyProvider: input.options.keyProvider } : {}),

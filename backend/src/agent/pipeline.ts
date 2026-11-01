@@ -457,17 +457,19 @@ export class Pipeline {
     if (spec) {
       const label = ["clear", "mostly clear", "vague", "unclear"][spec.underspec]
       const n = spec.questions.length
-      await this.emit(s.taskId, { type: "notice", level: spec.underspec >= 2 ? "warn" : "info", message: `Specification check: ${label} (${spec.underspec}/3)${n ? ` — ${n} open question${n === 1 ? "" : "s"}${d.action === "ask" ? " for you" : " for the planner to settle"}` : ""}` })
+      await this.emit(s.taskId, { type: "notice", level: spec.underspec >= 2 ? "warn" : "info", message: `Specification check: ${label} (${spec.underspec}/3)${n ? ` — ${n} open question${n === 1 ? "" : "s"}${d.action === "ask" && s.options.askFirst !== false ? " for you" : " for the planner to settle"}` : ""}` })
     }
     // Open questions help when someone reviews the plan's decisions (vague set with a simulated user: 3/5 vs
     // 1/5). In autonomous runs on issues rated clear or mostly clear they showed no benefit and coincided
     // with worse results on a well-specified hard item (H04: 1/7 passes with them, 5/7 without), so they're
     // left out there (docs/architecture/qualification.md §8).
+    // "Ask before guessing" off: questions that would have stopped the task go to the planner to settle instead.
+    const askUser = d.action === "ask" && s.options.askFirst !== false
     const questions = d.action === "ask" ? d.questions : spec && spec.underspec <= 1 && s.options.autoApprove ? [] : d.open
     return {
       attachmentsText,
       openQuestions: openQuestionsBlock(questions),
-      ...(d.action === "ask" ? { ask: formatQuestions(d.questions, d.reason) } : {}),
+      ...(askUser ? { ask: formatQuestions(d.questions, d.reason) } : {}),
     }
   }
 
@@ -538,11 +540,13 @@ export class Pipeline {
       if (crashed) await this.emit(taskId, { type: "notice", level: "warn", message: "The worker restarted mid-run; continuing from the last saved step" })
       delete s.park
       const used = s.runUsed ?? { steps: 0, gateAttempts: 0, judgeRounds: 0 }
+      if (!s.runUsed && s.options.review === false) await this.emit(taskId, { type: "notice", level: "info", message: "Independent review is off for this task: tests and checks only." })
       let gateAttempts = used.gateAttempts
       let judgeRounds = used.judgeRounds
       // A review that couldn't get a model: the run parks and, on resume, the agent calls finish again.
       let reviewParked: NoLaneAvailable | null = null
       const review = async (patch: string) => {
+        if (s.options.review === false) return null // "Review" turned off for this task: tests and checks only
         try {
           const verifyText = (s.gate?.verify ?? [])
             .map((v) => `${v.cmd}: exit before=${v.before ?? "n/a"} after=${v.after}` + (v.newFailures.length ? `; NEW failures: ${v.newFailures.join("; ")}` : "; no new test failures") + (v.fixed.length ? `; now passing: ${v.fixed.join("; ")}` : ""))
@@ -701,8 +705,8 @@ export class Pipeline {
         )
       }
       let out = await loop.run()
-      // Autonomous mode: nobody can answer — tell the agent to proceed on its best assumption (once).
-      if (out.status === "ask_user" && s.options.autoApprove) {
+      // Autonomous mode, or "Ask before guessing" off: tell the agent to proceed on its best assumption (once).
+      if (out.status === "ask_user" && (s.options.autoApprove || s.options.askFirst === false)) {
         await this.emit(taskId, { type: "question", question: out.question })
         loop.addUserMessage("No human is available to answer. Make the most reasonable assumption, state it in your finish summary, and continue.")
         out = await loop.run()
@@ -806,7 +810,8 @@ export class Pipeline {
       }
       delete s.runUsed
       if (await taskStore.isCancelled(taskId)) return this.cancelled(s)
-      const good = !forcedReview && (s.gate?.ok ?? false) && (s.verdict?.success ?? false)
+      const reviewOff = s.options.review === false
+      const good = !forcedReview && (s.gate?.ok ?? false) && (reviewOff || (s.verdict?.success ?? false))
       s.costUsd = getSpendLedger().taskSpent(taskId)
       if (good && s.options.autoPublish) {
         await this.setStatus(s, "ready", "Validated — publishing")
