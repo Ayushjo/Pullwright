@@ -23,6 +23,7 @@ export const STATUS_META: Record<TaskStatus, { label: string; tone: Tone; active
   done: { label: 'Done', tone: 'success', active: false },
   failed: { label: 'Failed', tone: 'danger', active: false },
   cancelled: { label: 'Cancelled', tone: 'neutral', active: false },
+  archived: { label: 'Archived', tone: 'neutral', active: false },
 }
 
 export const statusMeta = (s: string) => STATUS_META[s as TaskStatus] ?? { label: s, tone: 'neutral' as Tone, active: false }

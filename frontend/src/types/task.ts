@@ -2,6 +2,8 @@ export type TaskStatus =
   | 'queued' | 'planning' | 'running' | 'verifying' | 'done' | 'failed'
   | 'preparing' | 'awaiting_approval' | 'needs_input' | 'validating'
   | 'ready' | 'needs_review' | 'parked' | 'publishing' | 'published' | 'cancelled'
+  /** Display only: a run whose working state expired (read-only). */
+  | 'archived'
 
 export type StepStatus = 'pending' | 'running' | 'done' | 'failed'
 

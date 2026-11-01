@@ -19,7 +19,7 @@ export type TaskRegistryEntry = {
 export class TaskRegistry {
   private redis: Redis
   private INDEX_KEY = "tasks:index"
-  private TTL = 60 * 60 * 24 * 7 // 7 days
+  private TTL = 60 * 60 * 24 * Number(process.env.TASK_STATE_TTL_DAYS ?? 30) // same window as task state
 
   constructor() {
     this.redis = createRedisClient()

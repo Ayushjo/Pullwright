@@ -12,7 +12,7 @@ import { useSeo } from '../lib/seo'
  * [brackets] are decisions still to make.
  */
 const UPDATED = 'October 17, 2026'
-const CONTACT = 'privacy@iayush.com'
+const CONTACT = 'believemeguysamrevx@gmail.com'
 
 const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
   {
@@ -50,7 +50,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
           issue, the plan, the diff, test output, the review, model usage and cost, so you can see the history and replay it.
         </p>
         <p>
-          Replay links (<code>/r/…</code>) are only public if you share one. [Decide: how long task records and replays are kept, e.g. until you delete them or the account.]
+          Replay links (<code>/r/…</code>) are only public if you share one. A run's working copy and full diff are kept for 30 days after its last change, so you can still publish it; after that it's archived and read-only. The task record (issue, plan, summary, review, cost) stays until you delete it or your account.
         </p>
       </>
     ),
@@ -111,7 +111,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
           <strong>Opting out:</strong> turn on Do Not Track or Global Privacy Control (Brave sends it by default) and we won't record anonymous visits. While you're signed in, product events are part of
           running the service and are still recorded.
         </p>
-        <p>[Decide: retention for raw analytics events, e.g. 13 months, after which they're deleted.]</p>
+        <p>Raw analytics events are kept for 13 months, then deleted automatically.</p>
       </>
     ),
   },
@@ -123,7 +123,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
         <li>GitHub: sign-in and the repositories you use.</li>
         <li>The model provider for each task (above).</li>
         <li>Dodo Payments: billing.</li>
-        <li>Our hosting and infrastructure: [list before launch, e.g. Neon (database), the server host, Cloudflare].</li>
+        <li>Our infrastructure: Neon (the database) and our server host. [Name the server host and Cloudflare once deployed.]</li>
       </ul>
     ),
   },
@@ -134,7 +134,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
       <>
         <p>You can remove model keys at any time on the Model keys page, revoke GitHub access, and ask us to export or delete your account and its data.</p>
         <p>
-          Email <a href={`mailto:${CONTACT}`}>{CONTACT}</a> and we'll reply within 30 days. [Confirm the contact address, the legal entity and the governing law.]
+          Email <a href={`mailto:${CONTACT}`}>{CONTACT}</a> and we'll reply within 30 days. Pullwright is run by an individual developer (GitHub: @Ayushjo), who is responsible for this data.
         </p>
       </>
     ),

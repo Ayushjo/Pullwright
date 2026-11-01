@@ -20,6 +20,7 @@ import { disconnectPrisma, verifyDatabaseConnection } from './db/prisma.js';
 import { startPipelineWorker } from './agent/service.js';
 import { Sandbox } from './agent/sandbox.js';
 import { startJanitor } from './agent/janitor.js';
+import { startAnalyticsRetention } from './analytics/retention.js';
 import { startCatalogRefresh } from './llm/catalog.js';
 import { flushEventsToDb } from './repositories/eventRepository.js';
 import { flushLlmCalls } from './repositories/llmCallRepository.js';
@@ -95,6 +96,7 @@ void verifyRedisConnection().then((ok) => {
   if (!ok) logger.warn("Starting without a working Redis connection — the task queue will not function")
 })
 void verifyDatabaseConnection()
+startAnalyticsRetention() // nightly delete of raw analytics events past the retention period
 if (MODE !== "api") {
   void createDockerClient().ping()
     .then(() => logger.info(`Docker connected (${resolveDockerSocket() ?? "default socket"})`))

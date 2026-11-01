@@ -118,7 +118,9 @@ export type TaskState = {
   finishedAt?: string
 }
 
-const TTL = 60 * 60 * 24 * 7
+/** How long a task's working state is kept after its last change: a finished run stays publishable this long,
+ *  then it's archived (read-only from the database). TASK_STATE_TTL_DAYS, default 30. */
+const TTL = 60 * 60 * 24 * Number(process.env.TASK_STATE_TTL_DAYS ?? 30)
 
 let redis: Redis | null = null
 function r(): Redis {
@@ -171,6 +173,12 @@ redis.call('EXPIRE', KEYS[2], ARGV[3])
 return 1`
 
 export const taskStore = {
+  /** Which of these tasks still have working state (the rest are archived). */
+  async existing(ids: string[]): Promise<Set<string>> {
+    if (!ids.length) return new Set()
+    const res = (await r().multi(ids.map((id) => ["exists", k.state(id)])).exec()) ?? []
+    return new Set(ids.filter((_, i) => Number(res[i]?.[1]) === 1))
+  },
   async get(id: string): Promise<TaskState | null> {
     const [raw, counters] = await Promise.all([r().get(k.state(id)), r().hgetall(k.counters(id))])
     if (!raw) return null

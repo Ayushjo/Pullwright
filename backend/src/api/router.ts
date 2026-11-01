@@ -645,16 +645,23 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     res.json({ ok: true })
   })
 
+  // A task still waiting on its owner whose working state has expired is archived (read-only): it can't be
+  // approved, answered or published any more, so it's flagged and the Dashboard doesn't count it as "needs you".
+  const WAITING = ["awaiting_approval", "needs_input", "ready", "needs_review", "parked"]
+  const markArchived = async <T extends { taskId: string; status: string }>(list: T[]) => {
+    const live = await taskStore.existing(list.filter((t) => WAITING.includes(t.status)).map((t) => t.taskId))
+    return list.map((t) => (WAITING.includes(t.status) && !live.has(t.taskId) ? { ...t, archived: true } : t))
+  }
   router.get("/tasks", async (req, res) => {
     if (isOwner(req)) {
       // Owners see their own tasks plus operator/eval runs, newest first.
       const mine = req.session?.userId && isDatabaseEnabled() ? await listTasksForUser(req.session.userId, 50) : []
       const all = await taskRegistry.list(50)
       const seen = new Set(mine.map((t) => t.taskId))
-      return res.json([...mine, ...all.filter((t) => !seen.has(t.taskId))].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 60))
+      return res.json(await markArchived([...mine, ...all.filter((t) => !seen.has(t.taskId))].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 60)))
     }
-    if (req.session?.userId && isDatabaseEnabled()) return res.json(await listTasksForUser(req.session.userId, 50))
-    if (req.isOperator) return res.json(await taskRegistry.list(50))
+    if (req.session?.userId && isDatabaseEnabled()) return res.json(await markArchived(await listTasksForUser(req.session.userId, 50)))
+    if (req.isOperator) return res.json(await markArchived(await taskRegistry.list(50)))
     res.json([])
   })
 

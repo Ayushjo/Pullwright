@@ -1,4 +1,4 @@
-import type { TaskState, TaskEvent, DiffStat } from '../types/task'
+import type { TaskState, TaskEvent, DiffStat, TaskRegistryEntry } from '../types/task'
 
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? ''
 // All requests send cookies so the httpOnly session works cross-origin.
@@ -123,11 +123,12 @@ export const shareTask = (taskId: string, isPublic: boolean) => post<{ isPublic:
 export const getDiff = (taskId: string) =>
   request<{ patch: string; stats: DiffStat[]; rejectedFiles: string[]; acceptedPatch: string }>(`/api/task/${taskId}/diff`)
 
-export async function listTasks() {
+export async function listTasks(): Promise<TaskRegistryEntry[]> {
   try {
     const data = await request<unknown>('/api/tasks')
-    if (Array.isArray(data)) return data
-    return (data as { tasks?: unknown[] })?.tasks ?? []
+    const list = (Array.isArray(data) ? data : ((data as { tasks?: unknown[] })?.tasks ?? [])) as { status: string; archived?: boolean }[]
+    // Runs whose working state expired show as "Archived": read-only, not counted as needing you.
+    return list.map((t) => (t.archived ? { ...t, status: 'archived' } : t)) as unknown as TaskRegistryEntry[]
   } catch {
     return []
   }
