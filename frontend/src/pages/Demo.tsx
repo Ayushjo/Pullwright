@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, ExternalLink, Loader2 } from 'lucide-react'
+import { ArrowRight, ExternalLink, FileCode2, GitPullRequest, ListChecks, Loader2, ShieldCheck, type LucideIcon } from 'lucide-react'
 import SiteNav from '../components/site/SiteNav'
 import SiteFooter from '../components/site/SiteFooter'
 import { Frame, Section } from '../components/site/Layout'
@@ -10,11 +10,11 @@ import { ApiError, getDemo, startDemo, type DemoInfo } from '../api/client'
 import { DEMO_REPLAY_URL } from '../content/site'
 import { useSeo } from '../lib/seo'
 
-const STEPS = [
-  ['Plan', 'It reads the issue and the repo and writes a plan. You approve it, or ask for changes.'],
-  ['Code and test', 'It edits files in a sandbox and runs the repo’s tests until they pass.'],
-  ['Review', 'A second pass checks the diff against every requirement in the issue.'],
-  ['Publish', 'One click opens a real draft pull request on the demo repo.'],
+const STEPS: [string, string, LucideIcon][] = [
+  ['Plan', 'It reads the issue and the repo and writes a plan. You approve it, or ask for changes.', ListChecks],
+  ['Code and test', 'It edits files in a sandbox and runs the repo’s tests until they pass.', FileCode2],
+  ['Review', 'A second pass checks the diff against every requirement in the issue.', ShieldCheck],
+  ['Publish', 'One click opens a real draft pull request on the demo repo.', GitPullRequest],
 ]
 
 /** Issue text as plain prose for the card preview (no backticks, bold markers or headings). */
@@ -77,10 +77,19 @@ export default function Demo() {
             . You approve the plan, watch the edits and tests, and publishing opens a real draft PR there.
           </p>
           <ol className="mt-10 grid gap-px overflow-hidden rounded-lg border border-hairline bg-hairline sm:grid-cols-2 lg:grid-cols-4">
-            {STEPS.map(([t, d], i) => (
-              <li key={t} className="bg-card p-5">
-                <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-primary">{String(i + 1).padStart(2, '0')} · {t}</span>
-                <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">{d}</p>
+            {STEPS.map(([t, d, Icon], i) => (
+              <li key={t} className="group relative bg-card p-5 transition-colors hover:bg-primary/[.03]">
+                <div className="flex items-center justify-between">
+                  <span className="grid h-9 w-9 place-items-center rounded-md border border-primary/15 bg-primary/[.07] text-primary transition-colors group-hover:bg-primary/[.12]">
+                    <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
+                  </span>
+                  <span className="font-mono text-[11px] tracking-[0.08em] text-muted-foreground/70">{String(i + 1).padStart(2, '0')}</span>
+                </div>
+                <h3 className="mt-4 text-[15px] font-medium text-foreground">{t}</h3>
+                <p className="mt-1.5 text-[14px] leading-relaxed text-muted-foreground">{d}</p>
+                {i < STEPS.length - 1 && (
+                  <ArrowRight className="absolute -right-[10px] top-1/2 z-10 -translate-y-1/2 hidden h-5 w-5 rounded-full border border-hairline bg-background p-[3px] text-muted-foreground lg:block" aria-hidden />
+                )}
               </li>
             ))}
           </ol>
