@@ -211,6 +211,10 @@ describe("grounding", () => {
     expect(g.newSymbols?.sort()).toEqual(["getHook", "saveHook", "signPayload"])
     expect(g.missingSymbols).toEqual(["LegacySigner"])
   })
+  it("never reports language built-ins as missing", async () => {
+    const g = await groundIssue(ws, "`divide(10, 0)` returns `Infinity`; it should throw a `RangeError` (not a `TypeError`). Keep `MissingThing` working.")
+    expect(g.missingSymbols).toEqual(["MissingThing"])
+  })
 })
 
 describe("route consumer impact analysis", () => {

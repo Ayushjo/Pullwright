@@ -9,6 +9,15 @@ const execFileP = promisify(execFile)
  * mentions actually exist in the repository? Missing ones are surfaced to the planner so it
  * asks instead of inventing them (the #1 failure mode of the old agent).
  */
+/** Standard-library names an issue can mention without the repo defining them (JS/TS, Python, Go, Rust, Java). */
+const BUILTINS = new Set(
+  (
+    "Infinity NaN undefined null Error RangeError TypeError SyntaxError ReferenceError EvalError URIError AggregateError Promise Array Object String Number Boolean Symbol BigInt Map Set WeakMap WeakSet Date RegExp JSON Math Intl Reflect Proxy console process Buffer setTimeout setInterval clearTimeout fetch Response Request URL URLSearchParams AbortController structuredClone parseInt parseFloat isNaN isFinite encodeURIComponent decodeURIComponent toFixed toString valueOf hasOwnProperty localeCompare normalize " +
+    "ValueError KeyError IndexError AttributeError RuntimeError NotImplementedError ZeroDivisionError FileNotFoundError StopIteration AssertionError Exception None True False isinstance print len " +
+    "NullPointerException IllegalArgumentException IllegalStateException RuntimeException IOException Option Result Some None Ok Err Vec HashMap"
+  ).split(" "),
+)
+
 export type Grounding = { missingPaths: string[]; missingSymbols: string[]; foundPaths: string[]; newPaths?: string[]; newSymbols?: string[] }
 
 /** "add a new `x.ts`", "create x.ts", "in a new file x.ts" → the issue asks for it, it is not a hallucination risk. */
@@ -43,6 +52,7 @@ export async function groundIssue(ws: Workspace, text: string): Promise<Groundin
     const span = m[1]!.trim().replace(/\)\s*(:|=>|→).*$/, ")") // drop a return type
     if (/\/|\s(?![^(]*\))/.test(span) || /\.[a-z]{1,5}$/.test(span)) continue // phrases / paths
     const ident = span.replace(/\(.*\)$/, "").split(".").pop() ?? ""
+    if (BUILTINS.has(ident)) continue // language built-ins (RangeError, Infinity, …) are never "missing from the repo"
     if (/^[A-Za-z_$][\w$]{2,}$/.test(ident) && (/[A-Z]/.test(ident) || /_/.test(ident) || span.endsWith(")") || /\(.*\)/.test(span))) {
       symbols.add(ident)
       // A spec item: listed as a bullet ("- `foo(x)` does …") or introduced by a create cue, and not described as existing.
