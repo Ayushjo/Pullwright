@@ -314,3 +314,9 @@ export type AnalyticsReport = {
   recentSignups: { login: string; createdAt: string; lastSeenAt: string | null; tasks: number; firstTouch: unknown }[]
 }
 export const getAnalytics = (days = 30) => request<AnalyticsReport>(`/api/admin/analytics?days=${days}`)
+
+// ── Live demo (no account) ───────────────────────────────────────────────────
+export type DemoIssue = { number: number; title: string; body: string; url: string }
+export type DemoInfo = { enabled: boolean; open: boolean; repo: string; issues: DemoIssue[]; left: number; perDay: number; activeTaskId?: string }
+export const getDemo = () => request<DemoInfo>('/api/demo')
+export const startDemo = (issue: number) => post<{ taskId: string }>('/api/demo/run', { issue })

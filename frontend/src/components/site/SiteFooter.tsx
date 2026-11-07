@@ -10,7 +10,8 @@ const COLUMNS: { title: string; links: { label: string; to: string; external?: b
     links: [
       { label: 'How it works', to: '/#how' },
       { label: 'Pricing', to: '/pricing' },
-      { label: 'Live replay', to: DEMO_REPLAY_URL },
+      { label: 'Live demo', to: '/demo' },
+      { label: 'Recorded run', to: DEMO_REPLAY_URL },
     ],
   },
   {

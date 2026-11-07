@@ -7,7 +7,7 @@ import { Button } from '../ui'
 import { UserMenu } from '../AppShell'
 import { useAuth } from '../../context/AuthContext'
 import { cn } from '../../lib/cn'
-import { DEMO_REPLAY_URL, PRODUCT_MENU, REPO_URL } from '../../content/site'
+import { PRODUCT_MENU, REPO_URL } from '../../content/site'
 
 function MenuLink({ label, to, external, onClick, className }: { label: string; to: string; external?: boolean; onClick?: () => void; className?: string }) {
   const cls = cn('inline-flex items-center gap-1 text-foreground hover:text-primary transition-colors', className)
@@ -125,8 +125,8 @@ export default function SiteNav() {
             <Link to="/pricing" className={linkCls(pathname === '/pricing')} onMouseEnter={close}>
               Pricing
             </Link>
-            <Link to={DEMO_REPLAY_URL} className={linkCls(pathname.startsWith('/r/'))} onMouseEnter={close}>
-              Replay
+            <Link to="/demo" className={linkCls(pathname.startsWith('/demo'))} onMouseEnter={close}>
+              Live demo
             </Link>
             <a href={REPO_URL} target="_blank" rel="noreferrer" className={cn(linkCls(false), 'hidden lg:inline-flex')} onMouseEnter={close}>
               GitHub

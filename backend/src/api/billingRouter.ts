@@ -2,6 +2,7 @@ import express, { Router } from "express"
 import { z } from "zod"
 import logger from "../logger.js"
 import { requireAuth } from "./auth.js"
+import { demoPassthrough } from "./demo.js"
 import { getPrisma, isDatabaseEnabled } from "../db/prisma.js"
 import {
   KEY_PROVIDERS,
@@ -33,7 +34,8 @@ const SaveKey = z.object({
 /** Authenticated billing + BYOK endpoints (mounted under /api). */
 export function createBillingRouter() {
   const router = Router()
-  router.use(requireAuth)
+  // Demo task routes skip this router entirely (it grants nothing to demo visitors).
+  router.use((req, res, next) => (demoPassthrough(req) ? next("router") : requireAuth(req, res, next)))
   const needUser = (req: express.Request, res: express.Response) => {
     if (!isDatabaseEnabled() || !req.session?.userId) {
       res.status(401).json({ error: "Sign in again" })

@@ -9,6 +9,7 @@ import type { EventBus } from "../events/eventBus.js"
 import type { TaskRegistry } from "../store/taskRegistry.js"
 import type { EventLog } from "../events/eventLog.js"
 import { requireAuth } from "./auth.js"
+import { demoPassthrough } from "./demo.js"
 import { getPrisma, isDatabaseEnabled } from "../db/prisma.js"
 import { countActiveTasksForUser, getStatsForUser, listTasksForUser, userOwnsTask, getMetricsFromDb, getTaskDetailFromDb } from "../repositories/taskRepository.js"
 import { RedisRateStore } from "./redisRateStore.js"
@@ -104,7 +105,8 @@ export function publicView(s: TaskState) {
 
 export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eventLog: EventLog) => {
   const router = Router()
-  router.use(requireAuth)
+  // Demo visitors (no account) pass only on their own demo task's routes; canAccess checks the task is theirs.
+  router.use((req, res, next) => (demoPassthrough(req) ? next() : requireAuth(req, res, next)))
 
   const createLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
@@ -123,7 +125,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
       res.status(404).json({ error: "Task not found" })
       return null
     }
-    if (!(await canAccess(req, s.taskId, s.userId))) {
+    if (!(await canAccess(req, s.taskId, s.userId, s.demoVisitor))) {
       res.status(403).json({ error: "Forbidden" })
       return null
     }
@@ -141,8 +143,9 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     return Boolean(req.session?.login && owners.includes(req.session.login.toLowerCase()))
   }
 
-  async function canAccess(req: Request, taskId: string, ownerId?: string): Promise<boolean> {
+  async function canAccess(req: Request, taskId: string, ownerId?: string, demoVisitor?: string): Promise<boolean> {
     if (req.isOperator || isOwner(req)) return true
+    if (demoVisitor && req.demoVisitor === demoVisitor) return true
     const uid = req.session?.userId
     if (!uid) return false
     if (ownerId) return ownerId === uid
@@ -310,7 +313,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
     const taskId = String(req.params.taskId)
     const s = await taskStore.get(taskId)
     if (s) {
-      if (!(await canAccess(req, taskId, s.userId))) return res.status(403).json({ error: "Forbidden" })
+      if (!(await canAccess(req, taskId, s.userId, s.demoVisitor))) return res.status(403).json({ error: "Forbidden" })
       return res.json(publicView(s))
     }
     if (!(await canAccess(req, taskId))) return res.status(404).json({ error: "Task not found" })
@@ -322,7 +325,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
   router.get("/task/:taskId/events", async (req, res) => {
     const taskId = String(req.params.taskId)
     const s = await taskStore.get(taskId)
-    if (!(await canAccess(req, taskId, s?.userId))) return res.status(403).json({ error: "Forbidden" })
+    if (!(await canAccess(req, taskId, s?.userId, s?.demoVisitor))) return res.status(403).json({ error: "Forbidden" })
     const after = Number(req.query.after ?? -1)
     const events = await eventLog.range(taskId, Number.isFinite(after) && after >= 0 ? after + 1 : 0)
     res.json(events)
@@ -339,7 +342,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
   router.get("/task/:taskId/stream", async (req, res) => {
     const taskId = String(req.params.taskId)
     const s = await taskStore.get(taskId)
-    if (!(await canAccess(req, taskId, s?.userId))) return res.status(403).json({ error: "Forbidden" })
+    if (!(await canAccess(req, taskId, s?.userId, s?.demoVisitor))) return res.status(403).json({ error: "Forbidden" })
 
     res.setHeader("Content-Type", "text/event-stream")
     res.setHeader("Cache-Control", "no-cache, no-transform")
@@ -377,7 +380,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
   router.get("/task/:taskId/metrics", async (req, res) => {
     const taskId = String(req.params.taskId)
     const s = await taskStore.get(taskId)
-    if (!(await canAccess(req, taskId, s?.userId))) return res.status(403).json({ error: "Forbidden" })
+    if (!(await canAccess(req, taskId, s?.userId, s?.demoVisitor))) return res.status(403).json({ error: "Forbidden" })
     if (s) return res.json(metricsOf(s))
     const m = (await taskRegistry.getMetrics(taskId)) ?? (await getMetricsFromDb(taskId))
     if (!m) return res.status(404).json({ error: "Metrics not found" })

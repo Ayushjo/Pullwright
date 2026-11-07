@@ -60,6 +60,8 @@ export type TaskOptions = {
 export type TaskState = {
   taskId: string
   userId?: string
+  /** Anonymous live-demo run: the visitor's demo cookie id (only they, and the owner, can see and act on it). */
+  demoVisitor?: string
   githubLogin?: string
   issueUrl: string
   /** Eval mode: work on a local git repo with issue text supplied directly (never published). */

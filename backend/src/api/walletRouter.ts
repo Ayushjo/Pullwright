@@ -1,6 +1,7 @@
 import express, { Router } from "express"
 import { z } from "zod"
 import { requireAuth } from "./auth.js"
+import { demoPassthrough } from "./demo.js"
 import { isDatabaseEnabled } from "../db/prisma.js"
 import {
   GUIDES,
@@ -24,7 +25,8 @@ const AddKey = z.object({
 /** The user's model keys (P4 wallet), mounted under /api. Keys never leave the server once saved. */
 export function createWalletRouter() {
   const router = Router()
-  router.use(requireAuth)
+  // Demo task routes skip this router entirely (it grants nothing to demo visitors).
+  router.use((req, res, next) => (demoPassthrough(req) ? next("router") : requireAuth(req, res, next)))
   const needUser = (req: express.Request, res: express.Response) => {
     if (!isDatabaseEnabled() || !req.session?.userId) {
       res.status(401).json({ error: "Sign in again" })

@@ -34,7 +34,8 @@ export const PRODUCT_MENU: { group: string; items: { label: string; to: string; 
   {
     group: 'Resources',
     items: [
-      { label: 'Live replay', to: DEMO_REPLAY_URL },
+      { label: 'Live demo', to: '/demo' },
+      { label: 'Recorded run', to: DEMO_REPLAY_URL },
       { label: 'Changelog', to: `${REPO_URL}/commits/main`, external: true },
       { label: 'GitHub', to: REPO_URL, external: true },
     ],

@@ -8,6 +8,8 @@ declare global {
   namespace Express {
     interface Request {
       session?: SessionData
+      /** The anonymous live-demo visitor id (demo cookie), on the demo task routes only. */
+      demoVisitor?: string
       /** Authenticated with the operator API_TOKEN (scripts / evals), not a user session. */
       isOperator?: boolean
     }

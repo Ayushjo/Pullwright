@@ -116,8 +116,8 @@ export function HomeHero({
         </motion.div>
         <motion.p variants={fadeUp} className="mt-6 text-sm text-muted-foreground">
           Free to start — no key, no card.{' '}
-          <Link to={DEMO_REPLAY_URL} className="text-primary hover:underline" data-track="watch_replay" data-track-where="hero">
-            Watch a real run →
+          <Link to="/demo" className="text-primary hover:underline" data-track="try_demo" data-track-where="hero">
+            Try a live demo, no account →
           </Link>
         </motion.p>
       </motion.div>

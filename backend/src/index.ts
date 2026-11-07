@@ -21,6 +21,7 @@ import { startPipelineWorker } from './agent/service.js';
 import { Sandbox } from './agent/sandbox.js';
 import { startJanitor } from './agent/janitor.js';
 import { startAnalyticsRetention } from './analytics/retention.js';
+import { createDemoRouter, startDemoPrJanitor } from './api/demo.js';
 import { startCatalogRefresh } from './llm/catalog.js';
 import { flushEventsToDb } from './repositories/eventRepository.js';
 import { flushLlmCalls } from './repositories/llmCallRepository.js';
@@ -72,6 +73,8 @@ if (MODE !== "worker") {
   // Public analytics collect (POST /api/t): after the session (to know who), before routers that require auth.
   app.use("/api", createAnalyticsRouter());
   app.use("/api/auth", createOAuthRouter(sessionStore));
+  app.use("/api/demo", createDemoRouter(taskRegistry)); // the no-account live demo
+  startDemoPrJanitor()
   app.use("/api", createBillingRouter());
   app.use("/api", createWalletRouter());
   app.use("/api", createRouter(eventBus, taskRegistry, eventLog));

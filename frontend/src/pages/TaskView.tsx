@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, Check, Circle, ExternalLink, GitPullRequest, Globe, Loader2, RotateCcw, Square, Undo2 } from 'lucide-react'
 import AppShell from '../components/AppShell'
+import SiteNav from '../components/site/SiteNav'
 import ActivityFeed from '../components/task/ActivityFeed'
 import DiffView from '../components/task/DiffView'
 import PlanCard from '../components/task/PlanCard'
@@ -52,7 +53,31 @@ export default function TaskViewRoute() {
   return <TaskView key={id} taskId={id ?? ''} />
 }
 
-function TaskView({ taskId }: { taskId: string }) {
+/** A live-demo run (/demo/:id): the same view for a visitor without an account. */
+export function DemoTaskRoute() {
+  useSeo({ title: 'Live demo run', description: 'Watch Pullwright plan, code, test and review a real issue.', noindex: true })
+  const { id } = useParams<{ id: string }>()
+  return <TaskView key={id} taskId={id ?? ''} demo />
+}
+
+/** The signed-in app shell, or for demo runs the public site header (no account, no app nav). */
+function Shell({ demo, maxWidth, children }: { demo?: boolean; maxWidth: string; children: React.ReactNode }) {
+  if (!demo) return <AppShell maxWidth={maxWidth}>{children}</AppShell>
+  return (
+    <div className="min-h-screen bg-background">
+      <SiteNav />
+      <div className="border-b border-hairline bg-primary/[.06]">
+        <p className="mx-auto max-w-[1240px] px-gutter py-2 text-[12.5px] text-foreground/80">
+          <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-primary">Live demo</span> · A real run on our demo repo. You approve the plan; publishing opens a real draft PR there.{' '}
+          <Link to="/demo" className="text-primary hover:underline">Pick another issue</Link>
+        </p>
+      </div>
+      <main className={cn('mx-auto px-gutter pt-6 pb-16 md:pt-8', maxWidth)}>{children}</main>
+    </div>
+  )
+}
+
+function TaskView({ taskId, demo }: { taskId: string; demo?: boolean }) {
   const { push } = useToast()
   const { state, events, eventsLoaded, loading, notFound, error, refresh } = useTask(taskId)
   const [pickedTab, setTab] = useState<TabKey | null>(null)
@@ -114,21 +139,21 @@ function TaskView({ taskId }: { taskId: string }) {
 
   if (loading && !state) {
     return (
-      <AppShell maxWidth="max-w-6xl">
+      <Shell demo={demo} maxWidth="max-w-6xl">
         <div className="flex items-center justify-center py-24 text-muted-foreground gap-2">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading task…
         </div>
-      </AppShell>
+      </Shell>
     )
   }
   if (notFound || !state) {
     return (
-      <AppShell maxWidth="max-w-6xl">
+      <Shell demo={demo} maxWidth="max-w-6xl">
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <p className="text-muted-foreground mb-3">{error ?? 'Task not found.'}</p>
-          <Link to="/dashboard" className="text-sm text-primary hover:underline">← Back to dashboard</Link>
+          <Link to={demo ? '/demo' : '/dashboard'} className="text-sm text-primary hover:underline">{demo ? '← Back to the demo' : '← Back to dashboard'}</Link>
         </div>
-      </AppShell>
+      </Shell>
     )
   }
 
@@ -137,14 +162,14 @@ function TaskView({ taskId }: { taskId: string }) {
   const terminal = ['published', 'failed', 'cancelled'].includes(status)
 
   return (
-    <AppShell maxWidth="max-w-[1240px]">
+    <Shell demo={demo} maxWidth="max-w-[1240px]">
       <div className="rounded-lg border border-hairline bg-card overflow-hidden flex flex-col md:h-[calc(100vh-7.5rem)] md:min-h-[560px]">
         {/* Header */}
         <div className="shrink-0 px-3 sm:px-5 py-3 sm:py-4 border-b border-hairline">
           {/* Phones: the status sits under the title, so the title gets the full width. */}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
             <div className="flex items-start gap-2.5 min-w-0">
-              <Link to="/dashboard" aria-label="Back to dashboard" className="w-8 h-8 rounded-pill border border-black/10 bg-card hover:bg-black/[.04] flex items-center justify-center text-muted-foreground shrink-0">
+              <Link to={demo ? '/demo' : '/dashboard'} aria-label={demo ? 'Back to the demo' : 'Back to dashboard'} className="w-8 h-8 rounded-pill border border-black/10 bg-card hover:bg-black/[.04] flex items-center justify-center text-muted-foreground shrink-0">
                 <ArrowLeft className="w-4 h-4" />
               </Link>
               <div className="min-w-0">
@@ -178,12 +203,12 @@ function TaskView({ taskId }: { taskId: string }) {
                 <Square className="w-3 h-3" /> Stop
               </Button>
             )}
-            {(status === 'failed' || status === 'cancelled') && !state.archived && (
+            {(status === 'failed' || status === 'cancelled') && !state.archived && !demo && (
               <Button size="sm" variant="outline" shape="pill" loading={busy === 'retry'} onClick={() => act('retry', () => retryTask(taskId), 'Retrying from scratch')}>
                 <RotateCcw className="w-3.5 h-3.5" /> Retry
               </Button>
             )}
-            {terminal && !state.source && (
+            {terminal && !state.source && !demo && (
               <Button
                 size="sm"
                 variant="ghost"
@@ -246,7 +271,7 @@ function TaskView({ taskId }: { taskId: string }) {
                 </ul>
               </div>
             )}
-            {state.checkpoints.length > 0 && reviewable && (
+            {state.checkpoints.length > 0 && reviewable && !demo && (
               <div className="px-4 py-3 border-t border-hairline hidden md:block">
                 <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground mb-2">Checkpoints</p>
                 <ul className="space-y-1">
@@ -351,7 +376,7 @@ function TaskView({ taskId }: { taskId: string }) {
                       {state.options.draft ? 'draft ' : ''}pull request{state.rejectedFiles.length ? ` without ${state.rejectedFiles.length} excluded file(s)` : ''}.
                     </p>
                     <div className="flex items-center gap-2">
-                      {state.stoppedEarly && (
+                      {state.stoppedEarly && !demo && (
                         <Button size="sm" variant="outline" shape="pill" loading={busy === 'extend'} onClick={() => act('extend', () => extendBudget(taskId, 0.1), 'Budget raised — continuing')}>
                           Continue (+$0.10)
                         </Button>
@@ -387,6 +412,6 @@ function TaskView({ taskId }: { taskId: string }) {
           </div>
         </div>
       </div>
-    </AppShell>
+    </Shell>
   )
 }

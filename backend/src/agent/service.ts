@@ -150,6 +150,7 @@ export type CreateTaskInput = {
   issueUrl: string
   local?: { repoPath: string; title: string; body: string }
   userId?: string
+  demoVisitor?: string
   githubLogin?: string
   githubToken?: string
   options?: Partial<TaskOptions>
@@ -166,6 +167,7 @@ export async function createTask(input: CreateTaskInput, registry: TaskRegistry)
   const state: TaskState = {
     taskId,
     ...(input.userId ? { userId: input.userId } : {}),
+    ...(input.demoVisitor ? { demoVisitor: input.demoVisitor } : {}),
     ...(input.githubLogin ? { githubLogin: input.githubLogin } : {}),
     issueUrl: input.local ? `local://${ref.repo}` : `https://github.com/${ref.owner}/${ref.repo}/issues/${ref.issueNumber}`,
     ...(input.local ? { source: { kind: "local" as const, repoPath: input.local.repoPath } } : {}),

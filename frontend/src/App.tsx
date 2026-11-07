@@ -10,6 +10,8 @@ const NewTask = lazy(() => import('./pages/NewTask'))
 const Pool = lazy(() => import('./pages/Pool'))
 const Analytics = lazy(() => import('./pages/Analytics'))
 const TaskView = lazy(() => import('./pages/TaskView'))
+const DemoTask = lazy(() => import('./pages/TaskView').then((m) => ({ default: m.DemoTaskRoute })))
+const Demo = lazy(() => import('./pages/Demo'))
 const History = lazy(() => import('./pages/History'))
 const Replay = lazy(() => import('./pages/Replay'))
 const Settings = lazy(() => import('./pages/Settings'))
@@ -51,6 +53,8 @@ export default function App() {
             <Route path="/tasks/new" element={<RouteGuard><NewTask /></RouteGuard>} />
             <Route path="/tasks/:id" element={<RouteGuard><TaskView /></RouteGuard>} />
             <Route path="/r/:id"     element={<Replay />} />
+            <Route path="/demo"      element={<Demo />} />
+            <Route path="/demo/:id"  element={<DemoTask />} />
             <Route path="/pricing"   element={<Pricing />} />
             <Route path="/privacy"   element={<Privacy />} />
             <Route path="/settings"  element={<RouteGuard><Settings /></RouteGuard>} />

@@ -33,6 +33,7 @@ const PUBLIC = [
   ['pricing', '/pricing'],
   ['privacy', '/privacy'],
   ['login', '/login'],
+  ['demo', '/demo'],
   ['replay', '/r/8e9c51d8-f35c-4623-b365-5c745a7ae01d'],
 ]
 const APP = [

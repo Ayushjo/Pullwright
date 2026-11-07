@@ -834,6 +834,10 @@ export class Pipeline {
     if (!s) throw new Error(`Unknown task ${taskId}`)
     try {
       if (s.source?.kind === "local") return this.fail(s, "Eval tasks on local repositories cannot be published")
+      // A demo run may only ever publish to the demo repo (the issue came from its list, but check anyway).
+      if (s.demoVisitor && `${s.owner}/${s.repo}`.toLowerCase() !== (process.env.DEMO_REPO ?? "").toLowerCase()) {
+        return this.fail(s, "Demo runs can only open pull requests on the demo repository")
+      }
       await this.setStatus(s, "publishing", "Opening the pull request")
       let patch = (await taskStore.loadPatch(taskId)) ?? ""
       if (s.rejectedFiles.length) patch = filterPatch(patch, new Set(s.rejectedFiles))
@@ -967,6 +971,8 @@ async function plannedFilesContext(ws: Workspace, files: string[]): Promise<stri
  * operator and eval runs — may fall back to the operator's GITHUB_TOKEN; a user's task never does.
  */
 async function githubToken(s: TaskState): Promise<string | undefined> {
+  // Live-demo runs act only on the demo repo: a token scoped to it (DEMO_GITHUB_TOKEN) when one is set.
+  if (s.demoVisitor) return process.env.DEMO_GITHUB_TOKEN ?? process.env.GITHUB_TOKEN
   return (await taskStore.getToken(s.taskId)) ?? (s.userId ? undefined : process.env.GITHUB_TOKEN)
 }
 
