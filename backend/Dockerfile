@@ -1,7 +1,7 @@
 # Pullwright backend image. The same image runs as:
-#   WORKER_MODE=api     → HTTP API only (Railway)
-#   WORKER_MODE=worker  → task worker next to a Docker daemon (EC2)
-#   WORKER_MODE=both    → single process (local dev)
+#   WORKER_MODE=api     -> HTTP API only (Railway)
+#   WORKER_MODE=worker  -> task worker next to a Docker daemon (EC2)
+#   WORKER_MODE=both    -> single process (local dev)
 FROM node:22-bookworm-slim
 
 RUN apt-get update -qq \

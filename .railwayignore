@@ -1,0 +1,9 @@
+# Not needed by any Railway build: research screenshots, logs, local task data.
+docs/
+backend/app.log*
+backend/.tasks/
+backend/.depcache/
+backend/.spend/
+frontend/.ui-audit/
+**/node_modules/
+**/dist/
