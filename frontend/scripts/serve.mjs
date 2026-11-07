@@ -4,10 +4,38 @@
  *   2. a route with a prerendered page (dist/<route>/index.html, or dist/index.html for "/") → it;
  *   3. anything else → app.html, the bare SPA shell (so app routes never get Home's content/canonical).
  * Behind Cloudflare Pages the same rules live in public/_redirects.
+ *
+ * API_PROXY_TARGET (e.g. http://api.railway.internal:3500): /api/* is forwarded there, so the browser only ever
+ * talks to this origin. Sign-in cookies stay first-party (two *.up.railway.app hosts are different sites, and
+ * Brave/Safari drop cookies between them) and there's no CORS. Streams (task SSE) pass through unbuffered.
  */
 import { createReadStream, existsSync, statSync } from 'node:fs'
-import { createServer } from 'node:http'
+import { createServer, request as httpRequest } from 'node:http'
 import path from 'node:path'
+
+const API = process.env.API_PROXY_TARGET ? new URL(process.env.API_PROXY_TARGET) : null
+
+function proxy(req, res) {
+  const fwd = req.headers['x-forwarded-for']
+  const headers = {
+    ...req.headers,
+    host: API.host,
+    'x-forwarded-host': req.headers.host ?? '',
+    'x-forwarded-proto': req.headers['x-forwarded-proto'] ?? 'http',
+    'x-forwarded-for': fwd ? `${fwd}, ${req.socket.remoteAddress}` : (req.socket.remoteAddress ?? ''),
+  }
+  const up = httpRequest({ hostname: API.hostname, port: API.port || 80, path: req.url, method: req.method, headers }, (r) => {
+    res.writeHead(r.statusCode ?? 502, r.headers)
+    r.pipe(res)
+  })
+  up.on('error', () => {
+    if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: 'The API is unavailable' }))
+  })
+  req.on('aborted', () => up.destroy())
+  res.on('close', () => up.destroy())
+  req.pipe(up)
+}
 
 const root = path.resolve(process.argv[2] ?? 'dist')
 const port = Number(process.env.PORT ?? 3000)
@@ -25,6 +53,7 @@ function resolve(urlPath) {
 }
 
 createServer((req, res) => {
+  if (API && (req.url === '/api' || req.url?.startsWith('/api/'))) return proxy(req, res)
   const file = resolve(req.url ?? '/')
   if (!file || !isFile(file)) {
     res.writeHead(404).end('Not found')

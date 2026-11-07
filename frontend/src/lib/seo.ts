@@ -5,7 +5,7 @@ import { useEffect } from 'react'
  * Public pages are also prerendered at build time (scripts/prerender.mjs), so crawlers and link
  * previews get these tags and the page content without running JavaScript.
  */
-export const SITE_URL = (import.meta.env.VITE_SITE_URL as string | undefined)?.replace(/\/$/, '') ?? 'https://pullwright.iayush.com'
+export const SITE_URL = (import.meta.env.VITE_SITE_URL as string | undefined)?.replace(/\/$/, '') || 'https://pullwright.iayush.com'
 export const SITE_NAME = 'Pullwright'
 const DEFAULT_IMAGE = `${SITE_URL}/og.png`
 

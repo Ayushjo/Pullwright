@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import morgan from "morgan"
-import logger from "./logger.js"
+import logger, { isBrokenPipe } from "./logger.js"
 import { EventBus } from './events/eventBus.js';
 import { EventLog } from './events/eventLog.js';
 import { createRouter } from './api/router.js';
@@ -51,7 +51,7 @@ const PORT = Number(process.env.PORT ?? 3500);
 const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:5173";
 
 const app = express();
-app.set("trust proxy", 1);
+app.set("trust proxy", Number(process.env.TRUST_PROXY ?? 1)); // 2 when the web server forwards /api (Railway)
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({ origin: frontendUrl, credentials: true }));
 // Webhooks need the raw body for signature checks — register before the JSON parser.
@@ -118,5 +118,8 @@ const shutdown = async (signal: string) => {
 };
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("SIGINT", () => void shutdown("SIGINT"));
-process.on("uncaughtException", (err) => logger.error(`Uncaught exception: ${err.message}`, { stack: err.stack }));
+process.on("uncaughtException", (err) => {
+  if (isBrokenPipe(err)) return; // logging a dead stdout would only fail again (see logger.ts)
+  logger.error(`Uncaught exception: ${err.message}`, { stack: err.stack });
+});
 process.on("unhandledRejection", (reason) => logger.error(`Unhandled rejection: ${reason}`));

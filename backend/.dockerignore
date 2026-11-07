@@ -8,3 +8,7 @@ benchmarks/runs
 tsconfig.tsbuildinfo
 coverage
 .git
+
+# Local task workspaces (gigabytes); never part of an image
+.tasks
+scratch

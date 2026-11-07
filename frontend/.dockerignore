@@ -3,3 +3,5 @@ dist
 .env
 .env.*
 .git
+playwright-report
+.ui-audit
