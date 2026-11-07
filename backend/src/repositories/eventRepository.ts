@@ -19,6 +19,7 @@ export async function appendEventToDb(
       },
     })
   } catch (error) {
+    if ((error as { code?: string })?.code === "P2003") return // an operator/eval task: no task row, nothing to attach to
     logger.error(`Failed to persist event to Postgres: ${error instanceof Error ? error.message : error}`, {
       taskId,
       sequence,
@@ -86,6 +87,20 @@ export async function flushEventsToDb(): Promise<number> {
       })
       written += res.count
     } catch (error) {
+      // Operator and eval tasks have no task row (by design), so their events can't be stored. A batch mixing
+      // them with a user's task used to fail whole and lose the user's events too: keep the ones whose task exists.
+      if ((error as { code?: string })?.code === "P2003") {
+        const ids = [...new Set(batch.map((b) => b.taskId))]
+        const known = new Set((await getPrisma().task.findMany({ where: { id: { in: ids } }, select: { id: true } }).catch(() => [])).map((t) => t.id))
+        const keep = batch.filter((b) => known.has(b.taskId))
+        if (keep.length) {
+          const res = await getPrisma().taskEvent
+            .createMany({ data: keep.map((b) => ({ taskId: b.taskId, sequence: b.sequence, eventType: b.event.type, payload: b.event as object })), skipDuplicates: true })
+            .catch((e: unknown) => (logger.error(`Failed to persist ${keep.length} events to Postgres: ${e instanceof Error ? e.message : e}`), { count: 0 }))
+          written += res.count
+        }
+        continue
+      }
       logger.error(`Failed to persist ${batch.length} events to Postgres: ${error instanceof Error ? error.message : error}`)
     }
   }
