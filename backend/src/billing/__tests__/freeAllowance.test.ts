@@ -14,7 +14,7 @@ vi.mock("../../agent/spend.js", async (orig) => ({
   getSpendLedger: () => ({ poolSpent: async () => spent }),
 }))
 
-const { freeAllowance, canUseFree } = await import("../freeAllowance.js")
+const { freeAllowance, canUseFree, demoAvailable, DEMO_OPENAI } = await import("../freeAllowance.js")
 const now = new Date("2026-10-17T12:00:00Z")
 
 beforeEach(() => {
@@ -67,5 +67,39 @@ describe("free monthly Claude allowance", () => {
     delete process.env.FREE_CLAUDE_ENABLED
     delete process.env.ANTHROPIC_POOL_MONTHLY_USD
     expect((await freeAllowance("u", now)).enabled).toBe(false)
+  })
+})
+
+describe("demo tasks on the operator's OpenAI key", () => {
+  beforeEach(() => {
+    process.env.OPENAI_API_KEY = "sk-test"
+    process.env.OPENAI_POOL_MONTHLY_USD = "10"
+    process.env.OPENAI_POOL_DAILY_USD = "2"
+    delete process.env.DEMO_OPENAI_ENABLED
+  })
+
+  it("is off unless its own pool is configured", async () => {
+    delete process.env.OPENAI_POOL_MONTHLY_USD
+    delete process.env.OPENAI_POOL_DAILY_USD
+    expect(DEMO_OPENAI.enabled()).toBe(false)
+    expect(await demoAvailable(now)).toBe(false)
+  })
+
+  it("runs on gpt-5-mini with a per-task cap while the pool has room", async () => {
+    expect(DEMO_OPENAI.model()).toBe("gpt-5-mini")
+    expect(DEMO_OPENAI.taskCapUsd()).toBe(0.15)
+    expect(await demoAvailable(now)).toBe(true)
+  })
+
+  it("closes when today's or this month's budget can't cover one more capped task", async () => {
+    spent = { dayUsd: 1.9, monthUsd: 3 } // 1.9 + 0.15 > 2
+    expect(await demoAvailable(now)).toBe(false)
+    spent = { dayUsd: 0, monthUsd: 9.9 }
+    expect(await demoAvailable(now)).toBe(false)
+  })
+
+  it("has a kill switch", async () => {
+    process.env.DEMO_OPENAI_ENABLED = "0"
+    expect(await demoAvailable(now)).toBe(false)
   })
 })

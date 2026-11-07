@@ -21,6 +21,23 @@ export const FREE_CLAUDE = {
   model: () => process.env.FREE_CLAUDE_MODEL ?? "claude-haiku-5-5",
 }
 
+/**
+ * Demo tasks: when someone has no key, no free Claude tasks left and no credits, a task can still run on the
+ * operator's OpenAI key, inside its own budgeted pool (OPENAI_POOL_MONTHLY_USD / OPENAI_POOL_DAILY_USD) and
+ * a per-task cap. Off unless that pool is configured; DEMO_OPENAI_ENABLED=0 turns it off.
+ */
+export const DEMO_OPENAI = {
+  enabled: () => process.env.DEMO_OPENAI_ENABLED !== "0" && Boolean(poolBudget("openai")) && Boolean(process.env.OPENAI_API_KEY),
+  taskCapUsd: () => Number(process.env.DEMO_TASK_CAP_USD ?? 0.15),
+  model: () => process.env.DEMO_OPENAI_MODEL ?? "gpt-5-mini",
+}
+
+/** Whether a demo task can start now (the pool has room for one more capped task). */
+export async function demoAvailable(now = new Date()): Promise<boolean> {
+  if (!DEMO_OPENAI.enabled()) return false
+  return (await poolHasRoom(DEMO_OPENAI.taskCapUsd(), now, "openai")).open
+}
+
 export type FreeAllowance = {
   enabled: boolean
   /** Why this account can't use it (account too new, unknown age), when it can't. */
@@ -52,11 +69,11 @@ export async function freeTasksUsed(userId: string, now = new Date()): Promise<n
   })
 }
 
-/** Room in the shared pool for one more capped task, today and this month. */
-export async function poolHasRoom(cap = FREE_CLAUDE.taskCapUsd(), now = new Date()): Promise<{ open: boolean; opensAt?: number }> {
-  const budget = poolBudget("anthropic")
+/** Room in a provider's budgeted pool for one more capped task, today and this month. */
+export async function poolHasRoom(cap = FREE_CLAUDE.taskCapUsd(), now = new Date(), provider: "anthropic" | "openai" = "anthropic"): Promise<{ open: boolean; opensAt?: number }> {
+  const budget = poolBudget(provider)
   if (!budget) return { open: false }
-  const spent = await getSpendLedger().poolSpent("anthropic")
+  const spent = await getSpendLedger().poolSpent(provider)
   if (spent.monthUsd + cap > budget.monthlyUsd) return { open: false, opensAt: nextMonth(now).getTime() }
   if (spent.dayUsd + cap > budget.dailyUsd) return { open: false, opensAt: nextUtcDay(now.getTime()) }
   return { open: true }

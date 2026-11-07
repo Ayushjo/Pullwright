@@ -24,7 +24,7 @@ import { groundIssue, groundingNote } from "./grounding.js"
 import { checkpoint, cloneForTask, cloneLocal, diffStat, diffVs, fetchIssue, git, publishPatch, redact, tasksRoot } from "./git.js"
 import { taskStore, type TaskState, type TaskStatus } from "./store.js"
 import { loadKey } from "../billing/index.js"
-import { FREE_CLAUDE } from "../billing/freeAllowance.js"
+import { DEMO_OPENAI, FREE_CLAUDE } from "../billing/freeAllowance.js"
 import type { ChatCompletionContentPart } from "openai/resources/chat/completions"
 import type { UserContent } from "./llm.js"
 import { dataUrl, downloadAttachments, extractAttachments, type AttachmentRef } from "./intake/attachments.js"
@@ -103,6 +103,8 @@ async function llmFor(s: TaskState, role: "plan" | "run" | "judge"): Promise<Cha
  */
 export function fundedLanes(s: Pick<TaskState, "options">): ReturnType<typeof parseLanes> {
   if (s.options.fundedBy === "free_claude") return parseLanes(`anthropic:${FREE_CLAUDE.model()}`)
+  // Demo tasks: the operator's OpenAI key, spent from its own pool (OPENAI_POOL_*), never the hard stop's budget.
+  if (s.options.fundedBy === "demo") return parseLanes(`openai:${DEMO_OPENAI.model()}`)
   // Bounded by the user's balance (each task's cap ≤ what they have), so not by the free pool's budget.
   if (s.options.fundedBy === "credits") return parseLanes(process.env.PW_LANES_CREDITS ?? "anthropic:claude-sonnet-5-5").map((l) => ({ ...l, spendClass: "credits" as const }))
   return []

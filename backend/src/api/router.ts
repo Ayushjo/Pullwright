@@ -21,7 +21,7 @@ import type { Redis } from "ioredis"
 import { getSpendLedger, poolBudget, POOL_ALERT_THRESHOLDS } from "../agent/spend.js"
 import { getEntitlement } from "../billing/index.js"
 import { creditSummary } from "../billing/credits.js"
-import { canUseFree, freeAllowance, FREE_CLAUDE } from "../billing/freeAllowance.js"
+import { canUseFree, demoAvailable, freeAllowance, FREE_CLAUDE } from "../billing/freeAllowance.js"
 import { isOwnerLogin } from "../auth/owners.js"
 import { track } from "../analytics/track.js"
 import { analyticsReport } from "../analytics/report.js"
@@ -193,7 +193,7 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
       return res.status(401).json({ error: "Sign in again to create tasks" })
     }
     try {
-      let keyChoice: { keyKind: "platform" | "byok" | "wallet"; keyProvider?: "openai" | "openrouter"; fundedBy?: "credits" | "free_claude"; capUsd?: number } = { keyKind: "platform" }
+      let keyChoice: { keyKind: "platform" | "byok" | "wallet"; keyProvider?: "openai" | "openrouter"; fundedBy?: "credits" | "free_claude" | "demo"; capUsd?: number } = { keyKind: "platform" }
       let tier: "free" | "pro" = "free"
       let queueClass: "free" | "paid" = "free"
       const owners = (process.env.OPERATOR_GITHUB_LOGINS ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean)
@@ -240,6 +240,9 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
             const again = await getEntitlement(uid)
             return res.status(402).json({ error: again.reason ?? "Your free Claude tasks are used up for now.", code: "needs_key_or_plan" })
           }
+        }
+        if (uid && keyChoice.fundedBy === "demo" && !(await demoAvailable())) {
+          return res.status(402).json({ error: "Free demo tasks are full for today. Add a free Gemini key in your Wallet to keep going.", code: "needs_key_or_plan" })
         }
         if (uid && keyChoice.fundedBy === "credits") {
           const again = await getEntitlement(uid)
@@ -591,8 +594,8 @@ export const createRouter = (eventBus: EventBus, taskRegistry: TaskRegistry, eve
       return res.status(409).json({ error: "Only a run that stopped early can be continued" })
     }
     // A free-allowance task is capped by design: more budget comes from a key or credits, not the pool.
-    if (s.options.fundedBy === "free_claude") {
-      return res.status(402).json({ error: "Free Claude tasks have a fixed budget. Add a free Gemini key or buy credits to continue this one.", code: "free_task_cap" })
+    if (s.options.fundedBy === "free_claude" || s.options.fundedBy === "demo") {
+      return res.status(402).json({ error: "Free tasks have a fixed budget. Add a free Gemini key or buy credits to continue this one.", code: "free_task_cap" })
     }
     // A credit-funded task can only grow its cap by what the balance still covers.
     if (s.options.fundedBy === "credits" && s.userId) {

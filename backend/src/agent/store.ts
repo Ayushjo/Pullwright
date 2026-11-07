@@ -44,7 +44,7 @@ export type TaskOptions = {
   keyProvider?: "openai" | "openrouter"
   /** Who pays when the task runs on our models: "credits" = the user's credit balance (debited per
    *  task); "free_claude" = the free monthly Claude allowance (paid from the promo pool, never debited). */
-  fundedBy?: "credits" | "free_claude"
+  fundedBy?: "credits" | "free_claude" | "demo"
   /** Per-task spend cap in USD (defaults from TASK_BUDGET_USD, scaled by plan size, raisable by the user). */
   capUsd?: number
   /** Eval A/B only: "direct" bypasses the gateway (P0 transport); "unpaced" keeps the gateway but drops free-tier pacing seeds. */

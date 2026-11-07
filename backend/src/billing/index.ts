@@ -7,7 +7,7 @@ import logger from "../logger.js"
 import { createRedisClient } from "../config/redis.js"
 import type { Redis } from "ioredis"
 import { creditSummary, grantCredit, type CreditSummary } from "./credits.js"
-import { canUseFree, freeAllowance, FREE_CLAUDE, type FreeAllowance } from "./freeAllowance.js"
+import { canUseFree, demoAvailable, DEMO_OPENAI, freeAllowance, FREE_CLAUDE, type FreeAllowance } from "./freeAllowance.js"
 import { track } from "../analytics/track.js"
 
 /**
@@ -31,6 +31,7 @@ export type Entitlement = {
     | { kind: "byok"; provider: KeyProvider }
     | { kind: "platform"; fundedBy: "credits"; capUsd: number; trialOnly: boolean }
     | { kind: "platform"; fundedBy: "free_claude"; capUsd: number; model: string }
+    | { kind: "platform"; fundedBy: "demo"; capUsd: number; model: string }
     | { kind: "wallet"; allFree: boolean }
     | null
   credits: CreditSummary | null
@@ -93,6 +94,10 @@ export async function getEntitlement(userId: string): Promise<Entitlement> {
   if (wallet.canRun) return { ...base, key: { kind: "wallet", allFree: wallet.allFree } }
   // 2. The free monthly Claude allowance (no key, no card), before any credit the user paid for.
   if (free && canUseFree(free)) return { ...base, key: { kind: "platform", fundedBy: "free_claude", capUsd: FREE_CLAUDE.taskCapUsd(), model: free.model } }
+  // 2b. Demo tasks on the operator's OpenAI key (own budgeted pool), for anyone with nothing else to run on.
+  if (credits.availableUsd < MIN_CREDIT_TASK_USD && (await demoAvailable().catch(() => false))) {
+    return { ...base, key: { kind: "platform", fundedBy: "demo", capUsd: DEMO_OPENAI.taskCapUsd(), model: DEMO_OPENAI.model() } }
+  }
   // 3. Credits (Pro's monthly grant, packs, the trial): our models, hard-capped by what's available.
   if (credits.availableUsd >= MIN_CREDIT_TASK_USD) {
     const capUsd = +Math.min(CREDIT_TASK_CAP_USD, credits.availableUsd, credits.trialOnly ? TRIAL_TASK_CAP_USD : Infinity).toFixed(4)
